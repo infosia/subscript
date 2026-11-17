@@ -1358,4 +1358,16 @@ typedef struct SubBorrowDrawLists {
 } SubBorrowDrawLists;
 int32_t subBorrowScratchArray(SubBorrowDrawLists value, SubCallbackInfo info);
 
+/* compiler.md §324: C array parameters share the caller's storage. */
+void subFixedInts(int32_t values[4]);
+int32_t subFixedReadInts(const int32_t values[4]);
+void subFixedBytes(SubByValueI32One values[2]);
+void subFixedLays(SubDescReadLay values[2]);
+void subFixedHandles(SubDevice values[2]);
+void subFixedStrings(SubDescReadStr values[2]);
+int32_t subFixedSum(int32_t values[4]);
+int32_t subFixedReadLays(const SubDescReadLay values[2]);
+void subFixedTwoLays(SubDescReadLay first[2], SubDescReadLay second[2]);
+void subFixedLayPointer(SubDescReadLay first[2], SubDescReadLay *second);
+
 #endif /* SUBSCRIPT_INTEROP_H */

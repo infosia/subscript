@@ -299,6 +299,22 @@ impl Scan<'_, '_> {
         position: ReadPosition<'_>,
     ) -> Option<(RejectionSite, String)> {
         let checker = self.checker();
+        if let Type::FixedArray(element, length) = checker.apparent_type(&param.ty) {
+            let class = self.boundary_struct(&element)?;
+            let writable =
+                param.foreign_provenance != Some(hir::ForeignTypeProvenance::ConstPointer);
+            let array =
+                subscript_boundary::fixed_array_parameter(self, Some(class), length, writable);
+            let (_, pass) = array.element?;
+            if pass == PointerPass::Cycle {
+                return first_cycle(self, class)
+                    .map(|cycle| (RejectionSite::ForeignStructCycle, cycle.message(position)));
+            }
+            let root = ReadRoot::of_target(pass, writable);
+            return self
+                .unreadable(class, root, Reach::Root)
+                .map(|found| (RejectionSite::ForeignResultRead, found.message(position)));
+        }
         if let Type::Array(element) = checker.apparent_type(&param.ty) {
             // A by-value descriptor: its pair is an input pair whose
             // elements C writes unless the descriptor record says the

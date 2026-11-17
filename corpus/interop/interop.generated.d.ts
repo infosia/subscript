@@ -102,6 +102,18 @@
 // @subscript-c-parameter function="subBorrowMemberPointer" parameter="value" const=true
 // @subscript-c-parameter function="subBorrowMemberString" parameter="value" const=true
 // @subscript-c-member aggregate="SubBorrowDrawLists" member="values" const=true
+// @subscript-c-parameter function="subFixedInts" parameter="values" const=false
+// @subscript-c-parameter function="subFixedReadInts" parameter="values" const=true
+// @subscript-c-parameter function="subFixedBytes" parameter="values" const=false
+// @subscript-c-parameter function="subFixedLays" parameter="values" const=false
+// @subscript-c-parameter function="subFixedHandles" parameter="values" const=false
+// @subscript-c-parameter function="subFixedStrings" parameter="values" const=false
+// @subscript-c-parameter function="subFixedSum" parameter="values" const=false
+// @subscript-c-parameter function="subFixedReadLays" parameter="values" const=true
+// @subscript-c-parameter function="subFixedTwoLays" parameter="first" const=false
+// @subscript-c-parameter function="subFixedTwoLays" parameter="second" const=false
+// @subscript-c-parameter function="subFixedLayPointer" parameter="first" const=false
+// @subscript-c-parameter function="subFixedLayPointer" parameter="second" const=false
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -893,6 +905,16 @@ declare class SubBorrowDrawLists {
 }
 
 declare function subBorrowScratchArray(value: SubBorrowDrawLists, info: SubCallbackInfo): i32;
+declare function subFixedInts(values: FixedArray<i32, 4>): void;
+declare function subFixedReadInts(values: FixedArray<i32, 4>): i32;
+declare function subFixedBytes(values: FixedArray<SubByValueI32One, 2>): void;
+declare function subFixedLays(values: FixedArray<SubDescReadLay, 2>): void;
+declare function subFixedHandles(values: FixedArray<SubDevice, 2>): void;
+declare function subFixedStrings(values: FixedArray<SubDescReadStr, 2>): void;
+declare function subFixedSum(values: FixedArray<i32, 4>): i32;
+declare function subFixedReadLays(values: FixedArray<SubDescReadLay, 2>): i32;
+declare function subFixedTwoLays(first: FixedArray<SubDescReadLay, 2>, second: FixedArray<SubDescReadLay, 2>): void;
+declare function subFixedLayPointer(first: FixedArray<SubDescReadLay, 2>, second: SubDescReadLay | null): void;
 
 type SubFloat16 = f16;
 

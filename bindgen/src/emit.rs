@@ -79,6 +79,7 @@ pub fn emit_for_header(
     explicit_callback_lifetimes: &[String],
     completions: &[(String, String)],
 ) -> Result<String, ParseError> {
+    validate_pointer_arrays(parsed)?;
     let mut registry = classify(parsed);
     registry.remove(crate::completion::ENDPOINT);
     let completions = crate::completion::select(parsed, &registry, completions)?;
@@ -277,6 +278,29 @@ fn validate_nullable_positions(
                 }
             }
             Decl::Enum { .. } | Decl::Handle { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+// compiler.md §324 rule 1: FixedArray elements represent T, not T*.
+fn validate_pointer_arrays(parsed: &Parsed) -> Result<(), ParseError> {
+    for decl in &parsed.decls {
+        let (owner, member, fields) = match decl {
+            Decl::Func { name, params, .. } => {
+                (format!("foreign function `{name}`"), "parameter", params)
+            }
+            Decl::Struct { name, fields } => (format!("struct `{name}`"), "field", fields),
+            Decl::FnPtr { .. } | Decl::Enum { .. } | Decl::Handle { .. } => continue,
+        };
+        if let Some(field) = fields
+            .iter()
+            .find(|field| field.pointer && field.array_len.is_some())
+        {
+            return Err(ParseError(format!(
+                "{owner} {member} `{}`: an array of pointers has no mirror type",
+                field.name,
+            )));
         }
     }
     Ok(())
@@ -502,7 +526,7 @@ fn validate_boundary_positions(
                 }
                 for (param_index, param) in params.iter().enumerate() {
                     if string_field_structs.contains(&param.base) {
-                        if param.pointer && param.array_len.is_none() {
+                        if param.pointer || param.array_len.is_some() {
                             let adjacent_count = param_index
                                 .checked_sub(1)
                                 .and_then(|index| params.get(index))
@@ -518,7 +542,9 @@ fn validate_boundary_positions(
                                             && count.array_len.is_none()
                                     })
                                 });
-                            if let Some(count) = adjacent_count {
+                            if let Some(count) =
+                                adjacent_count.filter(|_| param.array_len.is_none())
+                            {
                                 return Err(ParseError(format!(
                                     "foreign function `{name}` parameters `{}` and `{}` form \
                                      an array of string-field boundary struct `{}`; arrays of \
@@ -586,8 +612,7 @@ fn validate_boundary_positions(
             continue;
         };
         for param in params {
-            let root = if param.pointer
-                && param.array_len.is_none()
+            let root = if (param.pointer || param.array_len.is_some())
                 && matches!(registry.get(&param.base), Some(Kind::Boundary))
             {
                 Some(param.base.as_str())
@@ -910,7 +935,8 @@ fn emit_provenance(
 }
 
 /// Adds one `@subscript-c-parameter` record for each struct-pointer
-/// parameter. The mirror type spells `T *` and `const T *` alike, so the
+/// parameter and each array parameter (compiler.md §324 rule 3).
+/// The mirror type spells `T *` and `const T *` alike, so the
 /// record carries the `const` (§187 rule 3). The checker counts a pointer
 /// parameter with no record as non-`const`.
 fn emit_pointer_parameter_provenance(
@@ -920,12 +946,12 @@ fn emit_pointer_parameter_provenance(
     records: &mut Vec<String>,
 ) {
     for param in params {
-        if param.pointer
-            && param.array_len.is_none()
-            && matches!(
-                registry.get(&param.base),
-                Some(Kind::Boundary | Kind::External)
-            )
+        if param.array_len.is_some()
+            || (param.pointer
+                && matches!(
+                    registry.get(&param.base),
+                    Some(Kind::Boundary | Kind::External)
+                ))
         {
             records.push(format!(
                 "// @subscript-c-parameter function={} parameter={} const={}",
@@ -1669,5 +1695,75 @@ mod shared_graph_tests {
             )
             .unwrap();
         });
+    }
+}
+
+#[cfg(test)]
+mod fixed_array_parameter_tests {
+    #[test]
+    fn fixed_array_records_const_and_accepts_a_string_view_fill() {
+        let header = "#include <stdint.h>\n#include <stddef.h>\ntypedef struct View { const char *data; size_t len; } View;\ntypedef struct Item { View label; int32_t n; } Item;\nvoid fill(Item values[2]);\nvoid fillWithCount(Item values[2], size_t tag);\nint32_t read(const int32_t values[4]);\n";
+        let mirror =
+            crate::generate_for_header(header, "array.h").expect("array fill has a read lowering");
+        assert!(mirror.contains("function=\"fill\" parameter=\"values\" const=false"));
+        assert!(mirror.contains("function=\"read\" parameter=\"values\" const=true"));
+        assert!(mirror.contains("FixedArray<Item, 2>"));
+        assert!(mirror.contains("FixedArray<i32, 4>"));
+    }
+
+    #[test]
+    fn mutable_array_elements_are_read_roots() {
+        let header = "typedef struct Item { void *userdata; } Item;\nvoid fill(Item values[2]);\n";
+        let error = crate::generate_for_header(header, "array.h")
+            .expect_err("mutable userdata has no read lowering");
+        assert!(
+            error.0.contains("fill") && error.0.contains("userdata"),
+            "{error}"
+        );
+        let constant = header.replace("Item values[2]", "const Item values[2]");
+        crate::generate_for_header(&constant, "array.h").expect("const array is an input");
+    }
+}
+
+#[cfg(test)]
+mod pointer_array_tests {
+    fn reject_parameter(parameter: &str, member: &str) {
+        let header = format!("#include <stdint.h>\ntypedef struct P {{ int32_t x; }} P;\nvoid consume({parameter});\n");
+        let error = crate::generate_for_header(&header, "pointer-array.h")
+            .expect_err("a pointer array has no mirror type");
+        assert_eq!(error.0, format!("foreign function `consume` parameter `{member}`: an array of pointers has no mirror type"));
+    }
+
+    #[test]
+    fn rejects_a_mutable_scalar_pointer_array_parameter() {
+        reject_parameter("int32_t *v[4]", "v");
+    }
+
+    #[test]
+    fn rejects_a_const_scalar_pointer_array_parameter() {
+        reject_parameter("const int32_t *v[4]", "v");
+    }
+
+    #[test]
+    fn rejects_a_struct_pointer_array_parameter() {
+        reject_parameter("P *p[2]", "p");
+    }
+
+    #[test]
+    fn rejects_a_const_byte_pointer_array_parameter() {
+        reject_parameter("const unsigned char *n[4]", "n");
+    }
+
+    #[test]
+    fn rejects_a_pointer_array_struct_field() {
+        let error = crate::generate_for_header(
+            "#include <stdint.h>\ntypedef struct Holder { int32_t *v[4]; } Holder;\n",
+            "pointer-array.h",
+        )
+        .expect_err("a pointer array field has no mirror type");
+        assert_eq!(
+            error.0,
+            "struct `Holder` field `v`: an array of pointers has no mirror type"
+        );
     }
 }

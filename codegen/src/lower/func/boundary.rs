@@ -232,7 +232,8 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 (RV::None, Some((data, count)))
             } else {
                 // compiler.md §323 rule 2: a native pointer can borrow an array element.
-                if matches!(parameter_plan, ParameterPlan::Pointer(pointer)
+                if matches!(parameter_plan, ParameterPlan::FixedArray(_))
+                    || matches!(parameter_plan, ParameterPlan::Pointer(pointer)
                     if matches!(pointer.pass, PointerPass::ScriptMemory | PointerPass::ScratchWrittenBack))
                 {
                     if let Some(l::ValueType::Address(l::AddressType {
@@ -802,6 +803,55 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         pos: &Pos,
     ) -> Result<(), String> {
         match plan {
+            ParameterPlan::FixedArray(array) => {
+                // compiler.md §324 rule 5: LIR gives the storage address.
+                let source = self.expect_scalar(value)?;
+                let address = if let Some(pointer) = &array.element {
+                    match pointer.pass {
+                        PointerPass::ScriptMemory => source,
+                        PointerPass::Cycle => {
+                            return Err(struct_cycle(
+                                &self.ml.lir.classes[pointer.class.0].source_name,
+                            ))
+                        }
+                        PointerPass::ScratchWrittenBack | PointerPass::ScratchReadOnly => {
+                            let (_, size, align) = self.boundary_c_layout(pointer.class.0)?;
+                            let stride = self.ml.layouts.class(pointer.class.0)?.size;
+                            let bytes = size
+                                .checked_mul(array.kind.length)
+                                .ok_or_else(|| internal("fixed array scratch size overflow"))?;
+                            let scratch = self.stack_slot(bytes.max(1), align);
+                            self.zero_bytes(scratch, bytes, align);
+                            let target = pointer
+                                .target
+                                .as_ref()
+                                .ok_or_else(|| internal("fixed array element has no build plan"))?;
+                            for index in 0..array.kind.length {
+                                let from = self
+                                    .address_offset(source, i64::from(index) * i64::from(stride));
+                                let to = self
+                                    .address_offset(scratch, i64::from(index) * i64::from(size));
+                                self.populate_boundary_value(target, from, to, pos)?;
+                                if let Some(plan) = &pointer.write_back {
+                                    let snapshot = self.stack_slot(size, align);
+                                    self.copy_bytes(snapshot, to, size, align);
+                                    writebacks.push(BoundaryPtrWriteback {
+                                        plan: plan.clone(),
+                                        source: from,
+                                        scratch: to,
+                                        snapshot,
+                                    });
+                                }
+                            }
+                            scratch
+                        }
+                    }
+                } else {
+                    source
+                };
+                self.push_foreign_argument(signature, arguments, types::I64, address);
+                Ok(())
+            }
             ParameterPlan::Value => {
                 self.marshal_foreign_value(parameter, value, signature, arguments)
             }

@@ -14,9 +14,6 @@ implementation commit of that section.
 
 ## 1. Wrong output, a stopped process, or a failed build on accepted code
 
-1. A by-value C array parameter (`void fillLays(Lay out[2])`) binds as
-   `FixedArray`. The C AOT build then fails with an incompatible
-   parameter type (§187.3 item 2). Medium.
 2. A C write that replaces a pair of an out-parameter fill, a pointer
    member, a userdata slot, or a callback field is lost with no
    diagnostic (§187.3 items 1, 4). A typical out-struct API

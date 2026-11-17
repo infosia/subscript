@@ -351,7 +351,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 continue;
             }
             // compiler.md §323 rule 2: a native pointer can borrow an array element.
-            if matches!(parameter_plan, ParameterPlan::Pointer(pointer)
+            if matches!(parameter_plan, ParameterPlan::FixedArray(_))
+                || matches!(parameter_plan, ParameterPlan::Pointer(pointer)
                 if matches!(pointer.pass, PointerPass::ScriptMemory | PointerPass::ScratchWrittenBack))
             {
                 if let Some(l::ValueType::Address(l::AddressType {

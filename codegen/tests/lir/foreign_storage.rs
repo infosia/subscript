@@ -187,3 +187,86 @@ export async function main(): Promise<void> {
         "{errors:?}"
     );
 }
+
+// compiler.md §324 acceptance 3: build a value operand, with its real value type.
+#[test]
+fn foreign_fixed_array_value_is_rejected_against_the_callee_declaration() {
+    let mirror = SourceFile::ambient(
+        "array.d.ts",
+        "// @subscript-c-header include=\"array.h\"\ndeclare function fill(values: FixedArray<i32, 4>): void;",
+    );
+    let program = SourceFile::new("main.ts", "export function main(): void { const values: FixedArray<i32, 4> = [1, 2, 3, 4]; fill(values); }");
+    let hir = check_program(&[mirror, program]).expect("array parameter checks");
+    let mut module = lower_module(&hir).expect("array parameter lowers");
+    verify_module(&module).expect("address operand verifies");
+    let function = module
+        .functions
+        .iter_mut()
+        .find(|f| f.source_name == "main")
+        .expect("caller");
+    let block = function
+        .blocks
+        .iter_mut()
+        .find(|block| {
+            block
+                .instructions
+                .iter()
+                .any(|i| matches!(i.kind, InstructionKind::Call(_)))
+        })
+        .expect("call block");
+    let index = block
+        .instructions
+        .iter()
+        .position(|i| matches!(i.kind, InstructionKind::Call(_)))
+        .expect("call");
+    let address = block.instructions[index].operands[0].clone();
+    let value = lir::ValueId(function.values.len() as u32);
+    let ty = ValueType::Data(Type::FixedArray(Box::new(Type::I32), 4));
+    function.values.push(lir::Value {
+        id: value,
+        ty: ty.clone(),
+        fresh_owner: false,
+        source_name: None,
+    });
+    function.liveness.value_origins.push(value);
+    let pos = block.instructions[index].pos.clone();
+    block.instructions.insert(
+        index,
+        lir::Instruction {
+            result: Some(value),
+            kind: InstructionKind::LoadAddress,
+            invalidates: vec![],
+            count_action: None,
+            operands: vec![address],
+            traps: vec![],
+            pos,
+        },
+    );
+    let original = &block.instructions[index + 1];
+    let InstructionKind::Call(target) = &original.kind else {
+        unreachable!()
+    };
+    // Build the violating call. Its value operand agrees with its call signature.
+    // The foreign declaration independently requires an address (compiler.md §324 rule 5).
+    block.instructions[index + 1] = lir::Instruction {
+        kind: InstructionKind::Call(lir::CallTarget {
+            kind: target.kind.clone(),
+            parameter_types: vec![ty],
+            return_type: None,
+        }),
+        operands: vec![Operand::Value(value)],
+        result: None,
+        traps: original.traps.clone(),
+        invalidates: original.invalidates.clone(),
+        count_action: None,
+        pos: original.pos.clone(),
+    };
+    let errors =
+        verify_module(&module).expect_err("a fixed array value is not an array parameter address");
+    assert!(
+        errors.iter().any(|error| error
+            .message
+            .contains("call signature disagrees with the target declaration")),
+        "{errors:?}"
+    );
+}

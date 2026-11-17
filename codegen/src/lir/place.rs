@@ -542,6 +542,9 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         declared: &Type,
         actual: &l::ValueType,
     ) -> bool {
+        if matches!(declared, Type::FixedArray(..)) {
+            return matches!(actual, l::ValueType::Address(address) if &address.pointee == declared);
+        }
         let Some(class) = boundary_box_class(self.lowering.hir, declared) else {
             return false;
         };

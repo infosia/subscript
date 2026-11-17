@@ -211,3 +211,40 @@ fn the_report_sorts_by_position_and_repeats_each_instantiation() -> Result<(), S
     );
     Ok(())
 }
+
+#[test]
+fn fixed_array_kind_carries_extent_pass_and_write_back() {
+    use subscript_boundary::PointerPass;
+    use subscript_compiler::{check_program, SourceFile};
+    let mirror = SourceFile::ambient("array.d.ts", "// @subscript-c-header include=\"array.h\"\n// @subscript-c-parameter function=\"read\" parameter=\"values\" const=true\ndeclare class Item { label: string; constructor(label: string); }\ndeclare function fill(values: FixedArray<Item, 2>): void;\ndeclare function read(values: FixedArray<Item, 2>): void;\ndeclare function bytes(values: FixedArray<i32, 4>): void;\n");
+    let hir = check_program(&[
+        mirror,
+        SourceFile::new("main.ts", "export function main(): void {}"),
+    ])
+    .expect("array declarations check");
+    let module = subscript_codegen::lir::lower_module(&hir).expect("declarations lower");
+    for (name, pass) in [
+        ("fill", Some(PointerPass::ScratchWrittenBack)),
+        ("read", Some(PointerPass::ScratchReadOnly)),
+        ("bytes", None),
+    ] {
+        let plan = subscript_compiler::crossing::call_plan(
+            &module,
+            callee(&module, name).expect("callee"),
+        )
+        .expect("plan");
+        let ParameterPlan::FixedArray(array) = &plan.parameters[0] else {
+            panic!("fixed array kind: {plan:?}")
+        };
+        assert_eq!(array.kind.length, if name == "bytes" { 4 } else { 2 });
+        assert_eq!(array.element.as_ref().map(|p| p.pass), pass);
+        assert_eq!(
+            array
+                .element
+                .as_ref()
+                .and_then(|p| p.write_back.as_ref())
+                .is_some(),
+            name == "fill"
+        );
+    }
+}

@@ -1778,3 +1778,52 @@ int32_t subBorrowScratchArray(SubBorrowDrawLists value, SubCallbackInfo info) {
     info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
     return before * 100 + (value.valuesCount == 0 ? 0 : (int32_t)value.values[0].layer);
 }
+
+/* compiler.md §324: C array parameters share the caller's storage. */
+void subFixedInts(int32_t values[4]) {
+    for (int i = 0; i < 4; ++i) values[i] += i + 1;
+}
+int32_t subFixedReadInts(const int32_t values[4]) {
+    for (int i = 0; i < 4; ++i) if (values[i] != 2 * (i + 1)) abort();
+    return values[0] + values[1] + values[2] + values[3];
+}
+void subFixedBytes(SubByValueI32One values[2]) {
+    values[0].a += 10;
+    values[1].a += 20;
+}
+void subFixedLays(SubDescReadLay values[2]) {
+    if (values[0].itemsCount != 1 || values[0].items[0] != 7 ||
+        values[1].itemsCount != 1 || values[1].items[0] != 8) abort();
+    values[0].tag = 31;
+    values[1].tag = 42;
+}
+void subFixedHandles(SubDevice values[2]) {
+    SubDevice first = values[0];
+    values[0] = values[1];
+    values[1] = first;
+}
+void subFixedStrings(SubDescReadStr values[2]) {
+    values[0].label = (SubStringView){"first", 5};
+    values[1].label = (SubStringView){"second", 6};
+    values[0].n = 51;
+    values[1].n = 62;
+}
+int32_t subFixedSum(int32_t values[4]) {
+    subFixedInts(values);
+    return values[0] + values[1] + values[2] + values[3];
+}
+
+int32_t subFixedReadLays(const SubDescReadLay values[2]) {
+    if (values[0].tag != 1 || values[1].tag != 2 ||
+        values[0].itemsCount != 1 || values[0].items[0] != 7 ||
+        values[1].itemsCount != 1 || values[1].items[0] != 8) abort();
+    return values[0].tag + values[1].tag;
+}
+void subFixedTwoLays(SubDescReadLay first[2], SubDescReadLay second[2]) {
+    first[0].tag += 1;
+    second[0].tag += 10;
+}
+void subFixedLayPointer(SubDescReadLay first[2], SubDescReadLay *second) {
+    first[0].tag += 1;
+    second->tag += 10;
+}

@@ -163,7 +163,7 @@ pub(super) fn verify_host_completion(
                 .filter(|p| {
                     p.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
                 })
-                .map(|p| l::ValueType::Data(p.ty.clone()))
+                .map(|p| crate::lir_types::foreign_parameter_type(&p.ty))
                 .collect();
             let actual: Vec<_> = instruction
                 .operands

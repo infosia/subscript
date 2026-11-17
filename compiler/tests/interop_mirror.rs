@@ -225,6 +225,16 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "subBorrowMemberPointer",
             "subBorrowMemberString",
             "subBorrowScratchArray",
+            "subFixedInts",
+            "subFixedReadInts",
+            "subFixedBytes",
+            "subFixedLays",
+            "subFixedHandles",
+            "subFixedStrings",
+            "subFixedSum",
+            "subFixedReadLays",
+            "subFixedTwoLays",
+            "subFixedLayPointer",
         ]
     );
 
@@ -608,4 +618,53 @@ fn every_other_mirror_variable_form_reports_once_at_its_name() {
     .expect("the accepted mirror constant form");
     assert!(module.globals.is_empty(), "{:?}", module.globals);
     eprintln!("mirror variable forms: {:?}", start.elapsed());
+}
+
+// compiler.md §324 acceptance 4: const reaches HIR for scalar and struct arrays.
+#[test]
+fn fixed_array_parameter_const_provenance_reaches_the_checker() {
+    let module =
+        check_with_mirror("export function main(): void {} ").expect("generated mirror checks");
+    for (name, constant) in [
+        ("subFixedReadInts", true),
+        ("subFixedInts", false),
+        ("subFixedStrings", false),
+    ] {
+        let function = module
+            .foreign_fns
+            .iter()
+            .find(|f| f.name == name)
+            .expect("array fixture");
+        assert!(matches!(function.params[0].ty, Type::FixedArray(..)));
+        assert_eq!(
+            function.params[0].foreign_provenance == Some(hir::ForeignTypeProvenance::ConstPointer),
+            constant,
+            "{name}"
+        );
+    }
+}
+
+// A missing record is a mutable read root, derived from the mirror declaration.
+#[test]
+fn handwritten_fixed_array_without_const_record_is_a_read_position() {
+    let declaration = "// @subscript-c-header include=\"array.h\"\ndeclare class ArraySlot { userdata: object | null; constructor(userdata: object | null); }\ndeclare function arrayRead(values: FixedArray<ArraySlot, 2>): void;\n";
+    let program = SourceFile::new("main.ts", "export function main(): void {}");
+    let mutable = check_program(&[
+        SourceFile::ambient("array.d.ts", declaration),
+        program.clone(),
+    ])
+    .expect_err("mutable bytes expose a userdata read with no lowering");
+    assert!(
+        mutable
+            .iter()
+            .any(|d| d.message.contains("arrayRead") && d.message.contains("userdata")),
+        "{mutable:?}"
+    );
+    let constant = format!("// @subscript-c-parameter function=\"arrayRead\" parameter=\"values\" const=true\n{declaration}");
+    let module = check_program(&[SourceFile::ambient("array.d.ts", constant), program])
+        .expect("const input does not read C writes");
+    assert_eq!(
+        module.foreign_fns[0].params[0].foreign_provenance,
+        Some(hir::ForeignTypeProvenance::ConstPointer)
+    );
 }

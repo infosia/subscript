@@ -733,6 +733,54 @@ export async function main(): Promise<void> {
     assert_eq!(both_tiers(program), b"101\n");
 }
 
+// compiler.md §324 acceptances 1, 2 and 6. One fixture run per tier.
+fn fixed_array_parameters_share_places_and_materialize_temporaries() {
+    let source = include_str!("../../corpus/accept/a474-c-array-parameter-storage.ts");
+    let golden = include_bytes!("../../corpus/accept/a474-c-array-parameter-storage.expected");
+    assert_eq!(both_tiers(source), golden);
+}
+
+// compiler.md §324 rule 1: an element place keeps its bounds check.
+fn fixed_array_parameter_checks_an_element_place() {
+    let files = [
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+        SourceFile::new("element.ts", "export function main(): void { const values: FixedArray<i32, 4>[] = []; subFixedSum(values[0]); }"),
+    ];
+    let libraries = [native_fixture::fixture().expect("native fixture").library()];
+    let jit = run_jit_with_native_libraries(&files, &libraries);
+    let ship = run_c_aot_with_native_libraries(&files, &libraries);
+    match (jit, ship) {
+        (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+            assert_eq!(jit, ship);
+            assert_eq!(jit.rule, TrapKind::IndexOutOfBounds);
+            assert_eq!(jit.pos.file, "element.ts");
+        }
+        (jit, ship) => panic!("expected element bounds traps: jit={jit:?}, ship={ship:?}"),
+    }
+}
+
+// compiler.md §324 rule 1: suspended locals retain their array storage.
+fn fixed_array_locals_keep_storage_across_await_and_yield() {
+    let program = r#"
+function* filledAfterYield(): Generator<i32> {
+  const values: FixedArray<i32, 4> = [10, 20, 30, 40];
+  yield 0;
+  Context.collect();
+  subFixedInts(values);
+  print(`${values[0]} ${values[1]} ${values[2]} ${values[3]}`);
+}
+export async function main(): Promise<void> {
+  const values: FixedArray<i32, 4> = [1, 2, 3, 4];
+  await Context.suspend();
+  Context.collect();
+  subFixedInts(values);
+  print(`${values[0]} ${values[1]} ${values[2]} ${values[3]}`);
+  for (const step of filledAfterYield()) { Context.collect(); }
+}
+"#;
+    assert_eq!(both_tiers(program), b"2 4 6 8\n11 22 33 44\n");
+}
+
 // compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
 // starts a dev run with a native library or a file provider and runs in
 // its own process, on that process's main thread.
@@ -741,6 +789,9 @@ pub(super) fn main() -> std::process::ExitCode {
         parallel: [
         ],
         main_thread: [
+            fixed_array_parameters_share_places_and_materialize_temporaries,
+            fixed_array_locals_keep_storage_across_await_and_yield,
+            fixed_array_parameter_checks_an_element_place,
             foreign_call_keeps_borrowed_storage_corpus,
             foreign_array_growth_and_nested_borrows_trap_at_the_push,
             foreign_member_array_growth_traps_at_the_push,

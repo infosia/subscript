@@ -445,8 +445,12 @@ impl<'p> Checker<'p> {
                     .pointer_parameters
                     .get(&key)
                     .is_some_and(|record| record.value);
-                (constant && matches!(self.apparent_type(ty), Type::Nullable(_, _)))
-                    .then_some(hir::ForeignTypeProvenance::ConstPointer)
+                (constant
+                    && matches!(
+                        self.apparent_type(ty),
+                        Type::Nullable(_, _) | Type::FixedArray(..)
+                    ))
+                .then_some(hir::ForeignTypeProvenance::ConstPointer)
             }
         }
     }

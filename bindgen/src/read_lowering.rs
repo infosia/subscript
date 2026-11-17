@@ -329,7 +329,7 @@ fn validate_parameter(
     function: &str,
     param: &CField,
 ) -> Result<(), ParseError> {
-    if param.array_len.is_some() || !is_struct(registry, &param.base) {
+    if !is_struct(registry, &param.base) {
         return Ok(());
     }
     let boundary = matches!(registry.get(&param.base), Some(Kind::Boundary));
@@ -338,9 +338,14 @@ fn validate_parameter(
     // and a by-value descriptor aggregate are inputs: C writes only
     // through their non-`const` pointers. A descriptor aggregate is a
     // struct whose pointer field is its pair.
-    let writable = param.pointer && !param.is_const;
-    let pointer =
-        (boundary && param.pointer).then(|| parameter_pass(view, param.base.as_str(), writable));
+    let writable = (param.pointer || param.array_len.is_some()) && !param.is_const;
+    let pointer = if let Some(length) = param.array_len {
+        subscript_boundary::fixed_array_parameter(view, Some(param.base.as_str()), length, writable)
+            .element
+            .map(|(_, pass)| pass)
+    } else {
+        (boundary && param.pointer).then(|| parameter_pass(view, param.base.as_str(), writable))
+    };
     let pass = if !boundary {
         StructPass::Scratch
     } else if let Some(pointer) = pointer {

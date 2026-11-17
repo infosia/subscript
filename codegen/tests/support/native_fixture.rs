@@ -36,6 +36,18 @@ use subscript_codegen::NativeLibrary;
 // signatures declared by the committed mirror.
 #[cfg(not(all(windows, target_env = "msvc")))]
 extern "C" {
+    fn subFixedReadLays();
+    fn subFixedTwoLays();
+    fn subFixedLayPointer();
+
+    fn subFixedInts();
+    fn subFixedReadInts();
+    fn subFixedBytes();
+    fn subFixedLays();
+    fn subFixedHandles();
+    fn subFixedStrings();
+    fn subFixedSum();
+
     fn subBoundaryNarrow();
     fn subBoundaryHalfCheck();
     fn subBoundaryHalfReturn();
@@ -251,6 +263,25 @@ impl Fixture {
 
             let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
             let symbols = vec![
+                (
+                    "subFixedReadLays".to_string(),
+                    subFixedReadLays as *const u8,
+                ),
+                ("subFixedTwoLays".to_string(), subFixedTwoLays as *const u8),
+                (
+                    "subFixedLayPointer".to_string(),
+                    subFixedLayPointer as *const u8,
+                ),
+                ("subFixedInts".to_string(), subFixedInts as *const u8),
+                (
+                    "subFixedReadInts".to_string(),
+                    subFixedReadInts as *const u8,
+                ),
+                ("subFixedBytes".to_string(), subFixedBytes as *const u8),
+                ("subFixedLays".to_string(), subFixedLays as *const u8),
+                ("subFixedHandles".to_string(), subFixedHandles as *const u8),
+                ("subFixedStrings".to_string(), subFixedStrings as *const u8),
+                ("subFixedSum".to_string(), subFixedSum as *const u8),
                 ("subBoundaryNarrow".into(), subBoundaryNarrow as *const u8),
                 (
                     "subBoundaryHalfCheck".into(),

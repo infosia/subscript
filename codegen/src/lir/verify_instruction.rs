@@ -1522,7 +1522,7 @@ pub(super) fn declared_call_signature(
                     function
                         .parameters
                         .iter()
-                        .map(|parameter| l::ValueType::Data(parameter.ty.clone()))
+                        .map(|parameter| crate::lir_types::foreign_parameter_type(&parameter.ty))
                         .collect(),
                     (function.return_type != Type::Void)
                         .then(|| l::ValueType::Data(function.return_type.clone())),

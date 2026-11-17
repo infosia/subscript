@@ -52,6 +52,8 @@ pub struct CallPlan {
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ParameterPlan {
+    /// A C array parameter: the address of script storage (compiler.md §324).
+    FixedArray(FixedArrayPlan),
     /// A scalar, an enum, a wire alias, or a handle: the value itself.
     Value,
     /// A string: a view of the script bytes (§28).
@@ -64,6 +66,16 @@ pub enum ParameterPlan {
     ByValue(StructPlan),
     /// A struct pointer (§187 rule 7).
     Pointer(PointerPlan),
+}
+
+/// The crossing kind and the build of each fixed array element (compiler.md §324 rule 4).
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct FixedArrayPlan {
+    /// The fixed extent and element pass, shared with the binder and checker.
+    pub kind: subscript_boundary::FixedArrayParameter<ClassId>,
+    /// The build and copy-back of a struct element.
+    pub element: Option<PointerPlan>,
 }
 
 /// How a call passes the bytes of one struct.
@@ -428,6 +440,21 @@ impl Planner<'_> {
             return Ok(ParameterPlan::CompletionEndpoint);
         }
         Ok(match &parameter.ty {
+            Type::FixedArray(element, length) => {
+                let class = match element.as_ref() {
+                    Type::Class(class) if self.is_value(*class) => Some(*class),
+                    _ => None,
+                };
+                let writable =
+                    parameter.foreign_provenance != Some(ForeignTypeProvenance::ConstPointer);
+                let kind =
+                    subscript_boundary::fixed_array_parameter(&self.view, class, *length, writable);
+                let element = kind
+                    .element
+                    .map(|(class, pass)| self.pointer(class, pass, &mut Vec::new()))
+                    .transpose()?;
+                ParameterPlan::FixedArray(FixedArrayPlan { kind, element })
+            }
             Type::Str => ParameterPlan::StringView,
             Type::Array(element) => {
                 // §187 rule 7: the call does not write `const` elements back.
@@ -673,9 +700,11 @@ impl Planner<'_> {
                 && subscript_boundary::builds_scratch(&self.view, class)
         };
         match ty {
-            Type::Array(element) => matches!(element.as_ref(), Type::Class(class)
+            Type::Array(element) | Type::FixedArray(element, _) => {
+                matches!(element.as_ref(), Type::Class(class)
                 if self.is_value(*class)
-                    && struct_pass(&self.view, *class) != StructPass::Bytes),
+                    && struct_pass(&self.view, *class) != StructPass::Bytes)
+            }
             Type::Nullable(inner, _) => {
                 matches!(inner.as_ref(), Type::Class(class)
                     if self.is_value(*class) && builds(*class))

@@ -268,6 +268,7 @@ fn plan_writes_back(plan: &CallPlan) -> bool {
         plan.pass == PointerPass::ScratchWrittenBack || plan.target.as_ref().is_some_and(structure)
     }
     plan.parameters.iter().any(|parameter| match parameter {
+        ParameterPlan::FixedArray(array) => array.element.as_ref().is_some_and(pointer_node),
         ParameterPlan::ByValue(plan) => structure(plan),
         ParameterPlan::Pointer(plan) => pointer_node(plan),
         ParameterPlan::Pair(pair) => pair
@@ -403,7 +404,11 @@ fn emitted_entry(id: &str) -> Result<(String, Expected, HashMap<String, usize>),
 #[test]
 fn the_emitted_c_marks_and_writes_back_as_the_plan_says() -> Result<(), String> {
     let mut seen = Vec::new();
-    for (id, _) in ENTRIES {
+    for id in ENTRIES
+        .into_iter()
+        .map(|(id, _)| id)
+        .chain(std::iter::once("a474-c-array-parameter-storage"))
+    {
         let (c, expected, sites) = emitted_entry(id)?;
         seen.extend(check_emitted(&c, &expected, &sites).map_err(|e| format!("{id}: {e}"))?);
     }

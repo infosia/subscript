@@ -76,6 +76,42 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         writebacks: &mut Vec<BoundaryPtrWriteback>,
     ) -> Result<String, String> {
         match plan {
+            ParameterPlan::FixedArray(array) => {
+                let Some(pointer) = &array.element else {
+                    return Ok(format!("((void*)({value}))"));
+                };
+                let header_type = self.emitter.class(pointer.class)?.source_name.clone();
+                match pointer.pass {
+                    PointerPass::ScriptMemory => return Ok(format!("(({header_type}*)({value}))")),
+                    PointerPass::Cycle => return Err(crate::lower::struct_cycle(&header_type)),
+                    PointerPass::ScratchWrittenBack | PointerPass::ScratchReadOnly => {}
+                }
+                let scratch = self.fresh();
+                let length = array.kind.length.max(1);
+                let _ = writeln!(out, "    {header_type} {scratch}[{length}];");
+                let language_type = self.emitter.ctype(&parameter.ty)?;
+                let target = pointer
+                    .target
+                    .as_ref()
+                    .ok_or_else(|| internal("fixed array element has no build plan"))?;
+                for index in 0..array.kind.length {
+                    let from = format!("(({language_type}*)({value}))->a[{index}]");
+                    let to = format!("{scratch}[{index}]");
+                    let built = self.marshal_boundary_struct(out, target, &from, position)?;
+                    let _ = writeln!(out, "    {to} = {built};");
+                    if let Some(plan) = &pointer.write_back {
+                        let snapshot = self.fresh();
+                        let _ = writeln!(out, "    {header_type} {snapshot}; memcpy(&{snapshot}, &{to}, sizeof {snapshot});");
+                        writebacks.push(BoundaryPtrWriteback {
+                            plan: plan.clone(),
+                            source: format!("(&{from})"),
+                            scratch: format!("(&{to})"),
+                            snapshot: format!("(&{snapshot})"),
+                        });
+                    }
+                }
+                Ok(scratch)
+            }
             ParameterPlan::Value if is_half(&parameter.ty) => {
                 Ok(format!("subscript_half_native({value})"))
             }

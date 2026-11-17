@@ -125,11 +125,25 @@ pub(crate) fn operand_type(
     })
 }
 
+/// The operand type required by a foreign parameter declaration (compiler.md §324 rule 5).
+pub(crate) fn foreign_parameter_type(declared: &Type) -> l::ValueType {
+    match declared {
+        Type::FixedArray(..) => l::ValueType::Address(l::AddressType {
+            pointee: declared.clone(),
+            array_base: None,
+        }),
+        _ => l::ValueType::Data(declared.clone()),
+    }
+}
+
 pub(crate) fn foreign_parameter_type_matches(
     module: &l::Module,
     actual: &l::ValueType,
     declared: &Type,
 ) -> bool {
+    if matches!(declared, Type::FixedArray(..)) {
+        return matches!(actual, l::ValueType::Address(address) if &address.pointee == declared);
+    }
     if actual == &l::ValueType::Data(declared.clone()) {
         return true;
     }

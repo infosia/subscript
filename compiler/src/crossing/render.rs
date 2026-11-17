@@ -196,6 +196,13 @@ impl Writer<'_> {
         for (parameter, plan) in declaration.parameters.iter().zip(&plan.parameters) {
             let path = parameter.source_name.as_str();
             match plan {
+                ParameterPlan::FixedArray(array) => {
+                    if let Some(element) = &array.element {
+                        self.pointer(path, element)?;
+                    } else {
+                        self.line(path, Word::ScriptMemory.text(), &[], &[]);
+                    }
+                }
                 ParameterPlan::Value => self.line(path, Word::Value.text(), &[], &[]),
                 ParameterPlan::StringView => self.line(path, Word::StringView.text(), &[], &[]),
                 ParameterPlan::CompletionEndpoint => {

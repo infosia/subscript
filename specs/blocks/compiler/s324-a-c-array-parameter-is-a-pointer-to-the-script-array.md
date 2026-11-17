@@ -88,3 +88,57 @@ C write went to the copy and the script read the old values.
    and after the change. LIR text goldens move only for entries with a
    foreign array parameter.
 6. The development tier and the ship tier print the same output.
+
+### 324.3 Phase Review
+
+Form: a foreign call takes `Address<FixedArray<T, N>>` for an array
+parameter. A local, a global, a field, or an element passes its own
+storage. Another expression passes a temporary (`AddressOfValue`). The
+verifier derives the expected operand type from the foreign
+declaration (`foreign_parameter_type`), so it rejects a value operand
+whose call signature agrees with itself. The crossing plan kind
+`ParameterPlan::FixedArray` comes from `fixed_array_parameter` in the
+`boundary` crate. The binder, the checker, the planner, and both
+emitters read it.
+
+Measured with a474 (the pin failed each form: the development tier
+with an internal lowering error, the ship tier with a C type error;
+`bind` rejected the string-view form):
+
+| Form | Development tier and ship tier |
+|---|---|
+| Non-`const` `int32_t[4]`, C adds to each element | `2 4 6 8` |
+| `const int32_t[4]`, C returns the sum | `20`, values unchanged |
+| Struct array passed as bytes | `11 22` |
+| Struct array with a count-first pair (scratch) | `31 42 7 8` |
+| Handle array | `true true` |
+| Struct array with a string view | `first second 51 62` |
+| Class field, and a call result (temporary) | `20 2 8`, `20` |
+| A local across `await`, and across `yield` | `2 4 6 8`, `11 22 33 44` |
+
+The CLI `check` output of all 462 entries is the same at the pin and
+after the change. Six LIR goldens of entries with no array parameter
+moved: the shared fixture mirror gained declarations, so foreign ids
+and mirror lines shifted. With the ids and lines normalized, the diff
+of those six is empty. Acceptance 5 did not state this.
+
+One fresh review found one MAJOR finding, realistic: an array of
+pointers (`int32_t *v[4]`, `const char *n[4]`) bound as a `FixedArray`
+of the pointee, and the call now compiled, so C read script values as
+pointers. `bind` now rejects a parameter or a struct field that is an
+array of pointers ("an array of pointers has no mirror type"). Three
+MINOR findings are fixed: the operand type derivation was written
+twice, no test held a `FixedArray` local in an async or generator
+frame, and an item order in `boundary/src/lib.rs`.
+
+### 324.4 Open
+
+1. A hand-written mirror that declares an array of pointers as a
+   `FixedArray` of the pointee passes the checker. The mirror holds no
+   fact that tells the two apart. A generated mirror never reaches
+   this (as §187.3 item 12).
+2. Contrived: a `FixedArray` argument under a cast or a narrowing node
+   is not a place, so it passes a temporary and C's writes are lost.
+3. A direct array of string views (`const View v[2]`) is rejected by
+   `check` with the generic text "provenance record incompatible",
+   which does not name the cause.

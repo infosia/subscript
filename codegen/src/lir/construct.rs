@@ -303,6 +303,26 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         expected: &Type,
         argument: &hir::Expr,
     ) -> Result<l::Operand, LowerError> {
+        if matches!(expected, Type::FixedArray(..)) {
+            if is_place_expr(argument) {
+                let place = self.prepare_place(argument)?;
+                return self.materialize_address(&place, &argument.pos);
+            }
+            let value = self.require_expr(argument)?;
+            return self
+                .emit(
+                    l::InstructionKind::AddressOfValue,
+                    vec![value],
+                    Some(l::ValueType::Address(l::AddressType {
+                        pointee: expected.clone(),
+                        array_base: None,
+                    })),
+                    false,
+                    Vec::new(),
+                    argument.pos.clone(),
+                )?
+                .ok_or_else(|| self.error(&argument.pos, "foreign array address is missing"));
+        }
         if self.embedded_header_extension(expected, argument).is_some() {
             return self.lower_stored_expr(expected, argument);
         }

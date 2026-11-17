@@ -262,10 +262,11 @@ impl AddressTaken<'_> {
                             .as_ref()
                             .and_then(|params| params.get(index))
                             .is_some_and(|parameter| {
-                                self.is_boundary_struct_pointer(parameter)
-                                    && matches!(argument.ty, Type::Class(_))
-                                    && is_place_expr(argument)
-                                    && !self.is_embedded_header_store(parameter, argument)
+                                is_place_expr(argument)
+                                    && (matches!(parameter, Type::FixedArray(..))
+                                        || (self.is_boundary_struct_pointer(parameter)
+                                            && matches!(argument.ty, Type::Class(_))
+                                            && !self.is_embedded_header_store(parameter, argument)))
                             })
                     {
                         self.place(argument);
