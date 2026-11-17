@@ -14,7 +14,10 @@ The owner decided these points on 2026-11-17:
 
 1. A stale handle (a handle used after its allocation is released) and a
    second release of one handle are defects without conditions. This
-   goes past Q6 ("undefined in both tiers") in `specs/blocks/collisions.md`.
+   decision is the premise of this study only. It does not change Q6
+   ("undefined in both tiers") in `specs/blocks/collisions.md`: a
+   `Context.free` at a wrong point is still in the design, and a fix
+   outside this study uses the severity rule of invariant 6.
 2. Keep `Context.free` and use versioned references. The other option,
    to remove `Context.free` and keep only `Context.collect`, was not
    chosen.
