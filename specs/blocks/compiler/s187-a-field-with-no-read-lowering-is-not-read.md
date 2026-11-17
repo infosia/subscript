@@ -199,7 +199,7 @@ LayList*` form is rejected.
    a handle element. This is a binder by-value/pointer mismatch outside
    this section. In C the array parameter is a non-`const` pointer that
    the call fills. When the mismatch is fixed, the scan of rule 3 must
-   classify this position.
+   classify this position. §324 fixes it.
 3. A mirror that keeps `const=true` after its header changes the
    member or parameter to non-`const` is accepted. Nothing compares a
    mirror with its header at check time.
