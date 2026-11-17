@@ -1344,4 +1344,18 @@ int32_t subDescReadLayTotal(SubDescReadLay lay);
 /* Answers `n` plus the label length. */
 int32_t subDescReadStrTotal(const SubDescReadStr *value);
 
+/* compiler.md §323: read borrowed storage across a synchronous callback. */
+int32_t subBorrowArray(SubSliceI32 values, SubCallbackInfo info);
+int32_t subBorrowString(SubStringView value, SubCallbackInfo info);
+int32_t subBorrowMember(SubDrawList value, SubCallbackInfo info);
+int32_t subBorrowPointer(const SubByValueI32One *value, SubCallbackInfo info);
+int32_t subBorrowMemberPointer(const SubDrawList *value, SubCallbackInfo info);
+int32_t subBorrowMemberString(const SubDescReadStr *value, SubCallbackInfo info);
+typedef struct SubBorrowDrawLists {
+    uint32_t tag;
+    size_t valuesCount;
+    const SubDrawList *values;
+} SubBorrowDrawLists;
+int32_t subBorrowScratchArray(SubBorrowDrawLists value, SubCallbackInfo info);
+
 #endif /* SUBSCRIPT_INTEROP_H */

@@ -163,16 +163,7 @@ pub(super) fn verify_host_completion(
                 .filter(|p| {
                     p.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
                 })
-                .flat_map(|p| match &p.ty {
-                    Type::Array(element) => vec![
-                        l::ValueType::Address(l::AddressType {
-                            pointee: (**element).clone(),
-                            array_base: None,
-                        }),
-                        l::ValueType::Data(Type::I32),
-                    ],
-                    ty => vec![l::ValueType::Data(ty.clone())],
-                })
+                .map(|p| l::ValueType::Data(p.ty.clone()))
                 .collect();
             let actual: Vec<_> = instruction
                 .operands

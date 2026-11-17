@@ -458,6 +458,16 @@ impl Context {
                 })
             });
         self.push_root_set(&mut work, &mut tracer, "roots", roots);
+        let borrowed = self
+            .boundary_borrows
+            .iter()
+            .filter_map(|record| match record {
+                BoundaryBorrow::Value { value, .. } => Some(*value),
+                BoundaryBorrow::Scope { .. } => None,
+            })
+            .enumerate()
+            .map(|(index, value)| (index, 0, value));
+        self.push_root_set(&mut work, &mut tracer, "native_borrows", borrowed);
         let shadow = self
             .shadow
             .iter()
@@ -1090,6 +1100,7 @@ impl Context {
                 elem_size: elem_size as u64,
                 data: std::ptr::null_mut(),
                 holders: 1,
+                native_borrows: 0,
             });
         }
         p
@@ -1241,6 +1252,14 @@ impl Context {
         // SAFETY: caller guarantees an array payload.
         let h = unsafe { &mut *(handle as *mut ArrayHeader) };
         if h.len == h.cap {
+            if h.native_borrows != 0 {
+                self.trap(
+                    TrapKind::ArrayStorageBorrowed,
+                    TrapKind::ArrayStorageBorrowed.message(None),
+                    pos_id,
+                );
+                return -1;
+            }
             let new_cap = if h.cap == 0 { 4 } else { h.cap * 2 };
             let elem = h.elem_size as usize;
             let new_data = self.alloc(new_cap as usize * elem, CLASS_ARRAY_DATA, pos_id);
@@ -1552,6 +1571,14 @@ impl Context {
     /// This walk preserves the collector's scalar-payload exclusions.
     pub fn reachable_words(&self, roots: &[usize]) -> Vec<usize> {
         let mut work = roots.to_vec();
+        work.extend(
+            self.boundary_borrows
+                .iter()
+                .filter_map(|record| match record {
+                    BoundaryBorrow::Value { value, .. } => Some(*value),
+                    BoundaryBorrow::Scope { .. } => None,
+                }),
+        );
         for &(base, count) in self.roots.iter().chain(&self.shadow) {
             for index in 0..count {
                 // SAFETY: registered root ranges remain live until their owner removes them.

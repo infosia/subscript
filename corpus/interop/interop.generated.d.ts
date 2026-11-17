@@ -96,6 +96,12 @@
 // @subscript-c-member aggregate="SubDescReadStrHolder" member="inner" const=true
 // @subscript-c-member aggregate="SubDescReadMutHolder" member="inner" const=false
 // @subscript-c-parameter function="subDescReadStrTotal" parameter="value" const=true
+// @subscript-c-descriptor function="subBorrowArray" parameter="values" aggregate="SubSliceI32" element="int32_t" const=true
+// @subscript-c-string-view function="subBorrowString" parameter="value" aggregate="SubStringView"
+// @subscript-c-parameter function="subBorrowPointer" parameter="value" const=true
+// @subscript-c-parameter function="subBorrowMemberPointer" parameter="value" const=true
+// @subscript-c-parameter function="subBorrowMemberString" parameter="value" const=true
+// @subscript-c-member aggregate="SubBorrowDrawLists" member="values" const=true
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -873,6 +879,20 @@ declare class SubDescReadMutHolder {
 
 declare function subDescReadLayTotal(lay: SubDescReadLay): i32;
 declare function subDescReadStrTotal(value: SubDescReadStr | null): i32;
+declare function subBorrowArray(values: i32[], info: SubCallbackInfo): i32;
+declare function subBorrowString(value: string, info: SubCallbackInfo): i32;
+declare function subBorrowMember(value: SubDrawList, info: SubCallbackInfo): i32;
+declare function subBorrowPointer(value: SubByValueI32One | null, info: SubCallbackInfo): i32;
+declare function subBorrowMemberPointer(value: SubDrawList | null, info: SubCallbackInfo): i32;
+declare function subBorrowMemberString(value: SubDescReadStr | null, info: SubCallbackInfo): i32;
+
+declare class SubBorrowDrawLists {
+  tag: u32;
+  values: SubDrawList[];
+  constructor(tag: u32, values: SubDrawList[]);
+}
+
+declare function subBorrowScratchArray(value: SubBorrowDrawLists, info: SubCallbackInfo): i32;
 
 type SubFloat16 = f16;
 

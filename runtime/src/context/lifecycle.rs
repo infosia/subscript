@@ -53,6 +53,7 @@ impl Context {
             live_bytes_counter: 0,
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
+            boundary_borrows: Vec::new(),
             dead_allocations: AddressSet::default(),
             retained_allocations: VecDeque::new(),
             retained_bytes: 0,
@@ -1009,6 +1010,30 @@ impl Context {
         base
     }
 
+    /// Keeps one derived foreign argument until its boundary scope ends (§323).
+    ///
+    /// # Safety
+    /// `value` is null or a live storage address.
+    /// If `array` is true, it names a Context array header.
+    pub unsafe fn boundary_borrow(&mut self, value: *mut u8, array: bool) {
+        if value.is_null() {
+            return;
+        }
+        let array_count = if array {
+            // SAFETY: the caller supplies an array header.
+            let header = unsafe { &mut *value.cast::<ArrayHeader>() };
+            let saved = header.native_borrows;
+            header.native_borrows = saved + 1;
+            Some(saved)
+        } else {
+            None
+        };
+        self.boundary_borrows.push(BoundaryBorrow::Value {
+            value: value as usize,
+            array_count,
+        });
+    }
+
     /// Releases the suffix allocated since `mark`. An out-of-range mark is
     /// an internal ABI disagreement; release everything rather than leak.
     pub fn boundary_scratch_release(&mut self, mark: usize) {
@@ -1018,9 +1043,38 @@ impl Context {
             0
         };
         for allocation in self.boundary_scratch.drain(mark..).rev() {
-            // SAFETY: each record owns a distinct allocation made by
-            // `boundary_scratch_alloc` and is drained exactly once.
+            // SAFETY: each drained record owns this allocation.
             unsafe { dealloc(allocation.base, allocation.layout) };
+        }
+    }
+
+    /// Starts one foreign call's storage and scratch scope (compiler.md §323).
+    #[must_use]
+    pub fn boundary_scope_mark(&mut self) -> usize {
+        let mark = self.boundary_borrows.len();
+        self.boundary_borrows.push(BoundaryBorrow::Scope {
+            scratch: self.boundary_scratch.len(),
+        });
+        mark
+    }
+
+    /// Ends each storage borrow and scratch allocation since `mark` (compiler.md §323).
+    pub fn boundary_scope_release(&mut self, mark: usize) {
+        while self.boundary_borrows.len() > mark {
+            match self.boundary_borrows.pop() {
+                Some(BoundaryBorrow::Value {
+                    value,
+                    array_count: Some(saved),
+                }) => {
+                    // SAFETY: this record roots the array until this release.
+                    unsafe { (*(value as *mut ArrayHeader)).native_borrows = saved };
+                }
+                Some(BoundaryBorrow::Scope { scratch }) => self.boundary_scratch_release(scratch),
+                Some(BoundaryBorrow::Value {
+                    array_count: None, ..
+                })
+                | None => {}
+            }
         }
     }
 

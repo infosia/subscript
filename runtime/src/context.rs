@@ -396,7 +396,8 @@ impl ArenaStats {
 
 /// Payload layout of a dynamic array (Q4): length, capacity, element
 /// size, a pointer to a separate `CLASS_ARRAY_DATA` allocation, and the
-/// counted-array holder count at offset 32.
+/// counted-array holder count at offset 32. The native borrow count uses
+/// offset 36 (compiler.md §323 rule 4).
 #[repr(C)]
 struct ArrayHeader {
     len: u64,
@@ -404,6 +405,8 @@ struct ArrayHeader {
     elem_size: u64,
     data: *mut u8,
     holders: u32,
+    // compiler.md §323 rule 4: this field uses the header padding.
+    native_borrows: u32,
 }
 
 struct Allocation {
@@ -513,6 +516,17 @@ fn mark_trace_target() -> Option<MarkTraceTarget> {
 struct BoundaryScratchAllocation {
     base: *mut u8,
     layout: Layout,
+}
+
+// compiler.md §323: a call scope owns each exact storage snapshot.
+enum BoundaryBorrow {
+    Scope {
+        scratch: usize,
+    },
+    Value {
+        value: usize,
+        array_count: Option<u32>,
+    },
 }
 
 /// Ship-tier module-global storage owned directly by one Context.
@@ -661,6 +675,7 @@ pub struct Context {
     // Collection marks and sweeps only this map.
     allocations: HashMap<usize, Allocation>,
     boundary_scratch: Vec<BoundaryScratchAllocation>,
+    boundary_borrows: Vec<BoundaryBorrow>,
     // Diagnostic-mode retained-and-poisoned addresses. Exact membership
     // preserves double-delete classification without putting dead records
     // in the map collection sweeps.
@@ -760,6 +775,7 @@ impl Drop for Context {
         // Closing before joining wakes children blocked in inbox waits. The
         // worker threads release their own Contexts before join completes.
         self.workers.shutdown();
+        self.boundary_scope_release(0);
         self.boundary_scratch_release(0);
         if let Some(block) = self.module_globals.take() {
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in

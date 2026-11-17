@@ -570,6 +570,169 @@ export function main(): void {
     );
 }
 
+fn foreign_call_keeps_borrowed_storage_corpus() {
+    let program = include_str!("../../corpus/accept/a473-foreign-call-keeps-borrowed-storage.ts");
+    let expected =
+        include_bytes!("../../corpus/accept/a473-foreign-call-keeps-borrowed-storage.expected");
+    assert_eq!(both_tiers(program), expected);
+}
+
+fn foreign_array_growth_and_nested_borrows_trap_at_the_push() {
+    for nested in [false, true] {
+        let inner = if nested {
+            "const quiet = new SubCallbackInfo((message, first, second) => {}, null, null);\n      subBorrowArray(state.values, quiet);"
+        } else {
+            ""
+        };
+        let program = format!(
+            r#"
+class State {{
+  values: i32[];
+  constructor() {{ this.values = [1, 2, 3, 4]; }}
+}}
+export function main(): void {{
+  const state = new State();
+  const info = new SubCallbackInfo((message, first, second) => {{
+    if (first !== null) {{
+      const state = first as State;
+      {inner}
+      state.values.push(5);
+    }}
+  }}, state, null);
+  subBorrowArray(state.values, info);
+}}
+"#
+        );
+        let sources = [
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+            SourceFile::new("borrow.ts", &program),
+        ];
+        let libraries = [native_fixture::fixture().expect("native fixture").library()];
+        let jit = run_jit_with_native_libraries(&sources, &libraries);
+        let ship = run_c_aot_with_native_libraries(&sources, &libraries);
+        let (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) = (jit, ship) else {
+            panic!("borrowed growth must trap in each tier");
+        };
+        assert_eq!(jit, ship);
+        assert_eq!(jit.rule, TrapKind::ArrayStorageBorrowed);
+        assert_eq!(
+            jit.message,
+            "the array storage is borrowed by a native call"
+        );
+        assert_eq!(jit.pos.file, "borrow.ts");
+        assert_eq!(
+            jit.pos.line as usize,
+            program
+                .lines()
+                .position(|line| line.contains("state.values.push(5)"))
+                .expect("push position")
+                + 1
+        );
+        assert_eq!(jit.pos.col, 7);
+        println!(
+            "nested={nested}: {}: {} at {}",
+            jit.rule, jit.message, jit.pos
+        );
+    }
+}
+
+fn foreign_member_array_growth_traps_at_the_push() {
+    let program = r#"
+class State {
+  values: u32[];
+  constructor() { this.values = [1, 2, 3, 4]; }
+}
+export function main(): void {
+  const state = new State();
+  const info = new SubCallbackInfo((message, first, second) => {
+    if (first !== null) {
+      const state = first as State;
+      state.values.push(5);
+    }
+  }, state, null);
+  subBorrowMember(new SubDrawList(0, state.values), info);
+}
+"#;
+    let sources = [
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+        SourceFile::new("member.ts", program),
+    ];
+    let libraries = [native_fixture::fixture().expect("native fixture").library()];
+    let jit = run_jit_with_native_libraries(&sources, &libraries);
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries);
+    let (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) = (jit, ship) else {
+        panic!("borrowed member growth must trap in each tier");
+    };
+    assert_eq!(jit, ship);
+    assert_eq!(jit.rule, TrapKind::ArrayStorageBorrowed);
+    assert_eq!(
+        jit.message,
+        "the array storage is borrowed by a native call"
+    );
+    assert_eq!(jit.pos.file, "member.ts");
+    assert_eq!(jit.pos.line, 11);
+    assert_eq!(jit.pos.col, 7);
+}
+
+fn foreign_array_element_pointer_growth_traps_at_the_push() {
+    let program = r#"
+class State {
+  values: SubByValueI32One[];
+  constructor() { this.values = [new SubByValueI32One(1), new SubByValueI32One(2), new SubByValueI32One(3), new SubByValueI32One(4)]; }
+}
+export function main(): void {
+  const state = new State();
+  const info = new SubCallbackInfo((message, first, second) => {
+    if (first !== null) {
+      const state = first as State;
+      state.values.push(new SubByValueI32One(5));
+    }
+  }, state, null);
+  subBorrowPointer(state.values[0], info);
+}
+"#;
+    let sources = [
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+        SourceFile::new("element.ts", program),
+    ];
+    let libraries = [native_fixture::fixture().expect("native fixture").library()];
+    let jit = run_jit_with_native_libraries(&sources, &libraries);
+    let ship = run_c_aot_with_native_libraries(&sources, &libraries);
+    let (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) = (jit, ship) else {
+        panic!("growth must trap while C holds an element pointer");
+    };
+    assert_eq!(jit, ship);
+    assert_eq!(jit.rule, TrapKind::ArrayStorageBorrowed);
+    assert_eq!(
+        jit.message,
+        "the array storage is borrowed by a native call"
+    );
+    assert_eq!(jit.pos.file, "element.ts");
+    assert_eq!(jit.pos.line, 11);
+    assert_eq!(jit.pos.col, 7);
+}
+
+fn foreign_field_pointer_keeps_its_owner_across_a_later_await() {
+    let program = r#"
+class Owner {
+  tag: i32;
+  value: SubByValueI32One;
+  constructor() { this.tag = 0; this.value = new SubByValueI32One(1); }
+}
+async function later(info: SubCallbackInfo): Promise<SubCallbackInfo> {
+  await Context.suspend();
+  Context.collect();
+  return info;
+}
+export async function main(): Promise<void> {
+  const owner = new Owner();
+  const info = new SubCallbackInfo((message, first, second) => { Context.collect(); }, null, null);
+  print(`${subBorrowPointer(owner.value, await later(info))}`);
+}
+"#;
+    assert_eq!(both_tiers(program), b"101\n");
+}
+
 // compiler.md §190.1 rule 3: phase 1 runs in parallel; each phase 2 test
 // starts a dev run with a native library or a file provider and runs in
 // its own process, on that process's main thread.
@@ -578,6 +741,11 @@ pub(super) fn main() -> std::process::ExitCode {
         parallel: [
         ],
         main_thread: [
+            foreign_call_keeps_borrowed_storage_corpus,
+            foreign_array_growth_and_nested_borrows_trap_at_the_push,
+            foreign_member_array_growth_traps_at_the_push,
+            foreign_array_element_pointer_growth_traps_at_the_push,
+            foreign_field_pointer_keeps_its_owner_across_a_later_await,
             handle_create_retain_release,
             string_label_round_trips_through_the_callback,
             buffer_view_sum_through_the_callback,

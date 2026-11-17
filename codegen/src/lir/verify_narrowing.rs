@@ -74,7 +74,6 @@ pub(super) fn is_conversion(kind: &l::InstructionKind) -> bool {
         | K::StoreAddress
         | K::LoadField(_)
         | K::Length
-        | K::ForeignArrayData
         | K::ArrayLiteral
         | K::ArrayWithCapacity
         | K::ArraySpreadLiteral(_)

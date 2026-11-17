@@ -1797,22 +1797,24 @@ mod verifier_tests {
     }
 
     #[test]
-    fn foreign_array_call_without_snapshot_operands_is_rejected() {
-        let array = Type::Array(Box::new(Type::I32));
-        let mut module = hand_built_call_module(
-            l::CallTargetKind::Foreign(l::ForeignFunctionId(0)),
-            vec![l::ValueType::Data(array.clone())],
-            None,
-            vec![l::ValueType::Data(array.clone())],
-            None,
-        );
+    fn foreign_array_call_with_raw_snapshot_operands_is_rejected() {
+        // compiler.md §323 rule 3: a pointer/count pair omits the managed array.
+        let snapshots = vec![
+            l::ValueType::Address(l::AddressType {
+                pointee: Type::I32,
+                array_base: None,
+            }),
+            l::ValueType::Data(Type::I32),
+        ];
+        let foreign = l::CallTargetKind::Foreign(l::ForeignFunctionId(0));
+        let mut module = hand_built_call_module(foreign, snapshots.clone(), None, snapshots, None);
         module.foreign_functions.push(l::ForeignFunction {
             completion_result: None,
             id: l::ForeignFunctionId(0),
             source_name: "consume".to_string(),
             parameters: vec![l::ForeignParameter {
                 source_name: "values".to_string(),
-                ty: array,
+                ty: Type::Array(Box::new(Type::I32)),
                 foreign_provenance: Some(l::ForeignTypeProvenance::Descriptor {
                     aggregate: "Values".to_string(),
                     element: "int32_t".to_string(),
@@ -1824,7 +1826,7 @@ mod verifier_tests {
             include: "probe.h".to_string(),
             pos: pos(),
         });
-        let errors = verify_module(&module).expect_err("missing snapshot operands must fail");
+        let errors = verify_module(&module).expect_err("raw pair must fail");
         assert!(errors.iter().any(|error| error
             .message
             .contains("call signature disagrees with the target declaration")));

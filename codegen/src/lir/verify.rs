@@ -22,6 +22,49 @@ pub(super) fn verify_function(
     super::verify_narrowing::verify_narrowing(function, errors);
     verify_address_invalidation(function, errors);
     verify_string_operands(function, errors);
+    verify_suspended_storage_owners(function, errors);
+}
+
+/// A suspended derived address carries its owners (compiler.md §323 rules 1 and 3).
+fn verify_suspended_storage_owners(function: &l::Function, errors: &mut Vec<VerifyError>) {
+    let dependencies = crate::root_storage::value_dependencies(function);
+    let origin = |value: l::ValueId| {
+        function
+            .liveness
+            .value_origins
+            .get(value.0 as usize)
+            .copied()
+            .unwrap_or(value)
+    };
+    for block in &function.blocks {
+        let l::Terminator::Suspend { arguments, .. } = &block.terminator else {
+            continue;
+        };
+        let carried = arguments
+            .iter()
+            .filter_map(|argument| match argument {
+                l::Operand::Value(value) => Some(origin(*value)),
+                l::Operand::Constant(_) => None,
+            })
+            .collect::<BTreeSet<_>>();
+        for argument in arguments {
+            let l::Operand::Value(value) = argument else {
+                continue;
+            };
+            if !function
+                .values
+                .get(value.0 as usize)
+                .is_some_and(|value| matches!(value.ty, l::ValueType::Address(_)))
+            {
+                continue;
+            }
+            for owner in &dependencies[value.0 as usize] {
+                if !carried.contains(&origin(*owner)) {
+                    errors.push(finding(function, format!("suspend in block {} carries derived address {} without storage owner {}", block.id.0, value.0, owner.0)));
+                }
+            }
+        }
+    }
 }
 
 /// §218.1 rule 2: a string operand can be null, so its only reader is the

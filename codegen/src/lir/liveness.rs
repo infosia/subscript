@@ -314,6 +314,18 @@ pub(super) fn thread_suspension_live_ins(function: &mut l::Function) -> Result<(
 
 /// Computes the value live-ins with the lowering's single graph fixed point.
 fn lir_live_ins(function: &l::Function, original_value_count: usize) -> Vec<BTreeSet<l::ValueId>> {
+    // compiler.md §323 rule 1: an address and its storage cross suspension together.
+    let dependencies = crate::root_storage::value_dependencies(function);
+    let uses_of = |value: l::ValueId| {
+        std::iter::once(value).chain(dependencies[value.0 as usize].iter().copied().filter(
+            move |_| {
+                matches!(
+                    function.values[value.0 as usize].ty,
+                    l::ValueType::Address(_)
+                )
+            },
+        ))
+    };
     let mut uses = vec![BTreeSet::new(); function.blocks.len()];
     let mut definitions = vec![BTreeSet::new(); function.blocks.len()];
     for block in &function.blocks {
@@ -328,8 +340,10 @@ fn lir_live_ins(function: &l::Function, original_value_count: usize) -> Vec<BTre
         for instruction in &block.instructions {
             for operand in &instruction.operands {
                 if let l::Operand::Value(value) = operand {
-                    if !definitions[index].contains(value) {
-                        uses[index].insert(*value);
+                    for value in uses_of(*value) {
+                        if !definitions[index].contains(&value) {
+                            uses[index].insert(value);
+                        }
                     }
                 }
             }
@@ -337,7 +351,10 @@ fn lir_live_ins(function: &l::Function, original_value_count: usize) -> Vec<BTre
                 definitions[index].insert(result);
             }
         }
-        for value in terminator_values(&block.terminator) {
+        for value in terminator_values(&block.terminator)
+            .into_iter()
+            .flat_map(&uses_of)
+        {
             if !definitions[index].contains(&value) {
                 uses[index].insert(value);
             }

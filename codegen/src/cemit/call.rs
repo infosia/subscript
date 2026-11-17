@@ -1,6 +1,7 @@
 //! Script calls and foreign calls.
 
 use super::*;
+use subscript_boundary::PointerPass;
 use subscript_compiler::crossing::ParameterPlan;
 
 impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
@@ -241,11 +242,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         }
         // §187 rule 7: the scratch scope opens only for a call whose build
         // can allocate.
-        let scratch_mark = if plan.scratch_scope {
+        let scratch_mark = if plan.scratch_scope
+            || plan.parameters.iter().any(|parameter| {
+                !matches!(
+                    parameter,
+                    ParameterPlan::Value | ParameterPlan::CompletionEndpoint
+                )
+            }) {
             let mark = self.fresh();
             let call = self.emitter.runtime_call(
                 "uint64_t",
-                "subscript_rt_boundary_scratch_mark",
+                "subscript_rt_boundary_scope_mark",
                 &["void*".into()],
                 &["ctx".into()],
             );
@@ -277,40 +284,35 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 continue;
             }
             if let ParameterPlan::Pair(pair) = parameter_plan {
-                let Type::Array(element) = &parameter.ty else {
-                    return Err(internal(format!(
-                        "foreign call `{}` pair parameter `{}` is not an array",
-                        declaration.source_name, parameter.source_name
-                    )));
-                };
-                let data = operands.get(cursor).ok_or_else(|| {
-                    internal(format!(
-                        "foreign call `{}` array parameter `{}` has no data snapshot",
-                        declaration.source_name, parameter.source_name
-                    ))
-                })?;
-                let count = operands.get(cursor + 1).ok_or_else(|| {
-                    internal(format!(
-                        "foreign call `{}` array parameter `{}` has no count snapshot",
-                        declaration.source_name, parameter.source_name
-                    ))
-                })?;
-                let expected = l::ValueType::Address(l::AddressType {
-                    pointee: element.as_ref().clone(),
-                    array_base: None,
-                });
-                if operand_types.get(cursor) != Some(&expected)
-                    || operand_types.get(cursor + 1) != Some(&l::ValueType::Data(Type::I32))
-                {
-                    return Err(internal(format!(
-                        "foreign call `{}` array parameter `{}` snapshot types disagree with its declaration",
-                        declaration.source_name, parameter.source_name
-                    )));
+                let value = operands
+                    .get(cursor)
+                    .ok_or_else(|| internal("foreign array operand is missing"))?;
+                if operand_types.get(cursor) != Some(&l::ValueType::Data(parameter.ty.clone())) {
+                    return Err(internal(
+                        "foreign array operand does not name its managed storage",
+                    ));
                 }
+                self.keep_foreign_storage(out, value, pair.elements.is_none())?;
+                let data = self.emitter.runtime_call(
+                    "const void*",
+                    "subscript_rt_array_data",
+                    &["void*".into(), "const void*".into()],
+                    &["ctx".into(), value.clone()],
+                );
+                let count = self.emitter.runtime_call(
+                    "int32_t",
+                    "subscript_rt_array_len",
+                    &["void*".into(), "const void*".into()],
+                    &["ctx".into(), value.clone()],
+                );
                 let (data, count) = match &pair.elements {
-                    Some(elements) => {
-                        self.marshal_boundary_array(out, elements, data, count, boundary_position)?
-                    }
+                    Some(elements) => self.marshal_boundary_array(
+                        out,
+                        elements,
+                        &data,
+                        &count,
+                        boundary_position,
+                    )?,
                     None => (data.clone(), count.clone()),
                 };
                 match parameter.foreign_provenance.as_ref() {
@@ -345,8 +347,20 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         )))
                     }
                 }
-                cursor += 2;
+                cursor += 1;
                 continue;
+            }
+            // compiler.md §323 rule 2: a native pointer can borrow an array element.
+            if matches!(parameter_plan, ParameterPlan::Pointer(pointer)
+                if matches!(pointer.pass, PointerPass::ScriptMemory | PointerPass::ScratchWrittenBack))
+            {
+                if let Some(l::ValueType::Address(l::AddressType {
+                    array_base: Some(base),
+                    ..
+                })) = operand_types.get(cursor)
+                {
+                    self.keep_foreign_storage(out, &self.value(*base), true)?;
+                }
             }
             let value = operands.get(cursor).ok_or_else(|| {
                 internal(format!(
@@ -424,7 +438,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         if let Some(mark) = scratch_mark {
             let release = self.emitter.runtime_call(
                 "void",
-                "subscript_rt_boundary_scratch_release",
+                "subscript_rt_boundary_scope_release",
                 &["void*".into(), "uint64_t".into()],
                 &["ctx".into(), mark],
             );

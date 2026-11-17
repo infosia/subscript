@@ -69,6 +69,21 @@ pub(crate) fn struct_cycle(owner: &str) -> String {
 }
 
 impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
+    /// Records a storage derivation in its call scope (compiler.md §323 rule 3).
+    fn keep_foreign_storage(&mut self, value: Value, array: bool) -> Result<(), String> {
+        if self
+            .boundary_targets
+            .as_ref()
+            .and_then(|targets| targets.scratch_mark)
+            .is_none()
+        {
+            return Err(internal("a foreign storage derivation has no call scope"));
+        }
+        let kind = self.iconst(types::I32, i64::from(array));
+        self.call_runtime(self.ml.rt.boundary_borrow, &[self.ctx, value, kind], false)?;
+        Ok(())
+    }
+
     // §296 rules 1–2: a failed build releases before propagating its trap.
     fn scratch_allocation_check(&mut self) -> Result<(), String> {
         let mark = self
@@ -82,11 +97,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let done = self.builder.create_block();
         self.builder.ins().brif(failed, release, &[], done, &[]);
         self.builder.switch_to_block(release);
-        self.call_runtime(
-            self.ml.rt.boundary_scratch_release,
-            &[self.ctx, mark],
-            false,
-        )?;
+        self.call_runtime(self.ml.rt.boundary_scope_release, &[self.ctx, mark], false)?;
         self.builder.ins().jump(done, &[]);
         self.builder.switch_to_block(done);
         self.trap_check();
@@ -135,8 +146,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .filter(|parameter| {
                 parameter.foreign_provenance != Some(l::ForeignTypeProvenance::CompletionEndpoint)
             })
-            .map(|parameter| usize::from(matches!(parameter.ty, Type::Array(_))) + 1)
-            .sum::<usize>();
+            .count();
         if operands.len() != operand_count || parameter_types.len() != operand_count {
             return Err(internal(format!(
                 "foreign call `{}` has inconsistent arity",
@@ -161,9 +171,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         }
         // §187 rule 7: the scratch scope opens only for a call whose build
         // can allocate.
-        let scratch_mark = if plan.scratch_scope {
+        let scratch_mark = if plan.scratch_scope
+            || plan.parameters.iter().any(|parameter| {
+                !matches!(
+                    parameter,
+                    ParameterPlan::Value | ParameterPlan::CompletionEndpoint
+                )
+            }) {
             Some(
-                self.call_runtime(self.ml.rt.boundary_scratch_mark, &[self.ctx], false)?
+                self.call_runtime(self.ml.rt.boundary_scope_mark, &[self.ctx], false)?
                     .ok_or_else(|| internal("boundary scratch mark has no result"))?,
             )
         } else {
@@ -195,42 +211,40 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 )?;
                 continue;
             }
-            let (value, array_snapshot) = if let ParameterPlan::Pair(_) = parameter_plan {
-                let Type::Array(element) = &parameter.ty else {
-                    return Err(internal(format!(
-                        "foreign pair parameter `{}` is not an array",
-                        parameter.source_name
-                    )));
-                };
-                let data_ty = parameter_types
+            let (value, array_snapshot) = if let ParameterPlan::Pair(pair) = parameter_plan {
+                let ty = parameter_types
                     .get(cursor)
-                    .ok_or_else(|| internal("foreign array data type is missing"))?;
-                let count_ty = parameter_types
-                    .get(cursor + 1)
-                    .ok_or_else(|| internal("foreign array count type is missing"))?;
-                let expected_data = l::ValueType::Address(l::AddressType {
-                    pointee: (**element).clone(),
-                    array_base: None,
-                });
-                if data_ty != &expected_data || count_ty != &l::ValueType::Data(Type::I32) {
-                    return Err(internal(format!(
-                        "foreign array parameter `{}` snapshot types disagree with the declaration",
-                        parameter.source_name
-                    )));
+                    .ok_or_else(|| internal("foreign array type is missing"))?;
+                if *ty != l::ValueType::Data(parameter.ty.clone()) {
+                    return Err(internal(
+                        "foreign array operand does not name its managed storage",
+                    ));
                 }
-                let data = self.expect_scalar(
-                    *operands
-                        .get(cursor)
-                        .ok_or_else(|| internal("foreign array data is missing"))?,
-                )?;
-                let count = self.expect_scalar(
-                    *operands
-                        .get(cursor + 1)
-                        .ok_or_else(|| internal("foreign array count is missing"))?,
-                )?;
-                cursor += 2;
+                let handle = self.expect_scalar(operands[cursor])?;
+                self.keep_foreign_storage(handle, pair.elements.is_none())?;
+                let data = self
+                    .call_runtime(self.ml.rt.array_data, &[self.ctx, handle], false)?
+                    .ok_or_else(|| internal("foreign array data is missing"))?;
+                let count = self
+                    .call_runtime(self.ml.rt.array_len, &[self.ctx, handle], false)?
+                    .ok_or_else(|| internal("foreign array count is missing"))?;
+                cursor += 1;
                 (RV::None, Some((data, count)))
             } else {
+                // compiler.md §323 rule 2: a native pointer can borrow an array element.
+                if matches!(parameter_plan, ParameterPlan::Pointer(pointer)
+                    if matches!(pointer.pass, PointerPass::ScriptMemory | PointerPass::ScratchWrittenBack))
+                {
+                    if let Some(l::ValueType::Address(l::AddressType {
+                        array_base: Some(base),
+                        ..
+                    })) = parameter_types.get(cursor)
+                    {
+                        let value = self.value(*base)?;
+                        let value = self.expect_scalar(value)?;
+                        self.keep_foreign_storage(value, true)?;
+                    }
+                }
                 let ty = parameter_types
                     .get(cursor)
                     .ok_or_else(|| internal("foreign parameter type is missing"))?;
@@ -316,11 +330,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             self.builder.switch_to_block(release);
         }
         if let Some(mark) = scratch_mark {
-            self.call_runtime(
-                self.ml.rt.boundary_scratch_release,
-                &[self.ctx, mark],
-                false,
-            )?;
+            self.call_runtime(self.ml.rt.boundary_scope_release, &[self.ctx, mark], false)?;
         }
         for trap in traps {
             if trap.kind == l::TrapKind::Call {
@@ -797,6 +807,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             ParameterPlan::StringView => {
                 let handle = self.expect_scalar(value)?;
+                self.keep_foreign_storage(handle, false)?;
                 let data = self
                     .call_runtime(self.ml.rt.str_data, &[self.ctx, handle], false)?
                     .ok_or_else(|| internal("foreign string data is missing"))?;
@@ -855,6 +866,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             }
             ParameterPlan::Pointer(pointer) => {
                 let source = self.boundary_pointer_value(value)?;
+                self.keep_foreign_storage(source, false)?;
                 match pointer.pass {
                     PointerPass::ScriptMemory => {
                         self.push_foreign_argument(signature, arguments, types::I64, source);
@@ -1188,6 +1200,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset);
+                    self.keep_foreign_storage(handle, false)?;
                     let data = self
                         .call_runtime(self.ml.rt.str_data, &[self.ctx, handle], false)?
                         .ok_or_else(|| internal("boundary string data is missing"))?;
@@ -1207,6 +1220,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset);
+                    self.keep_foreign_storage(handle, pair.elements.is_none())?;
                     let length = self
                         .call_runtime(self.ml.rt.array_len, &[self.ctx, handle], false)?
                         .ok_or_else(|| internal("boundary array length is missing"))?;
@@ -1232,6 +1246,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         self.builder
                             .ins()
                             .load(types::I64, flags(), source, language_offset);
+                    self.keep_foreign_storage(source_pointer, false)?;
                     // The populated struct is a scratch struct. The copy-back
                     // keeps the script link, and the call writes back the
                     // scratch copy of a non-`const` target (§187 rule 7).

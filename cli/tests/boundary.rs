@@ -247,7 +247,7 @@ fn a_rejected_program_gives_the_check_status_and_diagnostics() -> Result<(), Str
 }
 
 /// What the plan of one callee says about each of its calls: the call
-/// opens a scratch scope, and the call writes back.
+/// opens a storage scope, and the call writes back.
 type Expected = HashMap<String, (bool, bool)>;
 
 /// True when a pointer node at any depth of `plan` is written back.
@@ -279,11 +279,11 @@ fn plan_writes_back(plan: &CallPlan) -> bool {
     })
 }
 
-/// The scratch mark and the write-back of each call of `callee` in the
+/// The scope mark and the write-back of each call of `callee` in the
 /// emitted C. A mark is in the build that comes after the previous call
 /// or the function start; a write-back is the guarded block that follows
 /// the call statement and its result copy.
-/// A standalone scratch release ends the previous call. In contrast,
+/// A standalone scope release ends the previous call. In contrast,
 /// `cemit/marshal.rs` emits an allocation-failure release inside a one-line
 /// `if (*(const uint32_t*)ctx != 0u) { ...; goto unwind; }` block: that
 /// conditional exit is part of building the current call, so pass it.
@@ -308,14 +308,14 @@ fn emitted_calls(c: &str, callee: &str) -> Vec<(bool, bool)> {
             if !before.starts_with(' ')
                 || before
                     .trim_start()
-                    .starts_with("subscript_rt_boundary_scratch_release(")
+                    .starts_with("subscript_rt_boundary_scope_release(")
                 || before
                     .trim_start()
                     .starts_with("if (*(const uint32_t*)ctx == 0u) {")
             {
                 break;
             }
-            if before.contains("subscript_rt_boundary_scratch_mark(") {
+            if before.contains("subscript_rt_boundary_scope_mark(") {
                 mark = true;
                 break;
             }
@@ -332,7 +332,7 @@ fn emitted_calls(c: &str, callee: &str) -> Vec<(bool, bool)> {
 }
 
 /// Compares the emitted C with the plans: each call of each callee has a
-/// scratch mark exactly when the plan opens a scratch scope, and a
+/// storage mark when the plan needs scratch or borrowed storage, and a
 /// write-back exactly when the plan writes back. The number of calls is
 /// the number of sites that the command prints.
 fn check_emitted(
@@ -353,7 +353,7 @@ fn check_emitted(
         for call in calls {
             if call != *plan {
                 return Err(format!(
-                    "`{callee}`: the C has (scratch mark, write-back) {call:?}, the plan {plan:?}"
+                    "`{callee}`: the C has (scope mark, write-back) {call:?}, the plan {plan:?}"
                 ));
             }
             seen.push(call);
@@ -380,7 +380,16 @@ fn emitted_entry(id: &str) -> Result<(String, Expected, HashMap<String, usize>),
             .clone();
         expected.insert(
             name.clone(),
-            (site.plan.scratch_scope, plan_writes_back(&site.plan)),
+            (
+                site.plan.scratch_scope
+                    || site.plan.parameters.iter().any(|parameter| {
+                        !matches!(
+                            parameter,
+                            ParameterPlan::Value | ParameterPlan::CompletionEndpoint
+                        )
+                    }),
+                plan_writes_back(&site.plan),
+            ),
         );
         *sites.entry(name).or_insert(0) += 1;
     }
@@ -388,8 +397,8 @@ fn emitted_entry(id: &str) -> Result<(String, Expected, HashMap<String, usize>),
 }
 
 /// Acceptance 2: for each call site of the corpus programs of acceptance
-/// 1, the emitted C holds a scratch mark exactly when the plan opens a
-/// scratch scope, and a write-back exactly when the plan writes back. The
+/// 1, the emitted C holds a scope mark for scratch or borrowed storage.
+/// It holds a write-back exactly when the plan writes back. The
 /// bound program has no C: its fixed array of structs stops emission.
 #[test]
 fn the_emitted_c_marks_and_writes_back_as_the_plan_says() -> Result<(), String> {
@@ -414,7 +423,7 @@ fn the_emitted_c_marks_and_writes_back_as_the_plan_says() -> Result<(), String> 
     Ok(())
 }
 
-/// Core principle 9: a C text that drops a write-back or adds a scratch
+/// Core principle 9: a C text that drops a write-back or adds a scope
 /// mark, and a plan that differs from the C, each fail the compare. The
 /// test builds each violating form; it changes no record that a check
 /// reads.
@@ -423,38 +432,46 @@ fn a_c_text_or_a_plan_that_disagrees_fails_the_compare() -> Result<(), String> {
     let (c, expected, sites) = emitted_entry("a100-interop-texture-descriptor-read")?;
     check_emitted(&c, &expected, &sites)?;
     let callee = "subProbeTextureDescriptorFill";
-    assert_eq!(expected.get(callee), Some(&(false, true)));
+    assert_eq!(expected.get(callee), Some(&(true, true)));
 
-    let guard = format!("{callee}(t5);\n    if (*(const uint32_t*)ctx == 0u) {{");
+    let call = c
+        .lines()
+        .find(|line| line.starts_with("    ") && line.contains(&format!("{callee}(")))
+        .ok_or("the C has no native call")?;
+    let guard = format!("{call}\n    if (*(const uint32_t*)ctx == 0u) {{");
     assert!(c.contains(&guard), "the write-back follows the call");
-    let dropped = c.replacen(&guard, &format!("{callee}(t5);\n    {{"), 1);
+    let dropped = c.replacen(&guard, &format!("{call}\n    {{"), 1);
     assert!(check_emitted(&dropped, &expected, &sites).is_err());
 
-    let marked = c.replacen(
-        &format!("    {callee}(t5);"),
-        &format!("    uint64_t t99 = subscript_rt_boundary_scratch_mark(ctx);\n    {callee}(t5);"),
-        1,
-    );
-    assert!(check_emitted(&marked, &expected, &sites).is_err());
-
+    let mark = c
+        .lines()
+        .find(|line| line.contains(" = subscript_rt_boundary_scope_mark("))
+        .ok_or("the C has no call scope mark")?;
+    let unmarked = c.replacen(&format!("{mark}\n"), "", 1);
+    assert!(check_emitted(&unmarked, &expected, &sites).is_err());
     let mut other = expected.clone();
-    other.insert(callee.into(), (true, true));
+    other.insert(callee.into(), (false, true));
+    check_emitted(&unmarked, &other, &sites)?;
     assert!(check_emitted(&c, &other, &sites).is_err());
-    let failure_release = marked.replacen(
-        &format!("    {callee}(t5);"),
-        &format!(
-            "    if (*(const uint32_t*)ctx != 0u) {{ subscript_rt_boundary_scratch_release(ctx, t99); goto unwind; }}\n    {callee}(t5);"
-        ),
+
+    let marked = unmarked.replacen(
+        call,
+        &format!("    uint64_t t99 = subscript_rt_boundary_scope_mark(ctx);\n{call}"),
         1,
     );
-    check_emitted(&failure_release, &other, &sites)?;
-    assert!(check_emitted(&failure_release, &expected, &sites).is_err());
+    check_emitted(&marked, &expected, &sites)?;
+    assert!(check_emitted(&marked, &other, &sites).is_err());
+    let failure_release = marked.replacen(call,
+        &format!("    if (*(const uint32_t*)ctx != 0u) {{ subscript_rt_boundary_scope_release(ctx, t99); goto unwind; }}\n{call}"), 1);
+    check_emitted(&failure_release, &expected, &sites)?;
+    assert!(check_emitted(&failure_release, &other, &sites).is_err());
     let previous_release = marked.replacen(
-        &format!("    {callee}(t5);"),
-        &format!("    subscript_rt_boundary_scratch_release(ctx, t99);\n    {callee}(t5);"),
+        call,
+        &format!("    subscript_rt_boundary_scope_release(ctx, t99);\n{call}"),
         1,
     );
-    check_emitted(&previous_release, &expected, &sites)?;
+    check_emitted(&previous_release, &other, &sites)?;
+    assert!(check_emitted(&previous_release, &expected, &sites).is_err());
     let mut fewer = sites.clone();
     fewer.insert(callee.into(), 2);
     assert!(check_emitted(&c, &expected, &fewer).is_err());

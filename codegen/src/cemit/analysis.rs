@@ -448,7 +448,6 @@ pub(super) fn declaration_can_use_instruction_assignment(kind: &l::InstructionKi
             | l::InstructionKind::LoadAddress
             | l::InstructionKind::LoadField(_)
             | l::InstructionKind::Length
-            | l::InstructionKind::ForeignArrayData
             | l::InstructionKind::ArrayLiteral
             | l::InstructionKind::ArrayWithCapacity
             | l::InstructionKind::IteratorCreate { .. }

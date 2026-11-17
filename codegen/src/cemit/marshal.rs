@@ -28,6 +28,35 @@ fn is_half(ty: &Type) -> bool {
 }
 
 impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
+    /// Records the storage derived by this call (compiler.md §323 rule 3).
+    pub(super) fn keep_foreign_storage(
+        &mut self,
+        out: &mut String,
+        value: &str,
+        array: bool,
+    ) -> Result<(), String> {
+        if self
+            .boundary_targets
+            .as_ref()
+            .and_then(|targets| targets.scratch_mark.as_ref())
+            .is_none()
+        {
+            return Err(internal("a foreign storage derivation has no call scope"));
+        }
+        let call = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_boundary_borrow",
+            &["void*".into(), "void*".into(), "uint32_t".into()],
+            &[
+                "ctx".into(),
+                format!("(void*)({value})"),
+                u32::from(array).to_string(),
+            ],
+        );
+        let _ = writeln!(out, "    {call};");
+        Ok(())
+    }
+
     /// The plan of `callee`, built on its first call.
     pub(super) fn crossing_plan(
         &mut self,
@@ -52,6 +81,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             ParameterPlan::Value => Ok(value.into()),
             ParameterPlan::StringView => {
+                self.keep_foreign_storage(out, value, false)?;
                 let Some(l::ForeignTypeProvenance::StringView { aggregate }) =
                     parameter.foreign_provenance.as_ref()
                 else {
@@ -216,6 +246,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     }
                 }
                 MemberCrossing::Pair(pair) => {
+                    self.keep_foreign_storage(out, &access, pair.elements.is_none())?;
                     let count_call = self.emitter.runtime_call(
                         "int32_t",
                         "subscript_rt_array_len",
@@ -242,6 +273,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     parts.push(format!("(void*)({data})"));
                 }
                 MemberCrossing::StringView => {
+                    self.keep_foreign_storage(out, &access, false)?;
                     let data = self.emitter.runtime_call(
                         "const void*",
                         "subscript_rt_str_data",
@@ -321,7 +353,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .ok_or_else(|| internal("a scratch allocation has no mark"))?;
         let release = self.emitter.runtime_call(
             "void",
-            "subscript_rt_boundary_scratch_release",
+            "subscript_rt_boundary_scope_release",
             &["void*".into(), "uint64_t".into()],
             &["ctx".into(), mark],
         );
@@ -346,6 +378,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         position: u32,
         local: bool,
     ) -> Result<(String, Option<BoundaryPtrWriteback>), String> {
+        self.keep_foreign_storage(out, pointer, false)?;
         let class = plan.class;
         let written_back = match plan.pass {
             PointerPass::ScriptMemory => {

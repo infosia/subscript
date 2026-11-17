@@ -1735,3 +1735,46 @@ int32_t subDescReadLayTotal(SubDescReadLay lay) {
 int32_t subDescReadStrTotal(const SubDescReadStr *value) {
     return value == NULL ? -1 : value->n + (int32_t)value->label.len;
 }
+
+/* compiler.md §323: compare borrowed storage before and after a callback. */
+int32_t subBorrowArray(SubSliceI32 values, SubCallbackInfo info) {
+    int32_t before = values.count == 0 ? 0 : values.items[0];
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + (values.count == 0 ? 0 : values.items[0]);
+}
+
+int32_t subBorrowString(SubStringView value, SubCallbackInfo info) {
+    int32_t before = value.len == 0 ? 0 : value.data[0];
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + (value.len == 0 ? 0 : value.data[0]);
+}
+
+int32_t subBorrowMember(SubDrawList value, SubCallbackInfo info) {
+    int32_t before = value.drawsCount == 0 ? 0 : (int32_t)value.draws[0];
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + (value.drawsCount == 0 ? 0 : (int32_t)value.draws[0]);
+}
+
+int32_t subBorrowPointer(const SubByValueI32One *value, SubCallbackInfo info) {
+    int32_t before = value->a;
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + value->a;
+}
+
+int32_t subBorrowMemberPointer(const SubDrawList *value, SubCallbackInfo info) {
+    int32_t before = value->drawsCount == 0 ? 0 : (int32_t)value->draws[0];
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + (value->drawsCount == 0 ? 0 : (int32_t)value->draws[0]);
+}
+
+int32_t subBorrowMemberString(const SubDescReadStr *value, SubCallbackInfo info) {
+    int32_t before = value->label.len == 0 ? 0 : value->label.data[0];
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + (value->label.len == 0 ? 0 : value->label.data[0]);
+}
+
+int32_t subBorrowScratchArray(SubBorrowDrawLists value, SubCallbackInfo info) {
+    int32_t before = value.valuesCount == 0 ? 0 : (int32_t)value.values[0].layer;
+    info.callback((SubStringView){"", 0}, info.userdata, info.userparam);
+    return before * 100 + (value.valuesCount == 0 ? 0 : (int32_t)value.values[0].layer);
+}

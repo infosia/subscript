@@ -956,15 +956,7 @@ fn expected_call_operands(hir: &hir::Module, expr: &hir::Expr) -> Result<Option<
             hir::Callee::Standard(op) => Some(op.parameters().len()),
             hir::Callee::Ambient(hir::AmbientFn::Unreachable) => None,
             hir::Callee::Func(name) => Some(declared_function(hir, name, pos)?.params.len()),
-            hir::Callee::Foreign(name) => Some(
-                declared_foreign(hir, name, pos)?
-                    .params
-                    .iter()
-                    .map(|parameter| {
-                        usize::from(matches!(parameter.ty, subscript_compiler::Type::Array(_))) + 1
-                    })
-                    .sum(),
-            ),
+            hir::Callee::Foreign(name) => Some(declared_foreign(hir, name, pos)?.params.len()),
             hir::Callee::Arr(operation) if static_array_callback(*operation, args).is_some() => {
                 static_array_callback(*operation, args).and_then(|callback| match &callback.ty {
                     Type::Func(function) => Some(
@@ -1127,7 +1119,6 @@ fn instruction_arity(
         | K::LoadAddress
         | K::LoadField(_)
         | K::Length
-        | K::ForeignArrayData
         | K::ArrayWithCapacity
         | K::SetFromSource(_)
         | K::MapFromSource
@@ -1192,8 +1183,7 @@ fn instruction_arity(
                                 p.foreign_provenance
                                     != Some(l::ForeignTypeProvenance::CompletionEndpoint)
                             })
-                            .map(|p| if matches!(p.ty, Type::Array(_)) { 2 } else { 1 })
-                            .sum()
+                            .count()
                     }),
             ),
             _ => Arity::Exact(usize::MAX),

@@ -431,15 +431,6 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             l::InstructionKind::Length => {
                 self.emit_length(out, &operands[0], &operand_types[0], result)
             }
-            l::InstructionKind::ForeignArrayData => {
-                let call = self.emitter.runtime_call(
-                    "const void*",
-                    "subscript_rt_array_data",
-                    &["void*".into(), "const void*".into()],
-                    &["ctx".into(), operands[0].clone()],
-                );
-                self.assign(out, result, &call)
-            }
             l::InstructionKind::ArrayLiteral => {
                 self.emit_array_literal(out, instruction, &operands, result)
             }

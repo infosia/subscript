@@ -5,6 +5,8 @@
 mod const_global_narrowing;
 #[allow(dead_code)]
 mod corpus;
+#[path = "lir/foreign_storage.rs"]
+mod foreign_storage;
 #[path = "support/lir_facts.rs"]
 mod lir_facts;
 #[path = "lir/local_lambda_self_call.rs"]
@@ -638,26 +640,6 @@ fn verifier_rejects_a_static_closure_target_with_another_environment() {
         error
             .message
             .contains("call target identity/signature is invalid")
-    }));
-}
-
-#[test]
-fn item_12_reports_a_missing_foreign_array_snapshot_pair() {
-    let accept = corpus::corpus_accept();
-    let sources = corpus::entry_sources(&accept, "a26-interop-array-pair");
-    let hir = check_program(&sources).expect("a26 checks clean");
-    let mut lir = lower_module(&hir).expect("a26 lowers to LIR");
-    let snapshot = lir
-        .functions
-        .iter_mut()
-        .flat_map(|function| &mut function.blocks)
-        .flat_map(|block| &mut block.instructions)
-        .find(|instruction| instruction.kind == InstructionKind::ForeignArrayData)
-        .expect("a26 has a foreign array snapshot");
-    snapshot.kind = InstructionKind::Copy;
-    let findings = lir_facts::dropped_facts(&hir, &lir);
-    assert!(findings.iter().any(|finding| {
-        finding.contains("foreign array argument carries no call-time data/count snapshot")
     }));
 }
 

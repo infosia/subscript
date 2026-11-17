@@ -523,17 +523,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ok_or_else(|| internal("length operand type is missing"))?,
                 )?,
             ),
-            l::InstructionKind::ForeignArrayData => {
-                let handle = self.expect_scalar(
-                    *operands
-                        .first()
-                        .ok_or_else(|| internal("foreign array data has no array operand"))?,
-                )?;
-                let data = self
-                    .call_runtime(self.ml.rt.array_data, &[self.ctx, handle], false)?
-                    .ok_or_else(|| internal("foreign array data snapshot has no result"))?;
-                Some(RV::Scalar(data))
-            }
             l::InstructionKind::ArrayLiteral => Some(
                 self.array_literal(
                     data_type(

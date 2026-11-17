@@ -1,7 +1,7 @@
 //! Shared live-range storage plan for managed LIR values.
 
 mod value_liveness;
-pub(crate) use value_liveness::value_interference;
+pub(crate) use value_liveness::{value_dependencies, value_interference};
 
 use std::collections::BTreeSet;
 
@@ -220,7 +220,7 @@ pub(crate) struct Interference {
 impl Interference {
     /// Builds the function's relation once from its root-storage mentions.
     pub(crate) fn build(function: &l::Function) -> Result<Self, String> {
-        let dependencies = value_liveness::environment_dependencies(function);
+        let dependencies = value_liveness::value_dependencies(function);
         Self::build_with_dependencies(function, &dependencies)
     }
 
@@ -1284,10 +1284,42 @@ mod tests {
             &function,
             &mut live,
             l::ValueId(1),
-            &value_liveness::environment_dependencies(&function),
+            &value_liveness::value_dependencies(&function),
         )
         .unwrap();
         assert_eq!(live, BTreeSet::from([l::ValueId(0), l::ValueId(1)]));
+    }
+
+    #[test]
+    fn a_derived_field_address_keeps_its_reference_owner() {
+        let values = vec![
+            value(0, l::ValueType::Data(Type::Class(ClassId(0)))),
+            value(
+                1,
+                l::ValueType::Address(l::AddressType {
+                    pointee: Type::I32,
+                    array_base: None,
+                }),
+            ),
+        ];
+        let block = return_block(
+            0,
+            vec![instruction(
+                Some(1),
+                l::InstructionKind::AddressOfField(l::FieldRef::Class(l::FieldId(0))),
+                vec![l::Operand::Value(l::ValueId(0))],
+            )],
+        );
+        let function = function(values, vec![block]);
+        let mut roots = BTreeSet::new();
+        record_value(
+            &function,
+            &mut roots,
+            l::ValueId(1),
+            &value_liveness::value_dependencies(&function),
+        )
+        .unwrap();
+        assert_eq!(roots, BTreeSet::from([l::ValueId(0), l::ValueId(1)]));
     }
 
     #[test]

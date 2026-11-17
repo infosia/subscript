@@ -165,6 +165,13 @@ extern "C" {
     fn subRequestReleaseAndRefire();
     fn subDescReadLayTotal();
     fn subDescReadStrTotal();
+    fn subBorrowArray();
+    fn subBorrowString();
+    fn subBorrowMember();
+    fn subBorrowPointer();
+    fn subBorrowMemberPointer();
+    fn subBorrowMemberString();
+    fn subBorrowScratchArray();
 }
 
 impl Fixture {
@@ -272,6 +279,22 @@ impl Fixture {
                 (
                     "subBoundaryScriptSize".into(),
                     subBoundaryScriptSize as *const u8,
+                ),
+                (
+                    "subBorrowScratchArray".into(),
+                    subBorrowScratchArray as *const u8,
+                ),
+                ("subBorrowArray".into(), subBorrowArray as *const u8),
+                ("subBorrowString".into(), subBorrowString as *const u8),
+                ("subBorrowMember".into(), subBorrowMember as *const u8),
+                ("subBorrowPointer".into(), subBorrowPointer as *const u8),
+                (
+                    "subBorrowMemberPointer".into(),
+                    subBorrowMemberPointer as *const u8,
+                ),
+                (
+                    "subBorrowMemberString".into(),
+                    subBorrowMemberString as *const u8,
                 ),
                 ("subPressureNarrow8".into(), subPressureNarrow8 as *const u8),
                 ("subPressureNarrow9".into(), subPressureNarrow9 as *const u8),

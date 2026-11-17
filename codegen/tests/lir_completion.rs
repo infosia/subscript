@@ -229,13 +229,30 @@ fn completion_arguments_keep_foreign_string_and_array_provenance() {
         .flat_map(|b| &b.instructions)
         .find(|i| matches!(i.kind, lir::InstructionKind::HostCompletion { .. }))
         .expect("completion");
-    assert_eq!(instruction.operands.len(), 3);
-    assert!(module
+    assert_eq!(instruction.operands.len(), 2);
+    let owner = module
         .functions
         .iter()
-        .flat_map(|f| &f.blocks)
-        .flat_map(|b| &b.instructions)
-        .any(|i| i.kind == lir::InstructionKind::ForeignArrayData));
+        .find(|function| {
+            function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .any(|site| std::ptr::eq(site, instruction))
+        })
+        .expect("instruction function");
+    let types = instruction
+        .operands
+        .iter()
+        .map(|operand| match operand {
+            lir::Operand::Value(value) => owner.values[value.0 as usize].ty.clone(),
+            lir::Operand::Constant(constant) => lir::ValueType::Data(constant.ty.clone()),
+        })
+        .collect::<Vec<_>>();
+    assert!(types
+        .iter()
+        .any(|ty| matches!(ty, lir::ValueType::Data(subscript_compiler::Type::Array(_)))));
+    assert!(types.contains(&lir::ValueType::Data(subscript_compiler::Type::Str)));
 }
 
 #[test]

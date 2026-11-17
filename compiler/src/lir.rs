@@ -751,8 +751,6 @@ pub enum InstructionKind {
     LoadField(FieldRef),
     /// Read array/fixed-array/string length.
     Length,
-    /// Snapshot a dynamic array's current data pointer for a foreign call.
-    ForeignArrayData,
     /// Construct a non-spread array literal.
     ArrayLiteral,
     /// Allocate an empty dynamic array with the supplied element capacity.
@@ -767,7 +765,9 @@ pub enum InstructionKind {
     Template(Vec<TemplatePart>),
     /// Construct a function value and its capture environment.
     MakeClosure(FunctionId),
-    /// Invoke a resolved call target.
+    /// Invoke a resolved call target. A foreign call derives its C arguments
+    /// from these managed operands within this operation (compiler.md §323 rule 3).
+    /// Their storage stays rooted until this operation returns (§323 rule 1).
     Call(CallTarget),
     /// Create an async handle and run its child to its first await or return.
     /// The caller does not suspend, and the child becomes no runnable job here.

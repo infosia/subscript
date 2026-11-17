@@ -811,18 +811,6 @@ pub(super) fn verify_instruction_contract(
                 bad("length signature is invalid", errors);
             }
         }
-        l::InstructionKind::ForeignArrayData => {
-            let valid = match (operand_types.as_slice(), result_type.as_ref()) {
-                (
-                    [l::ValueType::Data(Type::Array(element))],
-                    Some(l::ValueType::Address(address)),
-                ) => address.pointee == **element && address.array_base.is_none(),
-                _ => false,
-            };
-            if !valid {
-                bad("foreign array data signature is invalid", errors);
-            }
-        }
         l::InstructionKind::ArrayLiteral => {
             let valid = match result_type.as_ref() {
                 Some(l::ValueType::Data(Type::Array(element))) => operand_types
@@ -1534,16 +1522,7 @@ pub(super) fn declared_call_signature(
                     function
                         .parameters
                         .iter()
-                        .flat_map(|parameter| match &parameter.ty {
-                            Type::Array(element) => vec![
-                                l::ValueType::Address(l::AddressType {
-                                    pointee: (**element).clone(),
-                                    array_base: None,
-                                }),
-                                l::ValueType::Data(Type::I32),
-                            ],
-                            ty => vec![l::ValueType::Data(ty.clone())],
-                        })
+                        .map(|parameter| l::ValueType::Data(parameter.ty.clone()))
                         .collect(),
                     (function.return_type != Type::Void)
                         .then(|| l::ValueType::Data(function.return_type.clone())),

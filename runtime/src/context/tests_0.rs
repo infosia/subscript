@@ -194,6 +194,7 @@ fn array_header_offsets_match_the_abi_contract() {
     assert_eq!(core::mem::offset_of!(ArrayHeader, elem_size), 16);
     assert_eq!(core::mem::offset_of!(ArrayHeader, data), 24);
     assert_eq!(core::mem::offset_of!(ArrayHeader, holders), 32);
+    assert_eq!(core::mem::offset_of!(ArrayHeader, native_borrows), 36);
     assert_eq!(core::mem::size_of::<ArrayHeader>(), 40);
 }
 
@@ -1618,5 +1619,47 @@ fn boundary_scratch_fault_counts_requests_in_both_tiers() {
         assert!(!ctx.alloc(8, 1, 5).is_null());
         ctx.boundary_scratch_release(0);
         assert_eq!(ctx.boundary_scratch_mark(), 0);
+    }
+}
+
+#[test]
+fn native_borrows_keep_snapshots_and_restore_nested_counts() {
+    use crate::ffi::{
+        subscript_rt_boundary_borrow, subscript_rt_boundary_scope_mark,
+        subscript_rt_boundary_scope_release,
+    };
+
+    for mut ctx in [Context::new(), Context::new_releasing()] {
+        let array = ctx.array_with_capacity(1, 4, 0);
+        let text = ctx.alloc_str(b"kept", 0);
+        let one = 1i32;
+        // SAFETY: the Context owns these live handles and the element source.
+        unsafe {
+            assert_eq!(ctx.array_push(array, (&one as *const i32).cast(), 0), 1);
+            let outer = subscript_rt_boundary_scope_mark(&mut *ctx);
+            subscript_rt_boundary_borrow(&mut *ctx, array, 1);
+            subscript_rt_boundary_borrow(&mut *ctx, text, 0);
+            subscript_rt_boundary_borrow(&mut *ctx, std::ptr::null_mut(), 1);
+            ctx.collect();
+            assert_eq!(ctx.array_len(array), 1);
+            assert_eq!(ctx.str_bytes(text), b"kept");
+            assert_eq!((*array.cast::<ArrayHeader>()).native_borrows, 1);
+            let inner = ctx.boundary_scope_mark();
+            ctx.boundary_borrow(array, true);
+            ctx.boundary_scope_release(inner);
+            assert_eq!((*array.cast::<ArrayHeader>()).native_borrows, 1);
+            assert_eq!(ctx.array_push(array, (&one as *const i32).cast(), 17), -1);
+            let trap = ctx.trap_record().expect("borrowed growth traps");
+            assert_eq!(trap.kind, TrapKind::ArrayStorageBorrowed);
+            assert_eq!(
+                trap.message,
+                "the array storage is borrowed by a native call"
+            );
+            assert_eq!(trap.pos_id, 17);
+            ctx.clear_trap();
+            subscript_rt_boundary_scope_release(&mut *ctx, outer);
+            assert_eq!((*array.cast::<ArrayHeader>()).native_borrows, 0);
+            assert_eq!(ctx.array_push(array, (&one as *const i32).cast(), 0), 2);
+        }
     }
 }

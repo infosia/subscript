@@ -89,3 +89,65 @@ it.
    foreign call.
 6. The `bound-call` benchmark keeps its time within its spread, or the
    report states the measured difference.
+
+### 323.3 Phase Review
+
+Form: a foreign `Call` and a foreign `HostCompletion` take the managed
+array operand, and each tier derives the pointer and the length inside
+the call. `ForeignArrayData` is removed. A derived field or element
+address keeps its owner as a dependency in `value_liveness`, also
+across a suspension. The runtime keeps a stack of native-call borrows
+per Context. The collector reads it as roots. Each array borrow saves
+and restores the count at `ArrayHeader` offset 36. `array_push` gives
+the trap kind `array-storage-borrowed` (36) on a growth while the count
+is not zero.
+
+Measured with a473 (100 × the first read + the read after the
+callback):
+
+| Kind | Pin, ship tier | Development tier and ship tier |
+|---|---|---|
+| Local array, collect in the callback | 109 | 101 |
+| Member array pair, replaced before the collect | 109 | 101 |
+| Pointer into a Context object | 224 | 101 |
+| Member string, replaced before the collect | 6590 | 6565 |
+| String argument | 6565 | 6565 |
+
+Cost: the `bound-call` benchmark (one array call and one integer call
+per pair) went from 5.417 ns to 8.875 ns per pair. The difference is
+outside its spread. The cost does not change with the array size. Each
+foreign call with a derived argument calls the runtime for the scope
+start, for each borrow, and for the scope release. This includes a call
+that passes only a string or a struct pointer.
+
+The first full gate failed on three tests that read the former call
+form: a verifier unit test and two `cli/tests/boundary.rs` tests that
+read the emitted C. The coding agent changed the tests to the new form.
+The emitted C was correct. The next full gate passed.
+
+One fresh review found no CRITICAL or MAJOR finding. One MINOR finding
+is fixed: a test assertion that checked only for the word "call". Two
+MINOR findings are open or need no change: a `Context.free` in a callback of the object that a borrowed pointer names is outside rule 1 by design, and the cost note is 323.4 item 1.
+
+A separate read of the collector windows at this pin found that the
+dependency rule of `value_liveness` also closes a stale owner of a field
+address (a method of a `@ValueType` field of a temporary object that
+runs a collect). No corpus entry covers that form yet.
+
+### 323.4 Open
+
+1. The scope cost of a foreign call that passes no array (a string or a
+   struct pointer) is not measured. A form that saves the count inline
+   for a top-level array argument (the study measured +0.3 ns) was not
+   built.
+2. Contrived, MINOR: a `sort` comparator that replaces elements that it
+   does not compare, then collects. The runtime keeps those elements
+   only in its scratch copy, which is not a root, and writes them back.
+   Measured with four elements: the development tier and the ship tier
+   print `3 4 9 9`; the interpreter and `node` print `1 2 3 4`.
+3. The form of the field-address owner (a method of a `@ValueType`
+   field of a temporary object that collects) has no corpus entry. The
+   pin printed `9` in the development tier and the ship tier; this
+   change prints `1` in each tier.
+4. The host tutorial does not state that an array pointer passed to a
+   completion function ends when that function returns.

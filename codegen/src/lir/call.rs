@@ -285,10 +285,25 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             }
         }
         let completion = matches!(callee, hir::Callee::Foreign(name) if self.lowering.hir.foreign_fns.iter().any(|f| f.name == *name && f.completion_result.is_some()));
-        let call_traps = convert_traps(&sites)
+        let mut call_traps: Vec<_> = convert_traps(&sites)
             .into_iter()
             .filter(|trap| completion || trap.kind != l::TrapKind::Allocation)
             .collect();
+        if foreign {
+            for (index, parameter) in params.iter().enumerate() {
+                if matches!(parameter.ty, Type::Array(_)) {
+                    let pos = args
+                        .get(index)
+                        .map_or(&parameter.pos, |argument| &argument.pos);
+                    let mut reads =
+                        self.read_lifetime(&l::ValueType::Data(parameter.ty.clone()), pos);
+                    for read in &mut reads {
+                        read.kind = l::TrapKind::DevOnlyLifetime(index);
+                    }
+                    call_traps.extend(reads);
+                }
+            }
+        }
         let temporaries = operands
             .iter()
             .enumerate()
@@ -440,21 +455,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 .map(|parameter| l::ValueType::Data(parameter.ty.clone()))
                 .collect::<Vec<_>>()
         };
-        let foreign_params = |params: &[hir::Param]| {
-            params
-                .iter()
-                .flat_map(|parameter| match &parameter.ty {
-                    Type::Array(element) => vec![
-                        l::ValueType::Address(l::AddressType {
-                            pointee: (**element).clone(),
-                            array_base: None,
-                        }),
-                        l::ValueType::Data(Type::I32),
-                    ],
-                    ty => vec![l::ValueType::Data(ty.clone())],
-                })
-                .collect::<Vec<_>>()
-        };
+        let foreign_params = |params: &[hir::Param]| data_params(params);
         match callee {
             hir::Callee::Standard(_) => {
                 Err(self.error(&expr.pos, "standard operation bypassed completion lowering"))
@@ -978,51 +979,15 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(())
     }
 
-    /// Takes the snapshot of every foreign array argument and flattens
-    /// the parameters into the operands of the call.
+    /// Keeps the managed arguments that the call converts (compiler.md §323 rule 3).
     pub(super) fn finish_call_arguments(
         &mut self,
         mut pending: PendingArguments,
     ) -> Result<Vec<l::Operand>, LowerError> {
-        for (index, value, element, pos) in std::mem::take(&mut pending.delayed_array_snapshots) {
-            pending.groups[index] = self.foreign_array_snapshot(value, &element, pos)?.to_vec();
+        // compiler.md §323 rule 3: the call owns the data/count derivation.
+        for (index, value, _, _) in std::mem::take(&mut pending.delayed_array_snapshots) {
+            pending.groups[index] = vec![value];
         }
         Ok(pending.groups.into_iter().flatten().collect())
-    }
-
-    fn foreign_array_snapshot(
-        &mut self,
-        value: l::Operand,
-        element: &Type,
-        pos: Pos,
-    ) -> Result<[l::Operand; 2], LowerError> {
-        let traps = self.read_lifetime(
-            &l::ValueType::Data(Type::Array(Box::new(element.clone()))),
-            &pos,
-        );
-        let data = self
-            .emit(
-                l::InstructionKind::ForeignArrayData,
-                vec![value.clone()],
-                Some(l::ValueType::Address(l::AddressType {
-                    pointee: element.clone(),
-                    array_base: None,
-                })),
-                false,
-                traps.clone(),
-                pos.clone(),
-            )?
-            .expect("foreign array data snapshot");
-        let count = self
-            .emit(
-                l::InstructionKind::Length,
-                vec![value],
-                Some(l::ValueType::Data(Type::I32)),
-                false,
-                traps.clone(),
-                pos,
-            )?
-            .expect("foreign array count snapshot");
-        Ok([data, count])
     }
 }

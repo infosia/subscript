@@ -98,6 +98,8 @@ pub enum TrapKind {
     HostEntryReentry = 34,
     /// A Worker Context attempted to spawn a Worker (compiler.md section 275).
     WorkerSpawnInWorker = 35,
+    /// Array growth would move storage borrowed by a native call (compiler.md §323).
+    ArrayStorageBorrowed = 36,
 }
 
 impl TrapKind {
@@ -136,6 +138,7 @@ impl TrapKind {
             33 => TrapKind::TaskGroup,
             34 => TrapKind::HostEntryReentry,
             35 => TrapKind::WorkerSpawnInWorker,
+            36 => TrapKind::ArrayStorageBorrowed,
             _ => return None,
         })
     }
@@ -174,6 +177,7 @@ impl TrapKind {
             TrapKind::TaskGroup => "task-group",
             TrapKind::HostEntryReentry => "host-entry-reentry",
             TrapKind::WorkerSpawnInWorker => "worker-spawn-in-worker",
+            TrapKind::ArrayStorageBorrowed => "array-storage-borrowed",
         }
     }
 
@@ -204,6 +208,9 @@ impl TrapKind {
             (TrapKind::StaleCoroutine, _) => Cow::Borrowed("stale coroutine after reload"),
             (TrapKind::DisposeRaisedDuringExit, _) => {
                 Cow::Borrowed("a dispose hook raised while an exception was pending")
+            }
+            (TrapKind::ArrayStorageBorrowed, _) => {
+                Cow::Borrowed("the array storage is borrowed by a native call")
             }
             (other, _) => Cow::Borrowed(other.rule()),
         }
@@ -253,16 +260,30 @@ mod tests {
     }
 
     #[test]
+    fn array_storage_borrow_has_a_stable_code_name_and_message() {
+        assert_eq!(TrapKind::ArrayStorageBorrowed as u32, 36);
+        assert_eq!(TrapKind::from_u32(36), Some(TrapKind::ArrayStorageBorrowed));
+        assert_eq!(
+            TrapKind::ArrayStorageBorrowed.rule(),
+            "array-storage-borrowed"
+        );
+        assert_eq!(
+            TrapKind::ArrayStorageBorrowed.message(None),
+            "the array storage is borrowed by a native call"
+        );
+    }
+
+    #[test]
     fn kind_round_trips_through_u32() {
         for v in (1..=17u32)
             .chain(19..=24)
-            .chain([28, 29, 30, 31, 32, 33, 34, 35])
+            .chain([28, 29, 30, 31, 32, 33, 34, 35, 36])
         {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
         }
         assert_eq!(TrapKind::from_u32(0), None);
-        assert_eq!(TrapKind::from_u32(36), None);
+        assert_eq!(TrapKind::from_u32(37), None);
         assert_eq!(TrapKind::from_u32(99), None);
     }
 

@@ -432,19 +432,6 @@ impl Interpreter<'_> {
                     self.instruction_operand_type(function, instruction, 0),
                 )? as i64,
             )),
-            l::InstructionKind::ForeignArrayData => {
-                let handle = operands
-                    .first()
-                    .ok_or_else(|| self.missing_operand(instruction, 0))?
-                    .as_handle()?;
-                // SAFETY: verified LIR supplies a live dynamic-array handle.
-                let data = unsafe { ffi::subscript_rt_array_data(&*self.context, handle) };
-                Some(Value::Address(Address {
-                    target: AddressTarget::Pointer(data.cast_mut()),
-                    pointee: self.address_pointee(result_ty, instruction)?,
-                    poison: Rc::new(RefCell::new(None)),
-                }))
-            }
             l::InstructionKind::ArrayLiteral => {
                 let ty = self.data_result_type(result_ty, instruction)?;
                 Some(self.array_literal(ty, &operands, &instruction.pos)?)

@@ -118,7 +118,6 @@ fn read_operands(
         AddressOfIndex { .. }
         | LoadField(_)
         | Length
-        | ForeignArrayData
         | SetFromSource(_)
         | TaskGroup(_)
         | AsyncAll
@@ -153,6 +152,10 @@ fn read_operands(
             .enumerate()
             .filter_map(|(index, spread)| spread.is_some().then_some(index))
             .collect(),
+        HostCompletion {
+            target: l::HostCompletionTarget::Foreign(id),
+            ..
+        } => foreign_array_reads(module, *id)?,
         HostCompletion { .. } => vec![],
         Call(target) | AsyncHandleCreate(target) => {
             call_reads(module, target, instruction.operands.len())?
@@ -235,9 +238,9 @@ fn call_reads(
         ) => vec![0],
         l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush) => vec![0],
         l::CallTargetKind::ClosureDefault { .. } => (0..count).collect(),
+        l::CallTargetKind::Foreign(id) => foreign_array_reads(module, *id)?,
         l::CallTargetKind::LambdaSelf(_)
         | l::CallTargetKind::StaticClosure(_)
-        | l::CallTargetKind::Foreign(_)
         | l::CallTargetKind::Indirect => vec![],
         l::CallTargetKind::Intrinsic(intrinsic) => {
             let Some(operation) = module.intrinsic_operations.iter().find(|operation| {
@@ -259,4 +262,17 @@ fn call_reads(
             (0..count).filter(|index| !stored.contains(index)).collect()
         }
     })
+}
+
+fn foreign_array_reads(module: &l::Module, id: l::ForeignFunctionId) -> Result<Vec<usize>, String> {
+    let declaration = module
+        .foreign_functions
+        .get(id.0 as usize)
+        .ok_or_else(|| "foreign function is missing".to_string())?;
+    Ok(declaration
+        .parameters
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parameter)| matches!(parameter.ty, Type::Array(_)).then_some(index))
+        .collect())
 }

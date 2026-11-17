@@ -59,7 +59,7 @@ pub(super) fn expression(
         } => {
             for argument in args {
                 if matches!(argument.ty, Type::Array(_)) {
-                    add_read(argument, hir, 2, expected);
+                    add_read(argument, hir, 1, expected);
                 }
             }
         }

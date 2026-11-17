@@ -33,3 +33,37 @@ pub unsafe extern "C" fn subscript_rt_array_data(ctx: *const Context, a: *const 
     // SAFETY: shared contract; live array handle.
     unsafe { (*ctx).array_data(a) }
 }
+
+/// Keeps a derived argument in the current native-call scope (compiler.md §323).
+///
+/// # Safety
+/// Shared contract. `value` is null or live; a nonzero `array` identifies an array header.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_boundary_borrow(
+    ctx: *mut Context,
+    value: *mut u8,
+    array: u32,
+) {
+    // SAFETY: the caller supplies the argument and its allocation kind.
+    unsafe { (*ctx).boundary_borrow(value, array != 0) };
+}
+
+/// Starts a foreign call's storage scope (compiler.md §323).
+///
+/// # Safety
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_boundary_scope_mark(ctx: *mut Context) -> u64 {
+    // SAFETY: the caller owns the Context.
+    unsafe { (*ctx).boundary_scope_mark() as u64 }
+}
+
+/// Ends the foreign call's storage scope (compiler.md §323).
+///
+/// # Safety
+/// Shared contract. `mark` came from this Context's current foreign call.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_boundary_scope_release(ctx: *mut Context, mark: u64) {
+    // SAFETY: the caller owns the Context and supplies its scope mark.
+    unsafe { (*ctx).boundary_scope_release(mark as usize) };
+}

@@ -7,139 +7,49 @@ pub(super) fn compare_foreign_array_snapshots(
     lir: &l::Module,
     findings: &mut Vec<String>,
 ) {
-    let mut actual = BTreeMap::<(String, u32, u32, String), usize>::new();
+    let mut actual = BTreeMap::new();
     for function in &lir.functions {
-        for block in &function.blocks {
-            for (index, instruction) in block.instructions.iter().enumerate() {
-                if instruction.kind != l::InstructionKind::ForeignArrayData {
-                    continue;
-                }
-                let Some(result) = instruction.result else {
-                    findings.push(format!(
-                        "{}: foreign array data snapshot has no result",
-                        instruction.pos
-                    ));
-                    continue;
-                };
-                let Some(l::ValueType::Address(address)) = function
-                    .values
-                    .get(result.0 as usize)
-                    .map(|value| &value.ty)
-                else {
-                    findings.push(format!(
-                        "{}: foreign array data snapshot has no address type",
-                        instruction.pos
-                    ));
+        for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
+            let id = match &instruction.kind {
+                l::InstructionKind::Call(l::CallTarget {
+                    kind: l::CallTargetKind::Foreign(id),
+                    ..
+                }) => *id,
+                l::InstructionKind::HostCompletion {
+                    target: l::HostCompletionTarget::Foreign(id),
+                    ..
+                } => *id,
+                _ => continue,
+            };
+            let Some(declaration) = lir.foreign_functions.get(id.0 as usize) else {
+                continue;
+            };
+            for (index, parameter) in declaration.parameters.iter().enumerate() {
+                let subscript_compiler::Type::Array(element) = &parameter.ty else {
                     continue;
                 };
-                let Some(count) = block.instructions.get(index + 1) else {
-                    findings.push(format!(
-                        "{}: foreign array data snapshot has no adjacent count snapshot",
-                        instruction.pos
-                    ));
-                    continue;
-                };
-                let count_type = count
-                    .result
-                    .and_then(|result| function.values.get(result.0 as usize))
-                    .map(|value| &value.ty);
-                if count.kind != l::InstructionKind::Length
-                    || count.pos != instruction.pos
-                    || count.operands != instruction.operands
-                    || count_type != Some(&l::ValueType::Data(subscript_compiler::Type::I32))
-                {
-                    findings.push(format!(
-                        "{}: foreign array pointer/count snapshots do not form one call-time pair",
-                        instruction.pos
-                    ));
-                    continue;
-                }
-                *actual
-                    .entry((
-                        instruction.pos.file.clone(),
-                        instruction.pos.line,
-                        instruction.pos.col,
-                        format!("{:?}", address.pointee),
-                    ))
-                    .or_default() += 1;
-            }
-
-            for (call_index, instruction) in block.instructions.iter().enumerate() {
-                let l::InstructionKind::Call(target) = &instruction.kind else {
-                    continue;
-                };
-                let l::CallTargetKind::Foreign(id) = target.kind else {
-                    continue;
-                };
-                let Some(declaration) = lir
-                    .foreign_functions
-                    .get(id.0 as usize)
-                    .filter(|declaration| declaration.id == id)
-                else {
-                    continue;
-                };
-                let mut cursor = 0usize;
-                let mut array_operands = Vec::new();
-                for parameter in &declaration.parameters {
-                    if let subscript_compiler::Type::Array(element) = &parameter.ty {
-                        let expected_data = l::ValueType::Address(l::AddressType {
-                            pointee: (**element).clone(),
-                            array_base: None,
-                        });
-                        let data = instruction
-                            .operands
-                            .get(cursor)
-                            .and_then(|operand| lir_operand_type(function, operand));
-                        let count = instruction
-                            .operands
-                            .get(cursor + 1)
-                            .and_then(|operand| lir_operand_type(function, operand));
-                        if data != Some(&expected_data)
-                            || count != Some(&l::ValueType::Data(subscript_compiler::Type::I32))
-                        {
-                            findings.push(format!(
-                                "{}: foreign array parameter `{}` does not carry data/count snapshot operands",
-                                instruction.pos, parameter.source_name
-                            ));
-                        }
-                        array_operands.push((
-                            instruction.operands.get(cursor),
-                            instruction.operands.get(cursor + 1),
-                        ));
-                        cursor += 2;
-                    } else {
-                        cursor += 1;
-                    }
-                }
-                let snapshot_instruction_count = array_operands.len() * 2;
-                let trailing = call_index
-                    .checked_sub(snapshot_instruction_count)
-                    .and_then(|start| block.instructions.get(start..call_index));
-                let ordered = trailing.is_some_and(|trailing| {
-                    trailing.chunks_exact(2).zip(&array_operands).all(
-                        |(pair, (data_operand, count_operand))| {
-                            pair[0].kind == l::InstructionKind::ForeignArrayData
-                                && pair[1].kind == l::InstructionKind::Length
-                                && pair[0].operands == pair[1].operands
-                                && pair[0].result.map(l::Operand::Value).as_ref() == *data_operand
-                                && pair[1].result.map(l::Operand::Value).as_ref() == *count_operand
-                        },
-                    )
-                });
-                if !array_operands.is_empty() && !ordered {
-                    findings.push(format!(
-                        "{}: foreign array data/count operands are not read after all arguments and immediately before the call",
-                        instruction.pos
-                    ));
+                let ty = instruction
+                    .operands
+                    .get(index)
+                    .and_then(|operand| lir_operand_type(function, operand));
+                if ty == Some(&l::ValueType::Data(parameter.ty.clone())) {
+                    *actual
+                        .entry((
+                            instruction.pos.file.clone(),
+                            instruction.pos.line,
+                            instruction.pos.col,
+                            index,
+                            format!("{element:?}"),
+                        ))
+                        .or_insert(0usize) += 1;
                 }
             }
         }
     }
-
     walk_module_expressions(hir, &mut |expr| {
         let hir::ExprKind::Call {
             callee: hir::Callee::Foreign(name),
-            args,
+            ..
         } = &expr.kind
         else {
             return;
@@ -155,24 +65,18 @@ pub(super) fn compare_foreign_array_snapshots(
             let subscript_compiler::Type::Array(element) = &parameter.ty else {
                 continue;
             };
-            let Some(argument) = args.get(index).or(parameter.default.as_ref()) else {
-                findings.push(format!(
-                    "{}: foreign array parameter `{}` has no argument",
-                    expr.pos, parameter.name
-                ));
-                continue;
-            };
             let key = (
-                argument.pos.file.clone(),
-                argument.pos.line,
-                argument.pos.col,
-                format!("{:?}", element),
+                expr.pos.file.clone(),
+                expr.pos.line,
+                expr.pos.col,
+                index,
+                format!("{element:?}"),
             );
             match actual.get_mut(&key) {
                 Some(count) if *count != 0 => *count -= 1,
                 _ => findings.push(format!(
-                    "{}: foreign array argument carries no call-time data/count snapshot",
-                    argument.pos
+                    "{}: foreign array argument does not name its managed storage",
+                    expr.pos
                 )),
             }
         }
