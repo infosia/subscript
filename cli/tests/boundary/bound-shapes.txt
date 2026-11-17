@@ -1,5 +1,6 @@
 main.ts:4:10 sDraw shape: scratch read-only, none for null [SShape.leaf non-const pointer]
-main.ts:4:10 sDraw shape.pts: not lowered: a fixed array of structs in a struct that the call rebuilds
+main.ts:4:10 sDraw shape.pts[0]: embedded bytes
+main.ts:4:10 sDraw shape.pts[1]: embedded bytes
 main.ts:4:10 sDraw shape.leaf: script memory
 main.ts:4:10 sDraw result: value
 main.ts:5:14 sLink result: read by members [SLink.leaf]

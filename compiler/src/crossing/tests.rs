@@ -20,7 +20,6 @@ fn each_word_has_its_own_text() {
 #[test]
 fn each_unlowered_form_states_its_reason() {
     let reasons = [
-        NotLowered::FixedArrayOfStructs,
         NotLowered::CallbackWithoutUserdata,
         NotLowered::StructCycle,
         NotLowered::WrittenBackElements,
@@ -29,10 +28,6 @@ fn each_unlowered_form_states_its_reason() {
     for (index, reason) in reasons.iter().enumerate() {
         assert!(!reasons[index + 1..].contains(reason), "{reason}");
     }
-    assert_eq!(
-        NotLowered::FixedArrayOfStructs.reason(),
-        "a fixed array of structs in a struct that the call rebuilds"
-    );
 }
 
 /// A call site keeps the plan that it is given.

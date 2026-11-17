@@ -339,6 +339,22 @@ impl Writer<'_> {
                         self.not_lowered(&path, NotLowered::StructCycle.reason())?
                     }
                 },
+                MemberCrossing::FixedArray(elements) => {
+                    for (index, element) in elements.iter().enumerate() {
+                        let path = format!("{path}[{index}]");
+                        match element.pass {
+                            StructPass::Bytes => {
+                                self.line(&path, Word::EmbeddedBytes.text(), &[], &[])
+                            }
+                            StructPass::Scratch => {
+                                self.structure(&path, Word::EmbeddedScratch, element, None)?
+                            }
+                            StructPass::Cycle => {
+                                self.not_lowered(&path, NotLowered::StructCycle.reason())?
+                            }
+                        }
+                    }
+                }
                 MemberCrossing::Pointer(pointer) => self.pointer(&path, pointer)?,
                 MemberCrossing::NotLowered(reason) => self.not_lowered(&path, reason.reason())?,
             }

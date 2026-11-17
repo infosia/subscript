@@ -320,6 +320,41 @@ fn is_direct_registered_handle(field: &CField, registry: &HashMap<String, Kind>)
         )
 }
 
+/// Types that a foreign parameter or result reaches (compiler.md §326 rule 4).
+fn boundary_reachable_types(parsed: &Parsed) -> HashSet<&str> {
+    let mut types = HashMap::new();
+    let mut pending = Vec::new();
+    for decl in &parsed.decls {
+        match decl {
+            Decl::Struct { name, .. } | Decl::FnPtr { name, .. } => {
+                types.insert(name.as_str(), decl);
+            }
+            Decl::Func { ret, params, .. } => {
+                pending.push(ret.base.as_str());
+                pending.extend(params.iter().map(|param| param.base.as_str()));
+            }
+            Decl::Enum { .. } | Decl::Handle { .. } => {}
+        }
+    }
+    let mut reached = HashSet::new();
+    while let Some(name) = pending.pop() {
+        if !reached.insert(name) {
+            continue;
+        }
+        match types.get(name) {
+            Some(Decl::Struct { fields, .. }) => {
+                pending.extend(fields.iter().map(|field| field.base.as_str()));
+            }
+            Some(Decl::FnPtr { ret, params, .. }) => {
+                pending.push(ret.base.as_str());
+                pending.extend(params.iter().map(|param| param.base.as_str()));
+            }
+            _ => {}
+        }
+    }
+    reached
+}
+
 /// Rejects C positions that the mirror vocabulary or either lowering
 /// cannot represent without losing ABI information.
 fn validate_boundary_positions(
@@ -362,11 +397,27 @@ fn validate_boundary_positions(
         })
         .collect();
     let mut pointer_lowered = HashSet::new();
+    let boundary_reached = boundary_reachable_types(parsed);
 
     for decl in &parsed.decls {
         let Decl::Struct { name, fields } = decl else {
             continue;
         };
+        for field in fields {
+            // compiler.md §326 rule 4: reject an element with no fixed-field pass.
+            if boundary_reached.contains(name.as_str())
+                && field.array_len.is_some()
+                && matches!(
+                    registry.get(&field.base),
+                    Some(Kind::FnPtr | Kind::ArrayPair(_) | Kind::ArrayPairStruct(_))
+                )
+            {
+                return Err(ParseError(format!(
+                    "struct `{name}` field `{}`: fixed array element `{}` has no write-direction pass",
+                    field.name, field.base
+                )));
+            }
+        }
         if !string_field_structs.contains(name) {
             continue;
         }
@@ -381,18 +432,17 @@ fn validate_boundary_positions(
                 }
                 continue;
             }
-            // §187 rules 13 and 15: a fixed array of scalars copies as
-            // bytes; a fixed array of aggregates has no lowering (187.3
-            // item 6).
-            if field.array_len.is_some() && aggregate_kind(registry.get(&field.base)) {
-                return Err(ParseError(format!(
-                    "string-field boundary struct `{name}` field `{}` is a fixed array of \
-                     aggregates; nested aggregate fields are not lowered in the pointer scratch \
-                     struct",
-                    field.name
-                )));
-            }
+            // compiler.md §326 rule 4: fixed struct arrays use the element pass.
             if field.array_len.is_some() {
+                if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+                    validate_lowerable_boundary_aggregate(
+                        parsed,
+                        registry,
+                        name,
+                        &field.base,
+                        &mut HashSet::new(),
+                    )?;
+                }
                 continue;
             }
             match registry.get(&field.base) {
@@ -684,9 +734,9 @@ fn validate_boundary_positions(
 
 /// Proves that an aggregate nested in the §28 scratch construction has a
 /// write-direction lowering (§32/§33). Absorbed strings, collapsed pairs,
-/// and boundary-struct pointer members recurse; callbacks and fixed arrays
-/// of scalars are lowered (§187 rules 8 and 13). A fixed array of
-/// aggregates and an absorbed descriptor aggregate remain fail-loud at the
+/// and boundary-struct pointer members recurse. Fixed arrays of structs
+/// use their element pass (compiler.md §326 rule 4).
+/// An absorbed descriptor aggregate remains fail-loud at the
 /// innermost unsupported member. The pass decision rejects a struct cycle
 /// (§187 rule 9), so this walk visits each struct once (§187 rule 15).
 fn validate_lowerable_boundary_aggregate(
@@ -713,15 +763,17 @@ fn validate_lowerable_boundary_aggregate(
     };
     let pairs = embedded_array_pairs(aggregate, fields, registry)?;
     for (index, field) in fields.iter().enumerate() {
-        // §187 rules 13 and 15: a fixed array of scalars copies as bytes.
-        if field.array_len.is_some() && aggregate_kind(registry.get(&field.base)) {
-            return Err(ParseError(format!(
-                "boundary scratch root `{root}` recursively reaches `{aggregate}.{}` which \
-                 is a fixed array of aggregates and has no write-direction scratch lowering",
-                field.name
-            )));
-        }
+        // compiler.md §326 rule 4: visit each fixed array element type.
         if field.array_len.is_some() {
+            if matches!(registry.get(&field.base), Some(Kind::Boundary)) {
+                validate_lowerable_boundary_aggregate(
+                    parsed,
+                    registry,
+                    root,
+                    &field.base,
+                    visited,
+                )?;
+            }
             continue;
         }
         if pairs.count_idx.contains(&index) {
@@ -783,21 +835,6 @@ fn validate_lowerable_boundary_aggregate(
     Ok(())
 }
 
-/// True when a member of kind `kind` is an aggregate: a fixed array of it
-/// has no write-direction lowering (187.3 item 6).
-fn aggregate_kind(kind: Option<&Kind>) -> bool {
-    matches!(
-        kind,
-        Some(
-            Kind::Boundary
-                | Kind::StringView
-                | Kind::ArrayPair(_)
-                | Kind::ArrayPairStruct(_)
-                | Kind::FnPtr
-        )
-    )
-}
-
 /// Adds every direct string-field struct reached through recursively lowered
 /// by-value aggregates, collapsed-pair element positions, and boundary-
 /// struct pointer members. The traversal uses the exact pair recognizer used
@@ -831,7 +868,6 @@ fn collect_recursive_string_owners(
     for (index, field) in fields.iter().enumerate() {
         let pair_element = pairs.ptr_elem.contains_key(&index);
         let embedded_value = !field.pointer
-            && field.array_len.is_none()
             && matches!(
                 registry.get(&field.base),
                 Some(Kind::Boundary | Kind::ArrayPairStruct(_))

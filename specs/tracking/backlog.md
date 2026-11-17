@@ -1,7 +1,7 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), from the Open lists of the
-contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§326. It
+comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
 
@@ -14,12 +14,6 @@ implementation commit of that section.
 
 ## 1. Wrong output, a stopped process, or a failed build on accepted code
 
-3. A C cast from an embedded-header link to its extension reads wrong
-   values (`10000`, C gives `10003`) or reads past the scratch copy
-   (§187.3 item 13). Only headers that use inheritance by first member.
-   Medium.
-5. A struct with a `FixedArray` of structs that the call rebuilds is
-   rejected only at code generation (§187.3 item 6). Small.
 6. Invalid UTF-8 stays at a string-view parameter, a string field
    written through a pointer, and `subscript_rt_str_from_view`
    (§184.4 item 2). Effect not measured. Medium.
@@ -70,7 +64,8 @@ implementation commit of that section.
 20. Platform runs not recorded: §298.4 item 1 (`cl`), §280.4 item 3
     (Windows), §226.4 items 1–3 (x86-64), §225.4 item 1, C4029 (§183).
 21. `a355` has no `node` run (§185.4 item 2); `jit-runner-fork.md`
-    Open MINOR items.
+    Open MINOR items; the `bound-call` benchmark exits 2 on its
+    decomposition check at the pin of §325 and after (§325.5 item 5).
 
 ## 4. Diagnostic messages
 
@@ -80,7 +75,8 @@ implementation commit of that section.
     the S009 async-arrow example, §149.4 item 2, §186.4 items 1, 5,
     §321.4 item 1, §312.4 item 2, `text-module-measure.md` §9.7 item 1.
 24. §143.4 item 2, §153.4 item 2, §170.4 items 3, 4, §174.4 item 4,
-    §291.4 item 1, §303.4 items 1, 3, §313.4 item 1.
+    §291.4 item 1, §303.4 items 1, 3, §313.4 item 1, §324.4 item 3,
+    §326.5 item 2.
 
 ## 5. Measured cost
 
@@ -90,7 +86,8 @@ implementation commit of that section.
     1–3, §256.4 item 1, §314.4 item 1).
 27. Checker cost 1.04–1.06 of the pin (§160.4 items 1, 2).
 28. The a22 x86-64 ship ratio at 2.18; §323.4 item 1; §269.4 item 1;
-    §169.4 item 9.
+    §169.4 item 9; §325.5 items 2, 4; §326.5 item 1 (code size grows
+    with the length of a fixed array of rebuilt structs).
 
 ## 6. Contrived or MINOR (about 70)
 
@@ -98,7 +95,8 @@ implementation commit of that section.
 - Inference and cycles: §149, §156, §290, §306, §308, §312.
 - Async and counted values: §166–§172, §176, §295, §323.4 item 2.
 - Interop and runtime: §179, §187.3 items 3, 5, 7, 9–12, §259, §261,
-  §263, §265, §267, §270, §271, `s178-host-completion-measurement.md`.
+  §263, §265, §267, §270, §271, `s178-host-completion-measurement.md`,
+  §324.4 items 1, 2, §325.5 items 1, 3, §326.5 items 3, 4.
 - Code hygiene: §174.4 items 1, 6, §166.4 item 3, §220.4 item 3,
   §321.4 item 2, callback arity in `cemit/collection.rs`;
   `runtime/src/arrops.rs` is past 2,000 lines.
@@ -113,6 +111,8 @@ implementation commit of that section.
 
 ## Left out: owner hold or rejection
 
+- A C cast from an embedded-header link to its extension reads wrong
+  values (§187 rule 14, §187.3 item 13; owner hold 2026-11-18).
 - Rare `tsc` forms on hold: §240.4 items 3, 7, §244.4 item 1, §245.4
   item 1, §233.4 item 3.
 - Environment function value adapter forms B and C (form A chosen).

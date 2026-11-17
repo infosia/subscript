@@ -551,15 +551,14 @@ fn descriptor_length_pointer_keeps_the_function_diagnostic() {
 }
 
 #[test]
-fn fixed_arrays_of_descriptors_fail_with_the_aggregate_diagnostic() {
+fn fixed_arrays_of_descriptors_name_the_field_with_no_pass() {
     for pointer_use in ["", "void fill(Items *out);"] {
         let error = crate::generate_for_header(
             &format!("#include <stddef.h>\n#include <stdint.h>\ntypedef struct Item {{ int32_t value; }} Item;\ntypedef struct Items {{ const Item *items; size_t count; }} Items;\ntypedef struct Holder {{ Items arr[2]; }} Holder;\nvoid hold(Holder *h); {pointer_use}"),
             "fixed-descriptor.h",
         ).expect_err("a fixed array of descriptor aggregates has no scratch lowering");
         assert!(
-            error.0.contains("descriptor aggregate")
-                || error.0.contains("fixed array of aggregates"),
+            error.0.contains("field `arr`") && error.0.contains("has no write-direction pass"),
             "{}",
             error.0
         );

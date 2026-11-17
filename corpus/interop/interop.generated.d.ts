@@ -178,6 +178,13 @@
 // @subscript-c-parameter function="sub325ShrinkIndirect" parameter="holder" const=false
 // @subscript-c-member aggregate="Sub325ReentrantGroups" member="groups" const=true order=count-first
 // @subscript-c-parameter function="sub325ShrinkReentrantGroups" parameter="out" const=false
+// @subscript-c-parameter function="sub326Pairs" parameter="out" const=false
+// @subscript-c-parameter function="sub326Read" parameter="out" const=true
+// @subscript-c-parameter function="sub326Strings" parameter="out" const=false
+// @subscript-c-parameter function="sub326Bytes" parameter="out" const=false
+// @subscript-c-parameter function="sub326Nested" parameter="out" const=false
+// @subscript-c-parameter function="sub326Links" parameter="out" const=false
+// @subscript-c-parameter function="sub326ByteCompare" parameter="out" const=false
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -1165,6 +1172,58 @@ declare class Sub325ReentrantGroups {
 }
 
 declare function sub325ShrinkReentrantGroups(out: Sub325ReentrantGroups | null): void;
+
+declare class Sub326Pairs {
+  k: i32;
+  qs: FixedArray<SubDescReadLay, 2>;
+  constructor(k: i32, qs: FixedArray<SubDescReadLay, 2>);
+}
+
+declare class Sub326Strings {
+  k: i32;
+  ss: FixedArray<SubDescReadStr, 2>;
+  constructor(k: i32, ss: FixedArray<SubDescReadStr, 2>);
+}
+
+declare class Sub326Bytes {
+  k: i32;
+  ps: FixedArray<SubByValueI32One, 2>;
+  name: string;
+  constructor(k: i32, ps: FixedArray<SubByValueI32One, 2>, name: string);
+}
+
+declare function sub326Pairs(out: Sub326Pairs | null): void;
+declare function sub326Read(out: Sub326Pairs | null): i32;
+declare function sub326Strings(out: Sub326Strings | null): void;
+declare function sub326Bytes(out: Sub326Bytes | null): void;
+
+declare class Sub326Nested {
+  groups: FixedArray<Sub326Pairs, 2>;
+  constructor(groups: FixedArray<Sub326Pairs, 2>);
+}
+
+declare class Sub326Links {
+  links: FixedArray<Sub325Link, 2>;
+  name: string;
+  constructor(links: FixedArray<Sub325Link, 2>, name: string);
+}
+
+declare function sub326Nested(out: Sub326Nested | null, bad: i32): void;
+declare function sub326Links(out: Sub326Links | null): void;
+
+declare class Sub326Point {
+  x: i32;
+  y: i32;
+  constructor(x: i32, y: i32);
+}
+
+declare class Sub326ByteCompare {
+  ps: FixedArray<Sub326Point, 2>;
+  name: string;
+  constructor(ps: FixedArray<Sub326Point, 2>, name: string);
+}
+
+declare function sub326ByteCompare(out: Sub326ByteCompare | null, info: SubCallbackInfo): void;
 
 type SubFloat16 = f16;
 

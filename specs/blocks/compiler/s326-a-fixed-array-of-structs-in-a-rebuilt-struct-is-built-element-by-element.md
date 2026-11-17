@@ -68,3 +68,45 @@ the same layout question, one level down.
 
 - §187 rule 3 and rule 13: a fixed array of structs in a rebuilt struct
   is built element by element. §187.3 item 6 closes.
+
+### 326.4 Phase Review
+
+Form. The crossing plan gives a fixed array field one element plan per
+element: `MemberCrossing::FixedArray` for the build,
+`WriteBack::FixedArray` for scratch elements, and
+`WriteBack::FixedArrayBytes` for elements that copy their bytes. The
+binder, the checker, `boundary`, and both tiers read it. Each element
+keeps the §325 pair read-back and compares, with the index in the path.
+
+Measured with a476, development tier and ship tier the same:
+
+| Form | Pin | After |
+|---|---|---|
+| Pair elements that C replaces | internal lowering error | `31 3 11 13`, `42 2 21 22` |
+| The same through a `const` pointer | internal lowering error | `21 1 2` |
+| String-view elements that C replaces | rejected by `bind` | `first second 51 62` |
+| Byte-copied elements beside a string view | rejected by `bind` | `11 22 done` |
+
+The CLI `check` output of 1,076 corpus entries is the same at the pin
+and after. The LIR golden moved only for entries that use the interop
+mirror.
+
+One fresh review found no CRITICAL or MAJOR finding. Two MINOR findings
+are fixed: `bind` rejected a whole header for a struct that no function
+reaches (it bound at the pin), and a match arm could not run.
+
+### 326.5 Open
+
+1. The plan holds one element plan per element, and both tiers emit
+   straight-line code for each element. `Vertex v[256]` gives 256
+   copies and 256 compare blocks. The cost follows the declared data,
+   but code size and compile time grow with `N`. A loop over one
+   element plan is the cheaper form.
+2. A hand-written mirror with `FixedArray<string, 2>` in a class that a
+   call passes gets the §187 struct-result text, not a §326 text.
+3. Contrived: the element offset arithmetic in
+   `codegen/src/cemit/marshal.rs` and `codegen/src/lower/` does not use
+   the checked layout helpers; only a very large array overflows it.
+4. No `boundary` golden prints a "not lowered:" line for the reasons
+   that remain (a callback with no userdata, a cycle, written-back
+   elements).

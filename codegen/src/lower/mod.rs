@@ -35,9 +35,7 @@ mod func;
 pub(crate) mod receive;
 pub(crate) mod watch;
 
-pub(crate) use func::{
-    fixed_array_member, struct_cycle, written_back_elements, written_back_in_elements,
-};
+pub(crate) use func::{struct_cycle, written_back_elements, written_back_in_elements};
 
 use std::collections::HashMap;
 

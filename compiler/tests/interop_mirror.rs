@@ -269,6 +269,13 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "sub325ShrinkReentrant",
             "sub325ShrinkIndirect",
             "sub325ShrinkReentrantGroups",
+            "sub326Pairs",
+            "sub326Read",
+            "sub326Strings",
+            "sub326Bytes",
+            "sub326Nested",
+            "sub326Links",
+            "sub326ByteCompare",
         ]
     );
 

@@ -30,6 +30,11 @@ fn structure(module: &l::Module, value: &mut StructPlan, path: &str) {
             module.classes[value.class.0].fields[member.field].source_name
         );
         match &mut member.crossing {
+            MemberCrossing::FixedArray(elements) => {
+                for (index, element) in elements.iter_mut().enumerate() {
+                    structure(module, element, &format!("{path}[{index}]"));
+                }
+            }
             MemberCrossing::Pointer(value) => pointer(module, value, &path),
             MemberCrossing::Embedded(value) => structure(module, value, &path),
             MemberCrossing::Pair(value) => pair(module, value, &path),
@@ -49,12 +54,18 @@ fn write_back(module: &l::Module, value: &mut WriteBackPlan, path: &str) {
     value.path = path.into();
     let class = value.class;
     for member in &mut value.members {
-        if let WriteBack::Embedded(value) = &mut member.write {
-            let path = format!(
-                "{path}.{}",
-                module.classes[class.0].fields[member.field].source_name
-            );
-            write_back(module, value, &path);
+        let path = format!(
+            "{path}.{}",
+            module.classes[class.0].fields[member.field].source_name
+        );
+        match &mut member.write {
+            WriteBack::Embedded(value) => write_back(module, value, &path),
+            WriteBack::FixedArray(elements) => {
+                for (index, element) in elements.iter_mut().enumerate() {
+                    write_back(module, element, &format!("{path}[{index}]"));
+                }
+            }
+            _ => {}
         }
     }
 }

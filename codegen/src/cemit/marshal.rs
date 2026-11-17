@@ -388,11 +388,17 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     parts.push("{0}".into());
                     arrays.push((field.source_name.clone(), access));
                 }
-                MemberCrossing::NotLowered(NotLowered::FixedArrayOfStructs) => {
-                    return Err(crate::lower::fixed_array_member(
-                        &definition.source_name,
-                        &field.source_name,
-                    ));
+                MemberCrossing::FixedArray(elements) => {
+                    let mut values = Vec::new();
+                    for (index, nested) in elements.iter().enumerate() {
+                        values.push(self.marshal_boundary_struct(
+                            out,
+                            nested,
+                            &format!("{access}.a[{index}]"),
+                            position,
+                        )?);
+                    }
+                    parts.push(format!("{{ {} }}", values.join(", ")));
                 }
                 MemberCrossing::NotLowered(NotLowered::CallbackWithoutUserdata) => {
                     return Err(internal("boundary callback has no userdata field"));
@@ -761,6 +767,37 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         out,
                         "        if ({changed}) memcpy(&{language}, &{header}, sizeof {language});"
                     );
+                }
+                WriteBack::FixedArrayBytes { length, .. } => {
+                    for index in 0..*length {
+                        let _ = writeln!(out, "        if (memcmp(&{header}[{index}], &{before}[{index}], sizeof {header}[{index}]) != 0) memcpy(&{language}.a[{index}], &{header}[{index}], sizeof {language}.a[{index}]);");
+                    }
+                }
+                WriteBack::FixedArray(elements) => {
+                    let language_offset = self
+                        .emitter
+                        .layouts
+                        .class(writeback.plan.class.0)?
+                        .field_offsets[member.field];
+                    for (index, nested) in elements.iter().enumerate() {
+                        let stride = self.emitter.layouts.class(nested.class.0)?.size;
+                        self.emit_boundary_writeback(
+                            out,
+                            BoundaryPtrWriteback {
+                                plan: nested.clone(),
+                                source: format!("(&{language}.a[{index}])"),
+                                scratch: format!("(&{header}[{index}])"),
+                                snapshot: format!("(&{before}[{index}])"),
+                                original: format!(
+                                    "((const unsigned char*){} + {}u)",
+                                    writeback.original,
+                                    language_offset + index as u32 * stride
+                                ),
+                            },
+                            position,
+                            callee,
+                        )?;
+                    }
                 }
                 WriteBack::Embedded(nested) => self.emit_boundary_writeback(
                     out,

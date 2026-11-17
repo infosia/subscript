@@ -5,11 +5,8 @@
 //!
 //! The corpus goldens run the command from the workspace root on a corpus
 //! entry with its interop mirrors, so each line starts with the relative
-//! entry path. No accept entry can hold the two remaining words: a fixed
-//! array of structs in a scratch struct stops code generation (`not
-//! lowered`, 187.3 item 6), and no accept entry returns a struct with a
-//! pointer member (`read by members`). A bound header in a scratch
-//! directory gives both.
+//! entry path. A bound header adds fixed struct array elements and a
+//! result with a pointer member (`read by members`, compiler.md §326).
 //!
 //! Cost, measured on Apple arm64, debug: the goldens run 8 command
 //! processes and 1 `bind` process (0.84 s alone); the exit-code test runs
@@ -33,7 +30,7 @@ use subscript_compiler::crossing::{
 };
 
 /// The corpus entries of the goldens, each with the words that it covers.
-const ENTRIES: [(&str, &[&str]); 7] = [
+const ENTRIES: [(&str, &[&str]); 8] = [
     (
         "a100-interop-texture-descriptor-read",
         &[
@@ -62,6 +59,10 @@ const ENTRIES: [(&str, &[&str]); 7] = [
         &["callback registration", "by-value scratch"],
     ),
     ("a354-completion-string-bytes", &["completion endpoint"]),
+    (
+        "a476-fixed-struct-array-members",
+        &["embedded scratch", "embedded bytes"],
+    ),
 ];
 
 /// A header whose program reaches the words that no accept entry holds.
@@ -196,8 +197,7 @@ fn compare(name: &str, stdout: &[u8]) -> Result<String, String> {
     Ok(found)
 }
 
-/// Acceptance 1: the goldens are byte-identical, and together they print
-/// every word of the closed set.
+/// Acceptance 1: the goldens are byte-identical and cover the words for accepted forms.
 #[test]
 fn the_goldens_cover_every_word() -> Result<(), String> {
     let outputs = goldens()?;
@@ -207,7 +207,12 @@ fn the_goldens_cover_every_word() -> Result<(), String> {
         }
     }
     let all = outputs.join("");
+    assert!(!all.contains(": not lowered:"));
     for word in Word::ALL {
+        // compiler.md §326 rule 5: accepted fixed struct arrays have a pass.
+        if word == Word::NotLowered {
+            continue;
+        }
         let text = word.text();
         assert!(
             all.lines().any(|line| line.contains(&format!(": {text}"))),
@@ -215,7 +220,7 @@ fn the_goldens_cover_every_word() -> Result<(), String> {
         );
     }
     let bound = outputs.last().ok_or("no bound golden")?;
-    assert!(bound.contains("not lowered: a fixed array of structs"));
+    assert!(bound.contains("shape.pts[1]: embedded bytes"));
     assert!(bound.contains("result: read by members [SLink.leaf]"));
     assert!(all.contains(" writes-back "));
     Ok(())
@@ -400,7 +405,7 @@ fn emitted_entry(id: &str) -> Result<(String, Expected, HashMap<String, usize>),
 /// Acceptance 2: for each call site of the corpus programs of acceptance
 /// 1, the emitted C holds a scope mark for scratch or borrowed storage.
 /// It holds a write-back exactly when the plan writes back. The
-/// bound program has no C: its fixed array of structs stops emission.
+/// bound program also has an element pass (compiler.md §326 rule 5).
 #[test]
 fn the_emitted_c_marks_and_writes_back_as_the_plan_says() -> Result<(), String> {
     let mut seen = Vec::new();

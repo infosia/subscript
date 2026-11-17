@@ -9,13 +9,6 @@
 //! this plan, and `subscript boundary` prints it ([`report`]). The
 //! marshaling of both tiers decides no pass outside this plan.
 //!
-//! Two member walks of the dev JIT remain outside the plan. The C-layout
-//! walk (`boundary_c_layout_in`) calls `struct_pass` for its check of a
-//! fixed array of structs, and stops with the text of
-//! [`NotLowered::FixedArrayOfStructs`]. The stabilize walk of a struct
-//! result (`stabilize_boundary_return_value`) visits its embedded structs
-//! and its pair elements.
-//!
 //! The plan reads the lowered LIR: the class view that both tiers read.
 
 mod paths;
@@ -128,6 +121,8 @@ pub enum MemberCrossing {
     Callback(CallbackPlan),
     /// A collapsed pair.
     Pair(PairPlan),
+    /// Each fixed array element uses its struct pass (compiler.md §326 rule 5).
+    FixedArray(Vec<StructPlan>),
     /// An embedded struct.
     Embedded(StructPlan),
     /// A struct-pointer member.
@@ -243,6 +238,15 @@ pub enum WriteBack {
     EmbeddedBytes(ClassId),
     /// Write back an embedded scratch struct member by member.
     Embedded(WriteBackPlan),
+    /// Compare and copy each byte-layout element as one embedded member (compiler.md §326 rule 2).
+    FixedArrayBytes {
+        /// The element class and its byte layout.
+        class: ClassId,
+        /// The declared extent.
+        length: u32,
+    },
+    /// Each fixed array element uses its own copy-back (compiler.md §326 rule 2).
+    FixedArray(Vec<WriteBackPlan>),
     /// The embedded struct is a struct cycle (§187 rule 9).
     Cycle(ClassId),
 }
@@ -251,9 +255,6 @@ pub enum WriteBack {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NotLowered {
-    /// A fixed array of structs in a struct that the call rebuilds (187.3
-    /// item 6).
-    FixedArrayOfStructs,
     /// A callback field with no userdata field after it.
     CallbackWithoutUserdata,
     /// A struct that reaches itself through scratch copies (§187 rule 9).
@@ -267,9 +268,6 @@ impl NotLowered {
     #[must_use]
     pub fn reason(self) -> &'static str {
         match self {
-            Self::FixedArrayOfStructs => {
-                "a fixed array of structs in a struct that the call rebuilds"
-            }
             Self::CallbackWithoutUserdata => "a callback field with no userdata field",
             Self::StructCycle => "a struct cycle",
             Self::WrittenBackElements => "a pair whose elements the call copies in and back",
@@ -720,10 +718,17 @@ impl Planner<'_> {
             ty @ Type::FixedArray(..) if field_shape(self.module, ty) == FieldShape::Bytes => {
                 (MemberCrossing::FixedBytes, 1)
             }
-            Type::FixedArray(..) => (
-                MemberCrossing::NotLowered(NotLowered::FixedArrayOfStructs),
-                1,
-            ),
+            Type::FixedArray(element, length) => {
+                let Type::Class(nested) = element.as_ref() else {
+                    return Err(internal("fixed array element has no struct pass"));
+                };
+                let pass = embedded_pass(&self.view, StructPass::Scratch, *nested);
+                let element = self.structure(*nested, pass, active)?;
+                (
+                    MemberCrossing::FixedArray(vec![element; *length as usize]),
+                    1,
+                )
+            }
             _ => (MemberCrossing::Bytes, 1),
         })
     }
@@ -738,48 +743,56 @@ impl Planner<'_> {
         active.push(class);
         let mut members = Vec::new();
         for (index, field) in definition.fields.iter().enumerate() {
-            let write = match copy_back(&field_shape(self.module, &field.ty)) {
-                CopyBack::Skip => continue,
-                CopyBack::Pair => {
-                    let Type::Array(element) = &field.ty else {
-                        return Err(internal("a pair has no element type"));
-                    };
-                    WriteBack::Pair {
-                        pointer_first: matches!(
-                            field.foreign_provenance,
-                            Some(ForeignTypeProvenance::PairOrder {
-                                pointer_first: true,
-                                ..
-                            })
-                        ),
-                        element: self.receive(element)?,
+            let write = if let Type::FixedArray(element, length) = &field.ty {
+                if let Type::Class(nested) = element.as_ref() {
+                    if self.is_value(*nested) {
+                        let write = match self.embedded_write(*nested, active)? {
+                            WriteBack::EmbeddedBytes(class) => WriteBack::FixedArrayBytes {
+                                class,
+                                length: *length,
+                            },
+                            WriteBack::Embedded(element) => {
+                                WriteBack::FixedArray(vec![element; *length as usize])
+                            }
+                            WriteBack::Cycle(class) => WriteBack::Cycle(class),
+                            _ => return Err(internal("embedded element has no write-back")),
+                        };
+                        members.push(WriteBackMember {
+                            field: index,
+                            write,
+                        });
+                        continue;
                     }
                 }
-                CopyBack::Pointer => WriteBack::Pointer {
-                    nullable: matches!(field.ty, Type::Nullable(..)),
-                },
-                CopyBack::Bytes if matches!(field.ty, Type::FixedArray(..)) => {
-                    WriteBack::FixedBytes
-                }
-                CopyBack::Bytes => WriteBack::Bytes,
-                CopyBack::StringView => WriteBack::StringView,
-                CopyBack::Embedded(nested) => match struct_pass(&self.view, nested) {
-                    StructPass::Bytes => {
-                        if self
-                            .pointer_checks(nested, &mut Vec::new())?
-                            .members
-                            .is_empty()
-                        {
-                            WriteBack::EmbeddedBytes(nested)
-                        } else {
-                            WriteBack::Embedded(self.write_back(nested, active)?)
+                WriteBack::FixedBytes
+            } else {
+                match copy_back(&field_shape(self.module, &field.ty)) {
+                    CopyBack::Skip => continue,
+                    CopyBack::Pair => {
+                        let Type::Array(element) = &field.ty else {
+                            return Err(internal("a pair has no element type"));
+                        };
+                        WriteBack::Pair {
+                            pointer_first: matches!(
+                                field.foreign_provenance,
+                                Some(ForeignTypeProvenance::PairOrder {
+                                    pointer_first: true,
+                                    ..
+                                })
+                            ),
+                            element: self.receive(element)?,
                         }
                     }
-                    StructPass::Scratch if !active.contains(&nested) => {
-                        WriteBack::Embedded(self.write_back(nested, active)?)
+                    CopyBack::Pointer => WriteBack::Pointer {
+                        nullable: matches!(field.ty, Type::Nullable(..)),
+                    },
+                    CopyBack::Bytes if matches!(field.ty, Type::FixedArray(..)) => {
+                        WriteBack::FixedBytes
                     }
-                    StructPass::Scratch | StructPass::Cycle => WriteBack::Cycle(nested),
-                },
+                    CopyBack::Bytes => WriteBack::Bytes,
+                    CopyBack::StringView => WriteBack::StringView,
+                    CopyBack::Embedded(nested) => self.embedded_write(nested, active)?,
+                }
             };
             members.push(WriteBackMember {
                 field: index,
@@ -791,6 +804,29 @@ impl Planner<'_> {
             class,
             members,
             path: definition.source_name.clone(),
+        })
+    }
+
+    /// One embedded element keeps the same compare scope in a field or an array (§326 rule 2).
+    fn embedded_write(
+        &self,
+        nested: ClassId,
+        active: &mut Vec<ClassId>,
+    ) -> Result<WriteBack, String> {
+        Ok(match struct_pass(&self.view, nested) {
+            StructPass::Bytes
+                if self
+                    .pointer_checks(nested, &mut Vec::new())?
+                    .members
+                    .is_empty() =>
+            {
+                WriteBack::EmbeddedBytes(nested)
+            }
+            StructPass::Bytes => WriteBack::Embedded(self.write_back(nested, active)?),
+            StructPass::Scratch if !active.contains(&nested) => {
+                WriteBack::Embedded(self.write_back(nested, active)?)
+            }
+            StructPass::Scratch | StructPass::Cycle => WriteBack::Cycle(nested),
         })
     }
 

@@ -73,6 +73,14 @@ pub(crate) fn input_arrays(
         let offset = layout.field_offsets[member.field];
         match &member.write {
             WriteBack::Pair { .. } => offsets.push(offset),
+            WriteBack::FixedArray(elements) => {
+                for (index, child) in elements.iter().enumerate() {
+                    let stride = layouts.class(child.class.0)?.size;
+                    for child in input_arrays(layouts, child)? {
+                        offsets.push(offset + index as u32 * stride + child);
+                    }
+                }
+            }
             WriteBack::Embedded(child) => {
                 for child in input_arrays(layouts, child)? {
                     offsets.push(

@@ -1927,3 +1927,35 @@ void sub325ShrinkReentrantGroups(Sub325ReentrantGroups *out) {
     out->info.callback((SubStringView){"shrink", 6}, out->info.userdata, out->info.userparam);
     if (out->groupsCount) out->groupsCount--;
 }
+
+void sub326Pairs(Sub326Pairs *out) {
+    static const uint32_t first[] = {11, 12, 13};
+    static const uint32_t second[] = {21, 22};
+    out->qs[0].tag = 31; out->qs[0].itemsCount = 3; out->qs[0].items = first;
+    out->qs[1].tag = 42; out->qs[1].itemsCount = 2; out->qs[1].items = second;
+}
+int32_t sub326Read(const Sub326Pairs *out) {
+    return out->k + out->qs[0].tag + out->qs[1].tag + out->qs[0].items[0] + out->qs[1].items[0];
+}
+void sub326Strings(Sub326Strings *out) {
+    out->ss[0].label = (SubStringView){"first", 5}; out->ss[0].n = 51;
+    out->ss[1].label = (SubStringView){"second", 6}; out->ss[1].n = 62;
+}
+void sub326Bytes(Sub326Bytes *out) {
+    out->ps[0].a += 10; out->ps[1].a += 20;
+    out->name = (SubStringView){"done", 4};
+}
+
+void sub326Nested(Sub326Nested *out, int32_t bad) {
+    if (bad) { out->groups[1].qs[1].items = NULL; out->groups[1].qs[1].itemsCount = 1; }
+    else { out->groups[1].qs[1].itemsCount = 1; }
+}
+void sub326Links(Sub326Links *out) {
+    static const Sub325Leaf leaf = { 23 };
+    out->links[1].leaf = &leaf;
+}
+
+void sub326ByteCompare(Sub326ByteCompare *out, SubCallbackInfo info) {
+    info.callback((SubStringView){"compare", 7}, info.userdata, info.userparam);
+    out->ps[1].x += 10;
+}

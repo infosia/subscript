@@ -22,25 +22,6 @@ enum CLayout {
     Read,
 }
 
-/// The error of a fixed array of structs in a struct that a call rebuilds
-/// (187.3 item 6). Both tiers stop with this text: no call lowering builds
-/// the member, so neither tier copies it back. A fixed array of scalars
-/// copies as bytes (§187 rule 13).
-pub(crate) fn fixed_array_member(owner: &str, member: &str) -> String {
-    internal(format!(
-        "boundary field `{owner}.{member}` is a fixed array of structs in a struct that the \
-         call rebuilds; no call lowering builds it"
-    ))
-}
-
-/// True when `ty` is a fixed array of scalars, which a call copies as bytes
-/// in a scratch struct (§187 rule 13).
-fn is_scalar_fixed_array(module: &l::Module, ty: &Type) -> bool {
-    matches!(ty, Type::FixedArray(..))
-        && subscript_compiler::boundary_pass::field_shape(module, ty)
-            == subscript_boundary::FieldShape::Bytes
-}
-
 /// The error of a pair whose elements the call writes back. The binder and
 /// the checker reject each position that passes one (§187 rule 11), so
 /// this is an internal error in both tiers.
@@ -432,11 +413,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         matches!(ty, Type::Class(id) if self.ml.layouts.class(id.0).is_ok_and(|layout| layout.is_value))
     }
 
-    /// The LIR class view that the pass decision reads (§187 rule 3).
-    fn boundary_view(&self) -> subscript_compiler::boundary_pass::Classes<'_, l::Module> {
-        crate::lir::boundary_view(self.ml.lir)
-    }
-
     /// The plan of `callee`, built on its first call.
     fn crossing_plan(&mut self, callee: l::ForeignFunctionId) -> Result<Arc<CallPlan>, String> {
         let lir = self.ml.lir;
@@ -475,10 +451,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.boundary_c_layout_in(class, CLayout::Write)
     }
 
-    /// The C offsets, size, and alignment of a boundary class. A `Write`
-    /// layout rejects a fixed array in a struct that the call rebuilds; a
-    /// `Read` layout is the layout of a result, which no call rebuilds
-    /// (§187 rule 12).
+    /// The C offsets, size, and alignment of a boundary class (§187 rule 12).
     fn boundary_c_layout_in(
         &self,
         class: usize,
@@ -491,17 +464,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .get(class)
             .ok_or_else(|| internal(format!("boundary class {class} is missing")))?;
         for field in &definition.fields {
-            if matches!(field.ty, Type::FixedArray(..))
-                && !is_scalar_fixed_array(self.ml.lir, &field.ty)
-                && mode == CLayout::Write
-                && subscript_boundary::struct_pass(&self.boundary_view(), ClassId(class))
-                    != StructPass::Bytes
-            {
-                return Err(fixed_array_member(
-                    &definition.source_name,
-                    &field.source_name,
-                ));
-            }
             self.boundary_c_field_in(&field.ty, mode)?;
         }
         crate::lower::receive::c_class(self.ml.lir, ClassId(class))
@@ -1378,11 +1340,43 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ins()
                         .store(flags(), value, destination, c_offset);
                 }
-                MemberCrossing::NotLowered(NotLowered::FixedArrayOfStructs) => {
-                    return Err(fixed_array_member(
-                        &definition.source_name,
-                        &field.source_name,
-                    ));
+                MemberCrossing::FixedArray(elements) => {
+                    for (index, nested) in elements.iter().enumerate() {
+                        let language = self.ml.layouts.class(nested.class.0)?.clone();
+                        let (_, c_size, _) = self.boundary_c_layout(nested.class.0)?;
+                        let from = self.address_offset(
+                            source,
+                            i64::from(language_offset) + index as i64 * i64::from(language.size),
+                        );
+                        let to = self.address_offset(
+                            destination,
+                            i64::from(c_offset) + index as i64 * i64::from(c_size),
+                        );
+                        match nested.pass {
+                            StructPass::Scratch => {
+                                self.populate_boundary_value(nested, from, to, pos)?
+                            }
+                            StructPass::Bytes => {
+                                if let Some(watch) = &nested.watch {
+                                    let count = self.iconst(types::I64, 1);
+                                    self.watch_memory(
+                                        watch,
+                                        &nested.path,
+                                        from,
+                                        count,
+                                        false,
+                                        pos,
+                                    )?;
+                                }
+                                self.copy_bytes(to, from, language.size, language.align);
+                            }
+                            StructPass::Cycle => {
+                                return Err(struct_cycle(
+                                    &self.ml.lir.classes[nested.class.0].source_name,
+                                ))
+                            }
+                        }
+                    }
                 }
                 MemberCrossing::NotLowered(NotLowered::CallbackWithoutUserdata) => {
                     return Err(internal("boundary callback has no userdata field"));
@@ -1681,6 +1675,56 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             let language_offset = language_layout.field_offsets[index] as i32;
             let c_offset = c_offsets[index] as i32;
             match &member.write {
+                WriteBack::FixedArrayBytes { class, length } => {
+                    let layout = self.ml.layouts.class(class.0)?.clone();
+                    for index in 0..*length {
+                        let at = c_offset + (index * layout.size) as i32;
+                        let changed = self.bytes_differ(
+                            writeback.scratch,
+                            writeback.snapshot,
+                            at,
+                            layout.size,
+                        );
+                        let copy = self.builder.create_block();
+                        let kept = self.builder.create_block();
+                        self.builder.ins().brif(changed, copy, &[], kept, &[]);
+                        self.builder.switch_to_block(copy);
+                        let from = self.address_offset(writeback.scratch, i64::from(at));
+                        let to = self.address_offset(
+                            writeback.source,
+                            i64::from(language_offset) + i64::from(index * layout.size),
+                        );
+                        self.copy_bytes(to, from, layout.size, layout.align);
+                        self.builder.ins().jump(kept, &[]);
+                        self.builder.switch_to_block(kept);
+                    }
+                    continue;
+                }
+                WriteBack::FixedArray(elements) => {
+                    for (index, nested) in elements.iter().enumerate() {
+                        let language = self.ml.layouts.class(nested.class.0)?.clone();
+                        let (_, c_size, _) = self.boundary_c_layout(nested.class.0)?;
+                        let c_at = i64::from(c_offset) + index as i64 * i64::from(c_size);
+                        let language_at =
+                            i64::from(language_offset) + index as i64 * i64::from(language.size);
+                        let scratch = self.address_offset(writeback.scratch, c_at);
+                        let snapshot = self.address_offset(writeback.snapshot, c_at);
+                        let source = self.address_offset(writeback.source, language_at);
+                        let original = self.address_offset(writeback.original, language_at);
+                        self.write_back_boundary_pointer(
+                            BoundaryPtrWriteback {
+                                plan: nested.clone(),
+                                source,
+                                scratch,
+                                snapshot,
+                                original,
+                            },
+                            pos,
+                            callee,
+                        )?;
+                    }
+                    continue;
+                }
                 WriteBack::Embedded(nested) => {
                     let scratch = self.address_offset(writeback.scratch, i64::from(c_offset));
                     let snapshot = self.address_offset(writeback.snapshot, i64::from(c_offset));

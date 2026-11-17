@@ -213,7 +213,8 @@ impl<'p> Checker<'p> {
             headers,
         });
         let read = |(message, pos)| (RejectionSite::ForeignResultRead, message, pos);
-        let mut rejected: Vec<_> = scan.result_reads().into_iter().map(read).collect();
+        let mut rejected: Vec<_> = scan.fixed_field_errors().into_iter().map(read).collect();
+        rejected.extend(scan.result_reads().into_iter().map(read));
         rejected.extend(scan.parameter_reads());
         rejected.extend(scan.callback_parameter_reads().into_iter().map(read));
         rejected.extend(
@@ -230,6 +231,33 @@ impl<'p> Checker<'p> {
 impl Scan<'_, '_> {
     fn checker(&self) -> &Checker<'_> {
         self.classes.checker
+    }
+
+    /// compiler.md §326 rule 5: every fixed field needs an element pass, including input fields.
+    fn fixed_field_errors(&self) -> Vec<(String, Pos)> {
+        let checker = self.checker();
+        let mut classes: Vec<_> = checker.boundary_classes.iter().copied().collect();
+        classes.sort_by_key(|class| class.0);
+        let mut errors = Vec::new();
+        for class in classes {
+            let definition = &checker.classes[class.0];
+            for field in &definition.fields {
+                let Type::FixedArray(element, _) = checker.apparent_type(&field.ty) else {
+                    continue;
+                };
+                let shape = field_shape(&self.classes, &field.ty);
+                let supported = shape == FieldShape::Bytes
+                    || (matches!(checker.apparent_type(&element), Type::Class(_))
+                        && matches!(shape, FieldShape::Embedded(_)));
+                if !supported {
+                    errors.push((format!(
+                        "boundary field `{}.{}` has a fixed array element with no write-direction pass (compiler.md §326)",
+                        definition.name, field.name
+                    ), field.pos.clone()));
+                }
+            }
+        }
+        errors
     }
 
     /// The innermost member of `class` that has no read lowering when C

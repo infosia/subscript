@@ -36,6 +36,13 @@ use subscript_codegen::NativeLibrary;
 // signatures declared by the committed mirror.
 #[cfg(not(all(windows, target_env = "msvc")))]
 extern "C" {
+    fn sub326Nested();
+    fn sub326Links();
+    fn sub326ByteCompare();
+    fn sub326Pairs();
+    fn sub326Read();
+    fn sub326Strings();
+    fn sub326Bytes();
     fn sub325ShrinkReentrantGroups();
     fn sub325ShrinkReentrant();
     fn sub325ShrinkIndirect();
@@ -301,6 +308,13 @@ impl Fixture {
 
             let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
             let symbols = vec![
+                ("sub326ByteCompare".into(), sub326ByteCompare as *const u8),
+                ("sub326Nested".into(), sub326Nested as *const u8),
+                ("sub326Links".into(), sub326Links as *const u8),
+                ("sub326Pairs".into(), sub326Pairs as *const u8),
+                ("sub326Read".into(), sub326Read as *const u8),
+                ("sub326Strings".into(), sub326Strings as *const u8),
+                ("sub326Bytes".into(), sub326Bytes as *const u8),
                 (
                     "sub325ShrinkReentrant".into(),
                     sub325ShrinkReentrant as *const u8,

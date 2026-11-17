@@ -37,9 +37,7 @@ pub(crate) use async_callable::define_async_callable;
 mod boundary;
 mod boundary_receive;
 mod boundary_watch;
-pub(crate) use boundary::{
-    fixed_array_member, struct_cycle, written_back_elements, written_back_in_elements,
-};
+pub(crate) use boundary::{struct_cycle, written_back_elements, written_back_in_elements};
 mod builtin;
 mod call;
 mod coroutine;

@@ -1436,4 +1436,22 @@ void sub325ShrinkIndirect(Sub325ReentrantHolder *holder);
 typedef struct Sub325ReentrantGroups { size_t groupsCount; const Sub325WatchGroup *groups; SubCallbackInfo info; } Sub325ReentrantGroups;
 void sub325ShrinkReentrantGroups(Sub325ReentrantGroups *out);
 
+/* compiler.md §326: fixed struct arrays inside scratch structs. */
+typedef struct Sub326Pairs { int32_t k; SubDescReadLay qs[2]; } Sub326Pairs;
+typedef struct Sub326Strings { int32_t k; SubDescReadStr ss[2]; } Sub326Strings;
+typedef struct Sub326Bytes { int32_t k; SubByValueI32One ps[2]; SubStringView name; } Sub326Bytes;
+void sub326Pairs(Sub326Pairs *out);
+int32_t sub326Read(const Sub326Pairs *out);
+void sub326Strings(Sub326Strings *out);
+void sub326Bytes(Sub326Bytes *out);
+
+typedef struct Sub326Nested { Sub326Pairs groups[2]; } Sub326Nested;
+typedef struct Sub326Links { Sub325Link links[2]; SubStringView name; } Sub326Links;
+void sub326Nested(Sub326Nested *out, int32_t bad);
+void sub326Links(Sub326Links *out);
+
+typedef struct Sub326Point { int32_t x; int32_t y; } Sub326Point;
+typedef struct Sub326ByteCompare { Sub326Point ps[2]; SubStringView name; } Sub326ByteCompare;
+void sub326ByteCompare(Sub326ByteCompare *out, SubCallbackInfo info);
+
 #endif /* SUBSCRIPT_INTEROP_H */

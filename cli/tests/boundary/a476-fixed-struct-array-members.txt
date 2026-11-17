@@ -1,0 +1,24 @@
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out: scratch read-only, none for null [Sub326Pairs.qs embedded scratch struct]
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out.qs[0]: embedded scratch [SubDescReadLay.items pair]
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out.qs[0].items: pair
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out.qs[0].items[]: script memory
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out.qs[1]: embedded scratch [SubDescReadLay.items pair]
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out.qs[1].items: pair
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read out.qs[1].items[]: script memory
+corpus/accept/a476-fixed-struct-array-members.ts:11:12 sub326Read result: value
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out: scratch written-back if changed, none for null [Sub326Pairs.qs embedded scratch struct] writes-back k qs
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out.qs[0]: embedded scratch [SubDescReadLay.items pair]
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out.qs[0].items: pair
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out.qs[0].items[]: script memory
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out.qs[1]: embedded scratch [SubDescReadLay.items pair]
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out.qs[1].items: pair
+corpus/accept/a476-fixed-struct-array-members.ts:12:3 sub326Pairs out.qs[1].items[]: script memory
+corpus/accept/a476-fixed-struct-array-members.ts:17:3 sub326Strings out: scratch written-back if changed, none for null [Sub326Strings.ss embedded scratch struct] writes-back k ss
+corpus/accept/a476-fixed-struct-array-members.ts:17:3 sub326Strings out.ss[0]: embedded scratch [SubDescReadStr.label string view]
+corpus/accept/a476-fixed-struct-array-members.ts:17:3 sub326Strings out.ss[0].label: string view of script bytes
+corpus/accept/a476-fixed-struct-array-members.ts:17:3 sub326Strings out.ss[1]: embedded scratch [SubDescReadStr.label string view]
+corpus/accept/a476-fixed-struct-array-members.ts:17:3 sub326Strings out.ss[1].label: string view of script bytes
+corpus/accept/a476-fixed-struct-array-members.ts:21:3 sub326Bytes out: scratch written-back if changed, none for null [Sub326Bytes.name string view] writes-back k ps name
+corpus/accept/a476-fixed-struct-array-members.ts:21:3 sub326Bytes out.ps[0]: embedded bytes
+corpus/accept/a476-fixed-struct-array-members.ts:21:3 sub326Bytes out.ps[1]: embedded bytes
+corpus/accept/a476-fixed-struct-array-members.ts:21:3 sub326Bytes out.name: string view of script bytes

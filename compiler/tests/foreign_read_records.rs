@@ -197,3 +197,26 @@ fn a_callback_parameter_of_a_foreign_function_is_read() {
         vec![direct]
     );
 }
+
+/// compiler.md §326 rule 5: the test builds fields whose elements have no fixed-field pass.
+#[test]
+fn a_hand_written_fixed_field_needs_an_element_pass_at_every_root() {
+    for element in [
+        "string",
+        "i32[]",
+        "(value: i32) => void",
+        "FixedArray<Q, 2>",
+    ] {
+        for constant in [false, true] {
+            let mirror = SourceFile::ambient("fixed.d.ts", format!(
+                "// @subscript-c-header include=\"fixed.h\"\n// @subscript-c-parameter function=\"fill\" parameter=\"out\" const={constant}\ndeclare class Q {{ name: string; constructor(name: string); }}\ndeclare class B {{ values: FixedArray<{element}, 2>; constructor(values: FixedArray<{element}, 2>); }}\ndeclare function fill(out: B | null): void;"
+            ));
+            let found = messages(&[mirror, main_file()]);
+            assert!(
+                found.iter().any(|text| text.contains("B.values")
+                    && text.contains("fixed array element with no write-direction pass")),
+                "{element}, const={constant}: {found:?}"
+            );
+        }
+    }
+}

@@ -122,6 +122,18 @@ impl Planner<'_> {
         active.push(class);
         let mut members = Vec::new();
         for (field, value) in self.class(class)?.fields.iter().enumerate() {
+            if let Type::FixedArray(element, length) = &value.ty {
+                if let Type::Class(nested) = element.as_ref() {
+                    let plan = self.pointer_checks(*nested, active)?;
+                    if !plan.members.is_empty() {
+                        members.push(WriteBackMember {
+                            field,
+                            write: WriteBack::FixedArray(vec![plan; *length as usize]),
+                        });
+                    }
+                }
+                continue;
+            }
             let write = match field_shape(self.module, &value.ty) {
                 FieldShape::Pointer { .. } | FieldShape::Userdata | FieldShape::Callback => {
                     WriteBack::Pointer {

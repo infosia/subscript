@@ -733,6 +733,72 @@ export async function main(): Promise<void> {
     assert_eq!(both_tiers(program), b"101\n");
 }
 
+// compiler.md §326 rule 2: a byte element uses the compare scope of one embedded struct.
+// Cost: one native run per tier, with one C compiler process for ship.
+fn fixed_struct_array_byte_elements_compare_as_embedded_members() {
+    let program = r#"
+class ByteState { out: Sub326ByteCompare | null = null; }
+let active: ByteState | null = null;
+function run(state: ByteState): void {
+  const out = state.out;
+  if (out !== null) {
+    const info = new SubCallbackInfo((message, userdata, userparam) => {
+      const current = active;
+      if (current !== null) {
+        const value = current.out;
+        if (value !== null) { value.ps[0].y = 88; value.ps[1].y = 99; }
+      }
+    }, null, null);
+    sub326ByteCompare(out, info);
+    print(`${out.ps[0].x} ${out.ps[0].y} ${out.ps[1].x} ${out.ps[1].y}`);
+  }
+}
+export function main(): void {
+  const state = new ByteState();
+  state.out = new Sub326ByteCompare([new Sub326Point(1, 2), new Sub326Point(3, 4)], "name");
+  active = state;
+  run(state);
+}
+"#;
+    assert_eq!(both_tiers(program), b"1 88 13 4\n");
+}
+
+// compiler.md §326 rule 2: nested elements retain arrays and indexed diagnostics.
+// Cost: three programs per tier; each ship run invokes the C compiler once.
+fn fixed_struct_arrays_keep_nested_receives_and_compares() {
+    let libraries = [native_fixture::fixture().expect("fixture").library()];
+    let nested = "const a = new Sub326Pairs(0, [new SubDescReadLay(1, [7]), new SubDescReadLay(2, [8])]); const b = new Sub326Pairs(0, [new SubDescReadLay(3, [11]), new SubDescReadLay(4, [21, 22])]); const out = new Sub326Nested([a, b]);";
+    for (source, expected, error) in [
+        (format!("export function main(): void {{ {nested} sub326Nested(out, 0); Context.collect(); print(`${{out.groups[1].qs[1].items.length}} ${{out.groups[1].qs[1].items[0]}} ${{out.groups[0].qs[1].items[0]}}`); }}"), "1 21 8\n", None),
+        (format!("export function main(): void {{ {nested} sub326Nested(out, 1); }}"), "", Some("sub326Nested.out.groups[1].qs[1].items: C returned an invalid pointer/count pair")),
+        ("export function main(): void { const out = new Sub326Links([new Sub325Link(1, null), new Sub325Link(2, null)], \"name\"); sub326Links(out); }".into(), "", Some("sub326Links.out.links[1].leaf: C replaced a pointer that the script cannot receive")),
+    ] {
+        let files = [interop::mirror("interop.generated.d.ts", SourceFile::ambient), SourceFile::new("fixed.ts", source)];
+        let jit = run_jit_with_native_libraries(&files, &libraries);
+        let ship = run_c_aot_with_native_libraries(&files, &libraries);
+        if let Some(message) = error {
+            match (jit, ship) {
+                (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) => {
+                    assert_eq!(jit, ship);
+                    assert_eq!(jit.rule, TrapKind::ForeignPointerReplaced);
+                    assert_eq!(jit.message, message);
+                }
+                (jit, ship) => panic!("indexed fixed array trap: {jit:?}, {ship:?}"),
+            }
+        } else {
+            assert_eq!(jit.expect("nested JIT"), expected.as_bytes());
+            assert_eq!(ship.expect("nested ship"), expected.as_bytes());
+        }
+    }
+}
+
+// compiler.md §326 acceptance 1: one corpus run per tier.
+fn fixed_struct_array_members_use_each_element_pass() {
+    let source = include_str!("../../corpus/accept/a476-fixed-struct-array-members.ts");
+    let golden = include_bytes!("../../corpus/accept/a476-fixed-struct-array-members.expected");
+    assert_eq!(both_tiers(source), golden);
+}
+
 // compiler.md §324 acceptances 1, 2 and 6. One fixture run per tier.
 fn fixed_array_parameters_share_places_and_materialize_temporaries() {
     let source = include_str!("../../corpus/accept/a474-c-array-parameter-storage.ts");
@@ -1095,7 +1161,7 @@ fn nested_scratch_elements_keep_nonzero_watch_indices() {
 
 // compiler.md §325 acceptance 3: a const target receives no comparison code.
 fn a_const_target_has_no_read_back_compare() {
-    let files = [interop::mirror("interop.generated.d.ts", SourceFile::ambient), SourceFile::new("read.ts", "export function main(): void { const out = new Sub325List(0, [1]); print(`${sub325Read(out)}`); }")];
+    let files = [interop::mirror("interop.generated.d.ts", SourceFile::ambient), SourceFile::new("read.ts", "export function main(): void { const out = new Sub325List(0, [1]); print(`${sub325Read(out)}`); const fixed = new Sub326Pairs(0, [new SubDescReadLay(1, [7]), new SubDescReadLay(2, [8])]); print(`${sub326Read(fixed)}`); }")];
     let module = subscript_compiler::check_program(&files).expect("const read checks");
     let emitted = subscript_codegen::emit_c(&module).expect("const read emits");
     assert!(!emitted.source.contains("subscript_rt_boundary_receive"));
@@ -1111,6 +1177,9 @@ pub(super) fn main() -> std::process::ExitCode {
         parallel: [
         ],
         main_thread: [
+            fixed_struct_array_members_use_each_element_pass,
+            fixed_struct_array_byte_elements_compare_as_embedded_members,
+            fixed_struct_arrays_keep_nested_receives_and_compares,
             nested_scratch_elements_keep_nonzero_watch_indices,
             finite_array_watches_and_recursive_headers_match_both_tiers,
             an_external_embedded_userdata_slot_is_compared,
