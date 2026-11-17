@@ -219,7 +219,7 @@ LayList*` form is rejected.
 6. A struct with a `FixedArray` of structs that a call rebuilds is
    rejected at code generation in both tiers with one text. The binder
    and the checker do not reject it first (the write-direction class of
-   item 2).
+   item 2). §326 builds it element by element.
 
 7. If one call passes one script object to two fill parameters
    (`qTwoBump(t, t)`), the object gets the write-back of the last
