@@ -378,3 +378,4 @@ Every section, with its status:
 | §335 | A call through a constraint has the constraint type | active | [`s335-a-call-through-a-constraint-has-the-constraint-type.md`](compiler/s335-a-call-through-a-constraint-has-the-constraint-type.md) |
 | §336 | A type argument and a plain template give their literal context | active | [`s336-a-type-argument-and-a-plain-template-give-their-literal-context.md`](compiler/s336-a-type-argument-and-a-plain-template-give-their-literal-context.md) |
 | §337 | A test states its cost and does no work twice | active | [`s337-a-test-states-its-cost-and-does-no-work-twice.md`](compiler/s337-a-test-states-its-cost-and-does-no-work-twice.md) |
+| §338 | A check can fail and a test can fire | active | [`s338-a-check-can-fail-and-a-test-can-fire.md`](compiler/s338-a-check-can-fail-and-a-test-can-fire.md) |
