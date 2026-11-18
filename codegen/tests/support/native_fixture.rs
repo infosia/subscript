@@ -36,6 +36,7 @@ use subscript_codegen::NativeLibrary;
 // signatures declared by the committed mirror.
 #[cfg(not(all(windows, target_env = "msvc")))]
 extern "C" {
+    fn sub328SameCallbacks();
     fn sub327Fill();
     fn sub327Callback();
     fn sub327Registration();
@@ -313,6 +314,10 @@ impl Fixture {
 
             let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop");
             let symbols = vec![
+                (
+                    "sub328SameCallbacks".into(),
+                    sub328SameCallbacks as *const u8,
+                ),
                 ("sub327Fill".into(), sub327Fill as *const u8),
                 ("sub327Callback".into(), sub327Callback as *const u8),
                 ("sub327Registration".into(), sub327Registration as *const u8),

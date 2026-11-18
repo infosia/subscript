@@ -1989,3 +1989,9 @@ void sub327Keep(SubDescReadStr *out) {
     if (out->n == 0) { before = out->label.data; out->n = 1; }
     else { out->n = before == out->label.data ? 2 : -1; }
 }
+
+/* compiler.md §328 rule 2: a host compares the complete callback key. */
+int32_t sub328SameCallbacks(SubCallbackInfo first, SubCallbackInfo second) {
+    return first.callback == second.callback && first.userdata == second.userdata
+        && first.userparam == second.userparam;
+}

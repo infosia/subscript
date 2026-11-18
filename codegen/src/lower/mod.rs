@@ -1568,6 +1568,23 @@ fn lower_lir_module_with_positions<M: Module>(
         )?;
     }
 
+    // compiler.md §328 rule 2: referenced helpers also need a stable code wrapper.
+    let referenced: std::collections::HashSet<_> = lirm
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match instruction.kind {
+            lir::InstructionKind::FunctionRef(id) => Some(id),
+            _ => None,
+        })
+        .collect();
+    let needs_wrapper = |function: &lir::Function| {
+        matches!(function.kind, lir::FunctionKind::Free)
+            || matches!(function.kind, lir::FunctionKind::SynthesizedHelper)
+                && referenced.contains(&function.id)
+    };
+
     // Bind every executable LIR id to its already declared target entity.
     // Lambdas have no HIR declaration entity, so declare them here.
     for function in &lirm.functions {
@@ -1648,7 +1665,7 @@ fn lower_lir_module_with_positions<M: Module>(
             }
         };
         ml.alias_function(FnKey::LirFunction(function.id), &target)?;
-        if !function.is_generator && matches!(function.kind, lir::FunctionKind::Free) {
+        if !function.is_generator && needs_wrapper(function) {
             let parameters = function
                 .parameters
                 .iter()
@@ -1717,7 +1734,7 @@ fn lower_lir_module_with_positions<M: Module>(
             }
         } else {
             define_function(&mut ml, function)?;
-            if matches!(function.kind, lir::FunctionKind::Free) {
+            if needs_wrapper(function) {
                 func::define_wrapper(&mut ml, function)?;
             }
         }

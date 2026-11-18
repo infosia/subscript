@@ -344,6 +344,18 @@ fn directory_programs_check_and_run_with_the_committed_goldens() -> Result<(), S
             for mirror in &mirrors {
                 command.arg("--mirror").arg(mirror);
             }
+            if mirrors
+                .iter()
+                .any(|mirror| mirror.ends_with("interop.generated.d.ts"))
+            {
+                // compiler.md §328 rule 2: directory callbacks use the native fixture.
+                let host = directory.write("entry.c", subscript_codegen::AOT_ENTRY_C.as_bytes())?;
+                command
+                    .arg("--host")
+                    .arg(host)
+                    .arg("--host")
+                    .arg(root.join("corpus/interop/interop.c"));
+            }
         }
         let run = output(&mut command)?;
         assert_code(&run, 0);

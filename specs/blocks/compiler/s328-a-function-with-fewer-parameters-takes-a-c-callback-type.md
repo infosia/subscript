@@ -59,3 +59,55 @@ can only take fewer parameters.
 - §274.4 item 1 closes for a named function and a lambda. A conditional of two
   values (`flag ? f : g`) at a C callback place stays as §274.4
   records it.
+
+### 328.4 Phase Review
+
+Form. The checker tries the ordinary parameter rules (§320) before the
+C callback conversion. A capture-free lambda with fewer parameters is
+padded in place. A named function with fewer parameters gets one
+synthetic adapter for each pair of function symbol and C callback type
+in the program. The adapter passes the leading arguments. A function
+with the full parameter list crosses as itself.
+
+Measured with a478, a479, and r541, development tier and ship tier the
+same:
+
+| Form at `SubLogCallback` | Pin | After | `tsc` |
+|---|---|---|---|
+| Named function, one parameter | S100, "not a named function" | `named: leading message` | accepts |
+| Named function, no parameter | the same | `named: no parameters` | accepts |
+| Capture-free lambda, one parameter | the same | `lambda: leading message` | accepts |
+| Capture-free lambda, no parameter | the same | `lambda: no parameters` | accepts |
+| First parameter `i32` | the same | S100, names parameter 1 and both types | TS2345 |
+
+a479: C compares the function pointers and the userdata that it gets
+from five sites. Before the adapter was shared, it printed `0,0,0,0,0`;
+after, `1,1,0,0,1` (one function at several sites and modules matches;
+another function or other userdata does not). The CLI output of the
+other 1,147 sources is the same at the pin and after.
+
+The first review found one MAJOR finding, realistic: each site built
+its own adapter, so a host that removes a callback by comparing it
+removed nothing. It is fixed as above. Its MINOR findings are fixed: an
+`async function` got a return type text, a default parameter got a
+vague text, and an entry order. A second review of the fix found no
+CRITICAL or MAJOR finding.
+
+The first full gate failed one release test that §328 does not reach:
+`a_pointer_target_is_written_back` (`cli/tests/read_root.rs`) stopped
+because the process had two threads at a development run that needs a
+single-threaded caller (§190.1 rule 3).
+
+### 328.5 Open
+
+1. A function with trailing default parameters
+   (`function f(a: i32, b: i32 = 2, c: i32 = 3)`) is rejected at a
+   two-parameter C callback type. An ordinary function type place
+   accepts it (§320), and `tsc` accepts it.
+2. The development tier and the ship tier each compute which
+   synthetic helper needs a wrapper. The LIR does not carry the fact.
+3. No test reloads a program while an adapter is bound, and a479 has
+   no re-export site.
+4. A callback bound before a hot-reload swap does not match the same
+   callback bound after it: each swap emits new wrapper addresses. This
+   is older than §328.

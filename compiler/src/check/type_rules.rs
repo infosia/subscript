@@ -1083,16 +1083,72 @@ impl<'p> Checker<'p> {
                     hir::ExprKind::FuncRef(_) => true,
                     _ => false,
                 };
-                let identity = target.callback_typedef.take();
-                if clean && self.assignable(&value.ty, &Type::Func(Box::new(target.clone()))) {
-                    target.callback_typedef = identity;
+                let named_key = match &value.kind {
+                    hir::ExprKind::FuncRef(symbol) => {
+                        Some(format!("c-callback-adapter:{symbol:?}:{target:?}"))
+                    }
+                    _ => None,
+                };
+                if let Some(symbol) = named_key
+                    .as_ref()
+                    .and_then(|key| self.instance_symbols.get(key))
+                {
+                    value.kind =
+                        hir::ExprKind::FuncRef(hir::Symbol::from_full_text(symbol.clone()));
                     value.ty = Type::Func(Box::new(target));
+                    return self.assignable(&value.ty, to);
+                }
+                let identity = target.callback_typedef.take();
+                if clean
+                    && self
+                        .function_of(&value.ty)
+                        .is_some_and(|own| own.params.len() <= target.params.len())
+                {
+                    // compiler.md §328 rule 1: apply the ordinary parameter
+                    // and result rules before the C callback identity.
+                    let plain = Type::Func(Box::new(target.clone()));
+                    self.place_function_value(value, &plain, fx);
+                    if self.assignable(&value.ty, &plain) {
+                        if let Some(key) = named_key {
+                            self.share_c_callback_adapter(value, key);
+                        }
+                        target.callback_typedef = identity;
+                        value.ty = Type::Func(Box::new(target));
+                    }
                 }
             }
         }
         self.convert_string_operand(value, super::string_operand::StringOperand::Place(to));
         self.place_function_value(value, to, fx);
         self.assignable(&value.ty, to)
+    }
+
+    /// Gives each named C callback adapter one program-wide function
+    /// (compiler.md §328 rule 2). Ordinary full-arity references keep their code.
+    fn share_c_callback_adapter(&mut self, value: &mut hir::Expr, key: String) {
+        if let hir::ExprKind::Cast(inner) = &mut value.kind {
+            self.share_c_callback_adapter(inner, key);
+            return;
+        }
+        let hir::ExprKind::Lambda {
+            params, ret, body, ..
+        } = &value.kind
+        else {
+            return;
+        };
+        let name = "[[C callback adapter]]".to_owned();
+        let symbol = super::identity::instance_symbol(&key, &name);
+        let mut helper = hir::Function::new_synthesized_helper(
+            name,
+            params.clone(),
+            ret.clone(),
+            body.clone(),
+            value.pos.clone(),
+        );
+        helper.symbol = hir::Symbol::from_full_text(symbol.clone());
+        self.push_narrowing_helper(helper);
+        self.instance_symbols.insert(key, symbol.clone());
+        value.kind = hir::ExprKind::FuncRef(hir::Symbol::from_full_text(symbol));
     }
 
     /// Converts an accepted built-in callback to the function type of its
@@ -1337,14 +1393,18 @@ impl<'p> Checker<'p> {
                 .function_of(to)
                 .is_some_and(|target| target.callback_typedef.is_some())
             {
-                let cause = if matches!(&from.kind, hir::ExprKind::Lambda { captures, .. } if !captures.is_empty())
-                {
-                    "a capturing lambda"
-                } else {
-                    "a value that is not a named function or a capture-free lambda"
+                let cause = self.c_callback_rejection_cause(from, to);
+                let clean = match &from.kind {
+                    hir::ExprKind::FuncRef(_) => true,
+                    hir::ExprKind::Lambda { captures, .. } => captures.is_empty(),
+                    _ => false,
                 };
                 self.reject_subset(
-                    RejectionSite::CCallbackRequiresNoEnvironment,
+                    if clean && !self.ts_erased_assignable(&from.ty, to) {
+                        RejectionSite::AssignmentTypeMismatch
+                    } else {
+                        RejectionSite::CCallbackRequiresNoEnvironment
+                    },
                     format!(
                         "{cause} cannot take the C callback type `{}`",
                         self.type_name(to)
@@ -1355,6 +1415,63 @@ impl<'p> Checker<'p> {
             }
             self.report_not_assignable(&from.ty, to, from.pos.clone(), what);
         }
+    }
+
+    /// Names the incompatible part of a C callback conversion
+    /// (compiler.md §328 rule 3, §274 rule 7).
+    fn c_callback_rejection_cause(&self, from: &hir::Expr, to: &Type) -> String {
+        let signature = match &from.kind {
+            hir::ExprKind::FuncRef(symbol) => self.fn_sigs.get(symbol.full_text()),
+            _ => None,
+        };
+        if signature.as_ref().is_some_and(|sig| sig.is_async)
+            || matches!(from.kind, hir::ExprKind::Lambda { is_async: true, .. })
+        {
+            return "an async function".to_owned();
+        }
+        match &from.kind {
+            hir::ExprKind::Lambda { captures, .. } if !captures.is_empty() => {
+                return "a capturing lambda".to_owned();
+            }
+            hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. } => {}
+            _ => {
+                return "a value that is not a named function or a capture-free lambda".to_owned();
+            }
+        }
+        if let Some((own, place)) = self.function_of(&from.ty).zip(self.function_of(to)) {
+            if own.params.len() < place.params.len()
+                && signature
+                    .as_ref()
+                    .is_some_and(|sig| sig.params.iter().any(|param| param.has_default))
+            {
+                return "a function with a default parameter whose callback place has extra parameters"
+                    .to_owned();
+            }
+            for (index, (param, expected)) in own.params.iter().zip(&place.params).enumerate() {
+                if !self.type_fits(expected, param) {
+                    return format!(
+                        "a function whose parameter {} has type `{}` but must accept `{}`",
+                        index + 1,
+                        self.type_name(param),
+                        self.type_name(expected)
+                    );
+                }
+            }
+            if own.params.len() > place.params.len() {
+                return format!(
+                    "a function whose parameter {} has no corresponding callback parameter",
+                    place.params.len() + 1
+                );
+            }
+            if !self.result_fits(&own.ret, &place) {
+                return format!(
+                    "a function whose return type `{}` does not fit `{}`",
+                    self.type_name(&own.ret),
+                    self.type_name(&place.ret)
+                );
+            }
+        }
+        "a function that needs an unsupported adapter".to_owned()
     }
 
     fn report_not_assignable(&mut self, from: &Type, to: &Type, pos: Pos, what: &str) {

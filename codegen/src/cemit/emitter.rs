@@ -355,10 +355,33 @@ impl<'m> Emitter<'m> {
         let mut globals = String::new();
         self.emit_globals(&mut globals)?;
         let mut prototypes = String::new();
-        self.emit_prototypes(&mut prototypes)?;
+        // compiler.md §328 rule 2: referenced helpers need callable wrappers.
+        let referenced: HashSet<_> = self
+            .module
+            .functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .flat_map(|block| &block.instructions)
+            .filter_map(|instruction| match instruction.kind {
+                l::InstructionKind::FunctionRef(id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        let wrappers: HashSet<_> = self
+            .module
+            .functions
+            .iter()
+            .filter(|function| {
+                matches!(function.kind, l::FunctionKind::Free)
+                    || matches!(function.kind, l::FunctionKind::SynthesizedHelper)
+                        && referenced.contains(&function.id)
+            })
+            .map(|function| function.id)
+            .collect();
+        self.emit_prototypes(&mut prototypes, &wrappers)?;
         let mut bodies = String::new();
         for function in self.module.functions.clone() {
-            self.emit_function(&mut bodies, &function)?;
+            self.emit_function(&mut bodies, &function, &wrappers)?;
         }
         self.emit_init_and_exports(&mut bodies)?;
         self.emit_worker_adapters()?;
@@ -886,7 +909,11 @@ impl<'m> Emitter<'m> {
         Ok(())
     }
 
-    fn emit_prototypes(&self, out: &mut String) -> Result<(), String> {
+    fn emit_prototypes(
+        &self,
+        out: &mut String,
+        wrappers: &HashSet<l::FunctionId>,
+    ) -> Result<(), String> {
         for function in &self.module.functions {
             let _ = writeln!(out, "{};", self.function_signature(function)?);
             if function.is_generator || function.is_async {
@@ -896,7 +923,7 @@ impl<'m> Emitter<'m> {
                     function.id.0
                 );
             }
-            if matches!(function.kind, l::FunctionKind::Free) && !function.is_generator
+            if wrappers.contains(&function.id) && !function.is_generator
                 || function.is_async && matches!(function.kind, l::FunctionKind::Lambda)
             {
                 let _ = writeln!(out, "{};", self.wrapper_signature(function)?);
@@ -980,7 +1007,12 @@ impl<'m> Emitter<'m> {
         ))
     }
 
-    fn emit_function(&mut self, out: &mut String, function: &l::Function) -> Result<(), String> {
+    fn emit_function(
+        &mut self,
+        out: &mut String,
+        function: &l::Function,
+        wrappers: &HashSet<l::FunctionId>,
+    ) -> Result<(), String> {
         if function.is_generator || function.is_async {
             self.emit_coroutine(out, function)?;
             if function.is_async
@@ -994,7 +1026,7 @@ impl<'m> Emitter<'m> {
             Ok(())
         } else {
             self.emit_ordinary_function(out, function)?;
-            if matches!(function.kind, l::FunctionKind::Free) {
+            if wrappers.contains(&function.id) {
                 let signature = self.wrapper_signature(function)?;
                 let args = explicit_parameters(function)
                     .map(|parameter| format!("a{}", parameter.value.0))

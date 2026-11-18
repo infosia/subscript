@@ -1141,7 +1141,12 @@ pub(crate) fn define_wrapper<M: Module>(
     ml: &mut ModLower<'_, M>,
     function: &l::Function,
 ) -> Result<(), String> {
-    if function.is_generator || function.is_async || !matches!(function.kind, l::FunctionKind::Free)
+    if function.is_generator
+        || function.is_async
+        || !matches!(
+            function.kind,
+            l::FunctionKind::Free | l::FunctionKind::SynthesizedHelper
+        )
     {
         return Ok(());
     }
@@ -1160,7 +1165,9 @@ pub(crate) fn define_wrapper<M: Module>(
         let end =
             incoming.len() - usize::from(matches!(function.return_type, Type::AsyncHandle(_)));
         arguments.extend_from_slice(&incoming[2..end]);
-        let call = if ml.opts.reload {
+        // compiler.md §328 rule 2: a shared helper has code but no reload slot.
+        let call = if ml.opts.reload && !matches!(function.kind, l::FunctionKind::SynthesizedHelper)
+        {
             let slot = ml.slot_of(&FnKey::LirFunction(function.id))?;
             let displacement = i32::try_from(u64::from(slot) * 8)
                 .map_err(|_| internal("wrapper function slot offset does not fit i32"))?;

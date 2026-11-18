@@ -281,6 +281,7 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "sub327Registration",
             "sub327Receive",
             "sub327Keep",
+            "sub328SameCallbacks",
         ]
     );
 

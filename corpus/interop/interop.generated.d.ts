@@ -1232,6 +1232,7 @@ declare function sub327Callback(info: SubCallbackInfo, sequence: i32): void;
 declare function sub327Registration(info: SubRequestInfo, sequence: i32): void;
 declare function sub327Receive(out: Sub325Texts | null, sequence: i32): void;
 declare function sub327Keep(out: SubDescReadStr | null): void;
+declare function sub328SameCallbacks(first: SubCallbackInfo, second: SubCallbackInfo): i32;
 
 type SubFloat16 = f16;
 

@@ -1461,4 +1461,7 @@ void sub327Registration(SubRequestInfo info, int32_t sequence);
 void sub327Receive(Sub325Texts *out, int32_t sequence);
 void sub327Keep(SubDescReadStr *out);
 
+/* compiler.md §328 rule 2: host callback identity includes its userdata. */
+int32_t sub328SameCallbacks(SubCallbackInfo first, SubCallbackInfo second);
+
 #endif /* SUBSCRIPT_INTEROP_H */

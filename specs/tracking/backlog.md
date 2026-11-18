@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§327. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§328. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -18,8 +18,8 @@ No item is open in this group.
 
 ## 2. Forms that `tsc` accepts and subscript rejects (and the reverse)
 
-7. A named function with fewer parameters at a C callback place
-   (§274.4 item 1). Small to medium.
+7. A function with trailing default parameters at a C callback type
+   (§328.5 item 1). Small.
 8. S013 false rejections: a `yield` of a handle, a parameter that is
    only read (`r417`), a method receiver (`(await many()).slice(0)`)
    (§188.4 items 1, 5, 6). Medium.
@@ -63,7 +63,12 @@ No item is open in this group.
     (Windows), §226.4 items 1–3 (x86-64), §225.4 item 1, C4029 (§183).
 21. `a355` has no `node` run (§185.4 item 2); `jit-runner-fork.md`
     Open MINOR items; the `bound-call` benchmark exits 2 on its
-    decomposition check at the pin of §325 and after (§325.5 item 5).
+    decomposition check at the pin of §325 and after (§325.5 item 5);
+    one release gate run (2026-11-18) failed
+    `a_pointer_target_is_written_back` in `cli/tests/read_root.rs`
+    because the process had two threads at a development run that
+    needs one (§190.1 rule 3), and the next run passed (cause not
+    found).
 
 ## 4. Diagnostic messages
 
@@ -94,7 +99,8 @@ No item is open in this group.
 - Async and counted values: §166–§172, §176, §295, §323.4 item 2.
 - Interop and runtime: §179, §187.3 items 3, 5, 7, 9–12, §259, §261,
   §263, §265, §267, §270, §271, `s178-host-completion-measurement.md`,
-  §324.4 items 1, 2, §325.5 items 1, 3, §326.5 items 3, 4.
+  §324.4 items 1, 2, §325.5 items 1, 3, §326.5 items 3, 4,
+  §328.5 items 2–4.
 - Code hygiene: §174.4 items 1, 6, §166.4 item 3, §220.4 item 3,
   §321.4 item 2, callback arity in `cemit/collection.rs`;
   `runtime/src/arrops.rs` is past 2,000 lines.

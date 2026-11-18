@@ -104,6 +104,11 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r538-static-readonly-stored-lambda.ts", RuleCode::S011, 12),
     ("r539-static-readonly-async-await.ts", RuleCode::S011, 13),
     ("r540-static-readonly-async-no-await.ts", RuleCode::S011, 13),
+    (
+        "r541-c-callback-named-function-parameter-type.ts",
+        RuleCode::S100,
+        13,
+    ),
     ("r506-c-callback-through-array.ts", RuleCode::S100, 8),
     ("r505-c-callback-through-indirect.ts", RuleCode::S100, 8),
     ("r504-c-callback-through-return.ts", RuleCode::S100, 7),

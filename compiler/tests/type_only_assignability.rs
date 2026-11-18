@@ -105,8 +105,8 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
     (
         "type_rules.rs",
         "place_value",
-        2,
-        "One call compares the signature before the C callback identity conversion (section 274 rule 7). The other reads the value type after conversion.",
+        3,
+        "The calls check the converted signature, a shared C callback reference, and the final value type (compiler.md §328 rule 1).",
     ),
     (
         "type_rules.rs",
@@ -144,6 +144,12 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
 /// enclosing function: the count of calls and the reason that no
 /// conversion applies there.
 const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
+    (
+        "type_rules.rs",
+        "c_callback_rejection_cause",
+        1,
+        "The diagnostic names the incompatible parameter after the value check fails (compiler.md §328 rule 3); no value flows.",
+    ),
     (
         "expr/callback_shape.rs",
         "callback_type_fits",
