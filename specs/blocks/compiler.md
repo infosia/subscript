@@ -369,3 +369,4 @@ Every section, with its status:
 | §326 | A fixed array of structs in a rebuilt struct is built element by element | active | [`s326-a-fixed-array-of-structs-in-a-rebuilt-struct-is-built-element-by-element.md`](compiler/s326-a-fixed-array-of-structs-in-a-rebuilt-struct-is-built-element-by-element.md) |
 | §327 | C bytes become a valid string | active | [`s327-c-bytes-become-a-valid-string.md`](compiler/s327-c-bytes-become-a-valid-string.md) |
 | §328 | A function with fewer parameters takes a C callback type | active | [`s328-a-function-with-fewer-parameters-takes-a-c-callback-type.md`](compiler/s328-a-function-with-fewer-parameters-takes-a-c-callback-type.md) |
+| §329 | A parameter borrows its handle | active | [`s329-a-parameter-borrows-its-handle.md`](compiler/s329-a-parameter-borrows-its-handle.md) |
