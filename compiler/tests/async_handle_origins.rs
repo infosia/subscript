@@ -10,10 +10,10 @@ const ORIGIN: &str = "/*o*/";
 
 /// One case: the declarations and the `main` body of the dropped program
 /// and of its control.
-struct Case {
+struct Case<'a> {
     name: &'static str,
-    dropped: (&'static str, &'static str),
-    control: (&'static str, &'static str),
+    dropped: (&'a str, &'a str),
+    control: (&'a str, &'a str),
 }
 
 fn program(declarations: &str, body: &str) -> String {
@@ -87,50 +87,6 @@ fn each_origin_kind_is_reported_at_its_site_and_its_control_is_accepted() {
             name: "an await result",
             dropped: ("", "const xs = /*o*/await many(); print(`${xs.length}`);"),
             control: ("", "const xs = await many(); print(`${await xs[0]}`);"),
-        },
-        Case {
-            name: "a function parameter of Promise<i32>[][]",
-            dropped: (
-                "function count(/*o*/xs: Promise<i32>[][]): i32 { return xs.length; }",
-                "print(`${count(grid())}`);",
-            ),
-            control: (
-                "async function count(xs: Promise<i32>[][]): Promise<i32> { return await xs[0][0]; }",
-                "print(`${await count(grid())}`);",
-            ),
-        },
-        Case {
-            name: "a method parameter of FixedArray<Promise<i32>, 2>",
-            dropped: (
-                "class C { size(/*o*/xs: FixedArray<Promise<i32>, 2>): i32 { return 2; } }",
-                "const c = new C(); print(`${c.size(pair())}`);",
-            ),
-            control: (
-                "class C { async size(xs: FixedArray<Promise<i32>, 2>): Promise<i32> { return await xs[0]; } }",
-                "const c = new C(); print(`${await c.size(pair())}`);",
-            ),
-        },
-        Case {
-            name: "a constructor parameter",
-            dropped: (
-                "class C { n: i32; constructor(/*o*/jobs: Promise<i32>[]) { this.n = jobs.length; } }",
-                "const c = new C([work(1)]); print(`${c.n}`);",
-            ),
-            control: (
-                "class C { jobs: Promise<i32>[]; constructor(jobs: Promise<i32>[]) { this.jobs = jobs; } }",
-                "const c = new C([work(1)]); print(`${await c.jobs[0]}`);",
-            ),
-        },
-        Case {
-            name: "a lambda parameter",
-            dropped: (
-                "",
-                "const f = (/*o*/p: Promise<i32>): i32 => 1; print(`${f(work(1))}`);",
-            ),
-            control: (
-                "",
-                "const f = (p: Promise<i32>): Promise<i32> => p; print(`${await f(work(1))}`);",
-            ),
         },
         Case {
             name: "a then callback parameter",
@@ -244,10 +200,9 @@ fn each_discharge_closes_the_origin_and_its_same_shape_use_does_not() {
     ]);
 }
 
-/// Rule 5 and 188.3: the runtime cases are accepted, and the open forms
-/// stay S013. Each program is one measured form of the §188 note.
+/// Runtime transfers and borrowed parameters are accepted (§188 rule 5, §329).
 #[test]
-fn runtime_cases_are_accepted_and_open_forms_stay_rejected() {
+fn runtime_cases_and_parameter_borrows_are_accepted() {
     let runtime_cases = [
         ("f10", "", "const [a, b] = await many(); print(`${await a}`);"),
         ("f16", "", "const m = new Map<i32, Promise<i32>>(); m.set(1, work(1)); print(`${m.size}`);"),
@@ -281,7 +236,7 @@ function* gen(): Generator<Promise<i32>> { const job = work(1); consume(job); st
             panic!("{id}: {errors:?}\n{source}");
         }
     }
-    let open_forms = [
+    let borrowed_forms = [
         (
             "h03",
             "function* gen(): Generator<Promise<i32>> { yield work(1); }",
@@ -293,14 +248,183 @@ function* gen(): Generator<Promise<i32>> { const job = work(1); consume(job); st
             "const xs = [work(1)]; print(`${count(xs)} ${(await Promise.all(xs)).length}`);",
         ),
     ];
-    for (id, declarations, body) in open_forms {
+    for (id, declarations, body) in borrowed_forms {
         let source = program(declarations, body);
-        let errors = check_program(&[SourceFile::new("open.ts", source)]).expect_err(id);
-        assert!(
-            errors
-                .iter()
-                .all(|error| error.divergence == Some(Divergence::DroppedAsyncHandle)),
-            "{id}: {errors:?}"
-        );
+        let result = check_program(&[SourceFile::new("borrow.ts", source)]);
+        assert!(result.is_ok(), "{id}: {:?}", result.err());
     }
+}
+
+/// Each borrowed parameter has a control that makes and drops a local
+/// origin in the same body (compiler.md §329 rule 1).
+#[test]
+fn parameters_borrow_and_local_origins_stay_owned() {
+    run(&[
+        Case {
+            name: "function borrow",
+            dropped: ("function count(xs: Promise<i32>[][]): i32 { const g = /*o*/grid(); return g.length; }", "print(`${count(grid())}`);"),
+            control: ("function count(xs: Promise<i32>[][]): i32 { return xs.length; }", "const g = grid(); print(`${count(g)} ${await g[0][0]}`);"),
+        },
+        Case {
+            name: "method borrow",
+            dropped: ("class C { size(xs: Promise<i32>[]): i32 { const ps = /*o*/work(1); return xs.length; } }", "const c = new C(); print(`${c.size([work(1)])}`);"),
+            control: ("class C { size(xs: Promise<i32>[]): i32 { return xs.length; } }", "const c = new C(); const xs = [work(1)]; print(`${c.size(xs)} ${(await Promise.all(xs)).length}`);"),
+        },
+        Case {
+            name: "constructor borrow",
+            dropped: ("class C { n: i32; constructor(jobs: Promise<i32>[]) { const p = /*o*/work(1); this.n = jobs.length; } }", "const c = new C([work(1)]); print(`${c.n}`);"),
+            control: ("class C { n: i32; constructor(jobs: Promise<i32>[]) { this.n = jobs.length; } }", "const jobs = [work(1)]; const c = new C(jobs); print(`${c.n} ${(await Promise.all(jobs)).length}`);"),
+        },
+        Case {
+            name: "lambda borrow through a function value",
+            dropped: ("", "const f = (p: Promise<i32>): i32 => { const q = /*o*/work(2); return 1; }; print(`${f(work(1))}`);"),
+            control: ("", "const f = (p: Promise<i32>): i32 => 1; const g: (p: Promise<i32>) => i32 = f; const p = work(1); print(`${g(p)} ${await p}`);"),
+        },
+    ]);
+}
+
+/// Borrowing must preserve the TypeScript condition check on the constraint
+/// (compiler.md §329 rule 1, §143 rule 1a).
+#[test]
+fn borrowed_promise_constraints_keep_the_boolean_check() {
+    for body in ["if (p) {}", "const n = p ? 1 : 2;"] {
+        let source = program(
+            &format!("function test<T extends Promise<i32>>(p: T): void {{ {body} }}"),
+            "",
+        );
+        let errors = check_program(&[SourceFile::new("condition.ts", source)])
+            .expect_err("a Promise condition is always true");
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].code, RuleCode::S100);
+        assert_eq!(errors[0].divergence, None);
+        assert!(errors[0].message.starts_with("condition must be boolean"));
+    }
+    let source = program(
+        "function test<T extends Promise<i32>>(p: T): void { const alias = p; }",
+        "",
+    );
+    assert!(check_program(&[SourceFile::new("condition.ts", source)]).is_ok());
+}
+
+/// A function value at a callback place borrows. Only the lambda written
+/// at that place owns its parameter (compiler.md §329 rule 2).
+#[test]
+fn reaction_function_values_borrow_and_direct_lambdas_own() {
+    for declarations in [
+        "function count(xs: Promise<i32>[]): i32 { return xs.length; } async function probe(): Promise<i32> { return await many().then(count); }",
+        "async function probe(f: (xs: Promise<i32>[]) => i32): Promise<i32> { return await many().then(f); }",
+        "async function probe(): Promise<i32> { const count = (xs: Promise<i32>[]): i32 => xs.length; return await many().then(count); }",
+        "const probe = many().then((xs: Promise<i32>[]): i32 => { const f = (p: Promise<i32>): i32 => 1; return f(xs[0]); });",
+    ] {
+        let result = check_program(&[SourceFile::new("callback.ts", program(declarations, ""))]);
+        assert!(result.is_ok(), "{declarations}: {:?}", result.err());
+    }
+    run(&[Case {
+        name: "direct callback origin",
+        dropped: ("", "print(`${await many().then((/*o*/xs: Promise<i32>[]): i32 => xs.length)}`);"),
+        control: ("", "print(`${await many().then((xs: Promise<i32>[]): Promise<i32[]> => Promise.all(xs))}`);"),
+    }]);
+    // A global initializer defers an annotated lambda body (§329 rule 2).
+    let source = program(
+        "const n = many().then((/*o*/xs: Promise<i32>[]): i32 => xs.length);",
+        "print(`${await n}`);",
+    );
+    let site = marked_site(&source);
+    let errors =
+        check_program(&[SourceFile::new("callback.ts", source)]).expect_err("callback origin");
+    assert_eq!(errors.len(), 1);
+    assert_eq!(
+        (errors[0].code, errors[0].pos.line, errors[0].pos.col),
+        (RuleCode::S013, site.0, site.1)
+    );
+}
+
+/// A default owns each new origin; a borrowed earlier parameter makes no
+/// origin (compiler.md §329 rule 3).
+#[test]
+fn defaults_carry_their_own_origins_into_the_body() {
+    for (dropped, control) in [
+        ("async function f(p: Promise<i32> = /*o*/work(1)): Promise<i32> { return 0; }", "async function f(p: Promise<i32> = work(1)): Promise<i32> { return await p; }"),
+        ("async function f(p = /*o*/work(1)): Promise<i32> { return 0; }", "async function f(p = work(1)): Promise<i32> { return await p; }"),
+        ("class C { async f(p: Promise<i32> = /*o*/work(1)): Promise<i32> { return 0; } }", "class C { async f(p: Promise<i32> = work(1)): Promise<i32> { return await p; } }"),
+        ("class C { static f(p = /*o*/work(1)): Promise<i32> { return work(2); } }", "class C { static f(p = work(1)): Promise<i32> { return p; } }"),
+        ("class C { constructor(p = /*o*/work(1)) {} }", "class C { p: Promise<i32>; constructor(p = work(1)) { this.p = p; } }"),
+        ("const f = async (p = /*o*/work(1)): Promise<i32> => 0;", "const f = async (p = work(1)): Promise<i32> => await p;"),
+        ("async function f(p: Promise<i32> = /*o*/work(1), q: Promise<i32> = p): Promise<i32> { return await q; }", "async function f(p: Promise<i32> = work(1), q: Promise<i32> = p): Promise<i32> { await p; return await q; }"),
+    ] {
+        run(&[Case { name: "default origin", dropped: (dropped, ""), control: (control, "") }]);
+    }
+    run(&[Case {
+        name: "each array default origin",
+        dropped: ("async function f(ps: Promise<i32>[] = [/*o*/work(1)]): Promise<i32> { return ps.length; }", ""),
+        control: ("async function f(ps: Promise<i32>[] = [work(1)]): Promise<i32> { return (await Promise.all(ps)).length; }", ""),
+    }]);
+}
+
+/// A captured origin can pass through a lambda default. An earlier
+/// parameter of that lambda stays separate (§329 rule 3, §317 rule 2).
+#[test]
+fn lambda_defaults_distinguish_captures_from_earlier_parameters() {
+    run(&[Case {
+        name: "a lambda default captures an enclosing origin",
+        dropped: (
+            "async function f(): Promise<i32> { const g = async (p: Promise<i32> = /*o*/work(1), q: Promise<i32> = p): Promise<i32> => await q; return await g(); }",
+            "print(`${await f()}`);",
+        ),
+        control: (
+            "async function f(): Promise<i32> { const p = work(1); const g = async (q: Promise<i32> = p): Promise<i32> => await q; return await g(); }",
+            "print(`${await f()}`);",
+        ),
+    }]);
+}
+
+/// A yield transfers its handle operand, and a scalar yield leaves a
+/// separate origin owned by the generator (compiler.md §329 rule 4).
+#[test]
+fn yields_discharge_only_the_origins_they_transfer() {
+    run(&[Case {
+        name: "yield transfer",
+        dropped: (
+            "function* gen(): Generator<i32> { const p = /*o*/work(1); yield 1; }",
+            "for (const n of gen()) { print(`${n}`); }",
+        ),
+        control: (
+            "function* gen(): Generator<Promise<i32>> { yield work(1); }",
+            "for (const p of gen()) { print(`${await p}`); }",
+        ),
+    }]);
+}
+
+/// A built-in result carries receiver origins only if its type holds a
+/// handle. The result has no independent origin (compiler.md §329 rule 5).
+#[test]
+fn builtin_results_carry_receiver_origins_without_making_an_origin() {
+    for method in [
+        "slice(0)",
+        "concat([])",
+        "slice(0).concat([]).slice(0)",
+        "reverse()",
+        "splice(0, 1)",
+    ] {
+        let dropped = format!("const ps = (/*o*/await many()).{method}; print(`${{ps.length}}`);");
+        let control = format!("const ps = (await many()).{method}; await Promise.all(ps);");
+        run(&[Case {
+            name: "receiver origin",
+            dropped: ("", &dropped),
+            control: ("", &control),
+        }]);
+    }
+    run(&[Case {
+        name: "scalar result keeps receiver origin",
+        dropped: (
+            "",
+            "const ps = /*o*/await many(); print(`${ps.push(work(3))}`);",
+        ),
+        control: (
+            "",
+            "const ps = await many(); print(`${ps.push(work(3))}`); await Promise.all(ps);",
+        ),
+    }]);
+    let source = program("async function f(ps: Promise<i32>[]): Promise<i32> { const copy = ps.slice(0); return copy.length; }", "");
+    assert!(check_program(&[SourceFile::new("builtin.ts", source)]).is_ok());
 }

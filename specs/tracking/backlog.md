@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§328. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§329. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -18,9 +18,6 @@ No item is open in this group.
 
 ## 2. Forms that `tsc` accepts and subscript rejects (and the reverse)
 
-8. S013 false rejections: a `yield` of a handle, a parameter that is
-   only read (`r417`), a method receiver (`(await many()).slice(0)`)
-   (§188.4 items 1, 5, 6). Medium.
 9. Numeric literal types: `const MODE = 1; MODE === 2` and
    `readonly size = 4;` with `this.size = n` are accepted; `tsc`
    rejects them (TS2367, TS2322) (§156.4). Medium to large.
@@ -94,7 +91,7 @@ No item is open in this group.
 
 - Narrowing and flow: §155, §158, §163, §164, §315–§318.
 - Inference and cycles: §149, §156, §290, §306, §308, §312.
-- Async and counted values: §166–§172, §176, §295, §323.4 item 2.
+- Async and counted values: §166–§172, §176, §295, §323.4 item 2, §329.5 items 1, 2.
 - Interop and runtime: §179, §187.3 items 3, 5, 7, 9–12, §259, §261,
   §263, §265, §267, §270, §271, `s178-host-completion-measurement.md`,
   §324.4 items 1, 2, §325.5 items 1, 3, §326.5 items 3, 4,

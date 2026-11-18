@@ -450,44 +450,44 @@ impl<'p> Checker<'p> {
             let Some(ps) = sig.params.get(i) else { break };
             let pos = self.pos(p.span);
             let mut initializer = ps.initializer.clone();
-            let default = if let Some(value) = self.finish_initializer(&mut initializer) {
-                Some(value)
-            } else {
-                match &p.pat {
-                    ast::Pat::Assign(a) => Some(
-                        fx.with_synthetic_owner(
-                            SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                            |fx| {
-                                let mut e = self.check_expr(&a.right, Some(ps.ty()), fx);
-                                self.require_expr_assignable(
-                                    &mut e,
-                                    ps.ty(),
-                                    fx,
-                                    "the default value",
-                                );
-                                self.discharge_parameter_default(&e, ps.ty(), fx);
-                                e
-                            },
-                        )
-                        .0,
-                    ),
-                    _ => None,
-                }
-            };
+            let default =
+                if let Some(value) = self.finish_parameter_initializer(&mut initializer, ps.ty()) {
+                    Some(value)
+                } else {
+                    match &p.pat {
+                        ast::Pat::Assign(a) => Some(
+                            fx.with_synthetic_owner(
+                                SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
+                                |fx| {
+                                    let mut e = self.check_expr(&a.right, Some(ps.ty()), fx);
+                                    self.require_expr_assignable(
+                                        &mut e,
+                                        ps.ty(),
+                                        fx,
+                                        "the default value",
+                                    );
+                                    e
+                                },
+                            )
+                            .0,
+                        ),
+                        _ => None,
+                    }
+                };
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.parameter_names.insert(ps.name.clone());
             }
+            let origins = default
+                .as_ref()
+                .map_or_else(Default::default, |value| self.expr_async_origins(value, fx));
+            let async_origins = fx.parameter_default_origins(origins, &out);
             self.declare_local(
                 &ps.name,
                 Local {
                     annotated: ps.annotated,
                     ty: ps.ty().clone(),
                     mutable: true,
-                    async_origins: if self.apparent_type(ps.ty()).holds_async_handle() {
-                        super::AsyncOrigins::made(fx.register_async_parameter(pos.clone()))
-                    } else {
-                        Default::default()
-                    },
+                    async_origins,
                     caught: false,
                     function_value_required: None,
                 },
@@ -723,7 +723,8 @@ impl<'p> Checker<'p> {
                     {
                         let Some(ps) = sig.params.get(i) else { break };
                         let mut initializer = ps.initializer.clone();
-                        let default = if let Some(value) = self.finish_initializer(&mut initializer)
+                        let default = if let Some(value) =
+                            self.finish_parameter_initializer(&mut initializer, ps.ty())
                         {
                             Some(value)
                         } else {
@@ -731,11 +732,7 @@ impl<'p> Checker<'p> {
                                 ast::Pat::Assign(a) => Some(
                                     fx.with_synthetic_owner(
                                         SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                                        |fx| {
-                                            let e = self.check_expr(&a.right, Some(ps.ty()), fx);
-                                            self.discharge_parameter_default(&e, ps.ty(), fx);
-                                            e
-                                        },
+                                        |fx| self.check_expr(&a.right, Some(ps.ty()), fx),
                                     )
                                     .0,
                                 ),
@@ -743,13 +740,10 @@ impl<'p> Checker<'p> {
                             }
                         };
                         let param_pos = self.pos(param.span);
-                        let async_origins = if self.apparent_type(ps.ty()).holds_async_handle() {
-                            super::AsyncOrigins::made(
-                                fx.register_async_parameter(param_pos.clone()),
-                            )
-                        } else {
-                            Default::default()
-                        };
+                        let origins = default.as_ref().map_or_else(Default::default, |value| {
+                            self.expr_async_origins(value, &fx)
+                        });
+                        let async_origins = fx.parameter_default_origins(origins, &hir_params);
                         self.declare_local(
                             &ps.name,
                             Local {

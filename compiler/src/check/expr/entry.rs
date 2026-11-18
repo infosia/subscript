@@ -101,6 +101,27 @@ impl<'p> Checker<'p> {
                 self.expr_async_origins(right, fx),
             ),
             K::Seq { value, .. } => self.expr_async_origins(value, fx),
+            K::Call {
+                callee: hir::Callee::Arr(_),
+                args,
+            } if self.apparent_type(&expr.ty).holds_async_handle() => {
+                args.first().map_or_else(AsyncOrigins::default, |recv| {
+                    self.expr_async_origins(recv, fx)
+                })
+            }
+            K::Call {
+                callee: hir::Callee::Method { recv, .. },
+                ..
+            } if self.apparent_type(&expr.ty).holds_async_handle() => {
+                if matches!(
+                    self.apparent_type(&recv.ty),
+                    Type::Array(_) | Type::Str | Type::Generator(_)
+                ) {
+                    self.expr_async_origins(recv, fx)
+                } else {
+                    AsyncOrigins::default()
+                }
+            }
             _ => AsyncOrigins::default(),
         }
     }
@@ -111,21 +132,6 @@ impl<'p> Checker<'p> {
     pub(crate) fn transfers_async_origins(&self, ty: &Type) -> bool {
         let ty = self.apparent_type(ty);
         ty.holds_async_handle() || matches!(ty, Type::Array(_))
-    }
-
-    /// Discharges the origins of a parameter default whose parameter type
-    /// transfers them, as an argument of that type does (`compiler.md`
-    /// §257.1 rule 1, §317.1 rule 2).
-    pub(crate) fn discharge_parameter_default(
-        &self,
-        default: &hir::Expr,
-        param_ty: &Type,
-        fx: &mut FnCtx,
-    ) {
-        if self.transfers_async_origins(param_ty) {
-            let origins = self.expr_async_origins(default, fx);
-            fx.handle_default_origins(origins);
-        }
     }
 
     /// Makes a value whose type holds a handle an origin

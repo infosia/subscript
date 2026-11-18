@@ -354,11 +354,21 @@ an ordinary method. Accept adds `a357`–`a361`; reject adds
 `await` result, a call result, a lambda or constructor parameter, a
 pattern binding) is an S013 origin, and a store into a field or a
 module global discharges it. Accept adds `a364`–`a367`; reject adds
-`r414`–`r418`.
+`r414`–`r416`, `retired:r417-constructor-handle-parameter`, and
+`r418`.
 *Revised 2026-11-16 (§317):* a conditional value discharges a selected
 origin only when each operand reads it. A parameter default does not
 discharge an earlier parameter. Accept adds `a465`; reject adds
-`r533`–`r535`.
+`retired:r533-default-reads-earlier-handle`, `r534`, and
+`retired:r535-conditional-handle-value`.
+*Revised 2026-11-18 (§329):* a parameter borrows its value and is not
+an origin, except the parameter of a lambda written as a `then`,
+`catch`, or `finally` callback. A `yield` discharges, and a `slice` or
+`concat` result carries its receiver's origins.
+The three retired entries of the §188 and §317 revisions are deleted;
+their forms are in `a480`.
+Accept adds `a480-a-parameter-borrows-its-handle`; reject adds
+`r542-dropped-slice-handle-result` and `r543-dropped-default-handle`.
 
 ### C9. Field initializers — every construction, earlier fields through `this`
 

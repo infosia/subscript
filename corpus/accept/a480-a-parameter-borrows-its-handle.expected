@@ -1,0 +1,11 @@
+function 2 2
+constructor 2 2
+yield 3
+slice 2
+control 2
+method 1 1
+lambda 1 1
+earlier 9 8 9
+earlier-default 12 12
+conditional 10 10 11
+default 7

@@ -146,7 +146,9 @@ impl<'p> Checker<'p> {
             InstanceRestriction::UnaryNumeric => {
                 !matches!(apparent, Type::Nullable(_, _) | Type::Null | Type::Void)
             }
-            InstanceRestriction::BooleanContext => !matches!(apparent, Type::Func(_)),
+            InstanceRestriction::BooleanContext => {
+                !matches!(apparent, Type::Func(_) | Type::AsyncHandle(_))
+            }
             InstanceRestriction::TemplateInterpolation => !matches!(apparent, Type::Error),
             InstanceRestriction::JsonSerializability | InstanceRestriction::ByteAccessTarget => {
                 !matches!(apparent, Type::Error)

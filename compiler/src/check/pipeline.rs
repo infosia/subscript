@@ -251,6 +251,7 @@ fn run_with_effects(
         lambda_result_hint: None,
         lambda_void_context: false,
         lambda_called_at_once: false,
+        reaction_lambda: None,
         callback_leaf_place: None,
         void_leaf_place: None,
         void_catch_statement: None,

@@ -352,6 +352,7 @@ impl<'p> Checker<'p> {
                     value.clone()
                 }
             });
+            let saved_reaction = self.reaction_lambda.replace(arrow.span);
             let checked = self.check_lambda_with(
                 arrow,
                 Some(&context),
@@ -360,6 +361,7 @@ impl<'p> Checker<'p> {
                 fx,
                 pos.clone(),
             );
+            self.reaction_lambda = saved_reaction;
             self.lambda_result_hint = None;
             checked
         } else {

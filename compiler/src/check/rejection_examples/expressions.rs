@@ -14,17 +14,17 @@ pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
         }
         RejectionSite::AsyncConditionalReturnParameter => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
-                ts: "async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return c ? p : q; }",
-                subscript: "function f(p: Promise<i32>): Promise<i32> { return p; }",
-                why: "Returning a conditional value transfers only the selected handle. Take one handle and return it, or transfer both supplied handles separately.",
+                ts: "async function v(): Promise<i32> { return 1; }\nasync function many(): Promise<Promise<i32>[]> { return [v()]; }\nasync function f(c: boolean): Promise<Promise<i32>[]> { const take = c; return await many().then((p: Promise<i32>[]): Promise<i32>[] => take ? p : []); }",
+                subscript: "async function v(): Promise<i32> { return 1; }\nasync function many(): Promise<Promise<i32>[]> { return [v()]; }\nasync function f(): Promise<Promise<i32>[]> { return await many().then((p: Promise<i32>[]): Promise<i32>[] => p); }",
+                why: "Returning a conditional value can drop the callback parameter. Return the whole parameter or await each handle.",
                 ..Divergence::DroppedAsyncHandle.entry()
             };
             Some(&ENTRY)
         }
         RejectionSite::AsyncDefaultReadsParameter => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
-                ts: "async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { return await q; }",
-                subscript: "async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { await p; return await q; }",
+                ts: "async function v(): Promise<i32> { return 1; }\nasync function f(p: Promise<i32> = v(), q: Promise<i32> = p): Promise<i32> { return await q; }",
+                subscript: "async function v(): Promise<i32> { return 1; }\nasync function f(p: Promise<i32> = v(), q: Promise<i32> = p): Promise<i32> { await p; return await q; }",
                 why: "A default runs only for an omitted argument, so it cannot discharge an earlier parameter.",
                 ..Divergence::DroppedAsyncHandle.entry()
             };
@@ -41,9 +41,9 @@ pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
         }
         RejectionSite::AsyncConditionalParameter => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
-                ts: "let stored: Promise<i32>[] = []; function h(c: boolean, p: Promise<i32>, q: Promise<i32>): void { stored = c ? [p] : [q]; }",
-                subscript: "let stored: Promise<i32>[] = []; function h(p: Promise<i32>): void { stored = [p]; }",
-                why: "A conditional value transfers only the selected handle. Take one handle and transfer it, or transfer both supplied handles separately.",
+                ts: "async function v(): Promise<i32> { return 1; }\nasync function many(): Promise<Promise<i32>[]> { return [v()]; }\nasync function h(c: boolean): Promise<void> { const take = c; const empty: Promise<i32>[] = []; await many().then(async (p: Promise<i32>[]): Promise<void> => { await Promise.all(take ? p : empty); }); }",
+                subscript: "async function v(): Promise<i32> { return 1; }\nasync function many(): Promise<Promise<i32>[]> { return [v()]; }\nasync function h(): Promise<void> { await many().then(async (p: Promise<i32>[]): Promise<void> => { await Promise.all(p); }); }",
+                why: "A conditional value can drop the callback parameter. Transfer the whole parameter or await each handle.",
                 ..Divergence::DroppedAsyncHandle.entry()
             };
             Some(&ENTRY)

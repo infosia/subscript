@@ -1,4 +1,4 @@
-//! A parameter default discharges its handle (compiler.md §257).
+//! A parameter default carries its handle into the body (compiler.md §329 rule 3).
 //!
 //! Cost: each test runs the checker on short programs, with no code
 //! generation and no external process.
@@ -48,13 +48,11 @@ fn each_default_form_is_accepted() {
     }
 }
 
-/// Rule 2: a body that does not discharge the parameter gives S013 at the
-/// parameter, not at the default. The column of `p` is 20 and the column
-/// of `v()` is 38.
+/// A body that drops the default handle gives S013 at its call (§329 rule 3).
 #[test]
-fn an_undischarged_parameter_keeps_its_s013() {
+fn an_undischarged_default_keeps_its_s013() {
     let body = "async function one(p: Promise<i32> = v()): Promise<i32> { return 1; }";
-    assert_eq!(s013_sites(body), vec![(1, 20)]);
+    assert_eq!(s013_sites(body), vec![(1, 38)]);
 }
 
 /// Control: a call of `v()` as a statement in the body keeps its S013.

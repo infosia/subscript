@@ -97,3 +97,51 @@ accepted at the pin.
   handle makes an origin of the body.
 - §317 rule 1: a parameter is not a selected origin. `r533` and `r535`
   are accepted.
+
+### 329.4 Phase Review
+
+Form. A parameter is not registered as an origin, except the parameter
+of a lambda written at a `then`, `catch`, or `finally` argument. A
+default registers the origins that it makes, and the parameter carries
+them into the body. A `yield` discharges as a `return` does. A
+built-in method result whose type holds a handle carries the origins
+of its receiver. LIR, codegen, and the runtime do not change.
+
+Measured with a480 (pin: 10 S013), development tier, ship tier, and
+`node` the same:
+
+| Form | Pin | After |
+|---|---|---|
+| A function parameter that is only read; the caller awaits | S013 | `function 2 2` |
+| A constructor parameter (`r417`) | S013 | `constructor 2 2` |
+| A method parameter | S013 | `method 1 1` |
+| A lambda called through a function value | S013 | `lambda 1 1` |
+| `yield work(1)` | S013 | `yield 3` |
+| `(await many()).slice(0)` | S013 | `slice 2` |
+| A default that reads an earlier parameter (`r533`) | S013 | `earlier 9 8 9` |
+| A conditional of two parameters (`r535`) | S013 | `conditional 10 10 11` |
+| A default that makes a handle that the body awaits | accepted | `default 7` |
+
+`r542` (a dropped `slice` result) and `r543` (a default handle that
+the body does not await) give S013; `tsc` accepts each. The CLI
+`check` output of 1,077 corpus entries is the same at the pin and
+after.
+
+A generic `T extends Promise<i32>` in a boolean condition was rejected
+only by the S013 of its parameter. It now gets the S100 of a
+non-generic `Promise<i32>` there; `tsc` gives TS2801.
+
+One fresh review found no CRITICAL or MAJOR finding. Its realistic
+MINOR finding is fixed: a lambda default that reads a local of the
+enclosing function got the §317 "earlier parameter" text. a480 now also
+runs the `r533` default.
+
+### 329.5 Open
+
+1. Contrived: `f(p: Promise<i32> = v(), q: Promise<i32> = p)` with
+   `await q` is S013, although `q` is omitted whenever `p` is (§317
+   rule 2).
+2. By rule 1, `start(work(1))` with a parameter that the callee does
+   not await is accepted; the handle is a runtime case of §188 rule 5.
+   By rule 5, `Promise.all(xs.slice(0, 1))` discharges the whole of
+   `xs`, as `xs[0]` does (§188 rule 3).

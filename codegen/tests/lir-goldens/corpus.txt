@@ -80001,6 +80001,1010 @@ fn f13 "main" kind=Free exported=true generator=false async=false -> Void entry=
     Call(CallTarget { kind: Function(FunctionId(11)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a474-c-array-parameter-storage.ts", line: 68, col: 95 } }] @ a474-c-array-parameter-storage.ts:68:95
     Call(CallTarget { kind: Function(FunctionId(12)), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a474-c-array-parameter-storage.ts", line: 68, col: 107 } }] @ a474-c-array-parameter-storage.ts:68:107
     -> Return { value: None, pos: Pos { file: "a474-c-array-parameter-storage.ts", line: 67, col: 17 } }
+===== a480-a-parameter-borrows-its-handle =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "Counter" value=false descriptor=false boundary=false align=None @ a480-a-parameter-borrows-its-handle.ts:10:7
+  field d3 "n": I32 defaulted=false absence=false foreign=None @ a480-a-parameter-borrows-its-handle.ts:11:3
+  method m1 "constructor" -> f1
+  method m2 "count" -> f2
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "constructor" kind=Constructor { class: ClassId(1), method: MethodId(1) } exported=false generator=false async=false -> Void entry=b0 @ a480-a-parameter-borrows-its-handle.ts:12:3
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a480-a-parameter-borrows-its-handle.ts:12:3
+  param %1 "jobs": Data(Array(AsyncHandle(I32))) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:12:15
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(Array(AsyncHandle(I32))) name=Some("jobs")
+  value %2: Data(I32) name=None
+  value %3: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Length(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 12, col: 48 } }] @ a480-a-parameter-borrows-its-handle.ts:12:53
+    %3: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 12, col: 39 } }] @ a480-a-parameter-borrows-its-handle.ts:12:44
+    StoreAddress(%3, %2) @ a480-a-parameter-borrows-its-handle.ts:12:44
+    AsyncHandleArrayRelease(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 12, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 12, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:12:3
+    -> Return { value: None, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 12, col: 3 } }
+fn f2 "count" kind=Method { class: ClassId(1), method: MethodId(2) } exported=false generator=false async=false -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:13:3
+  param %0 "this": Data(Class(ClassId(1))) kind=Receiver storage=None @ a480-a-parameter-borrows-its-handle.ts:13:3
+  param %1 "jobs": Data(Array(AsyncHandle(I32))) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:13:9
+  value %0: Data(Class(ClassId(1))) name=Some("this")
+  value %1: Data(Array(AsyncHandle(I32))) name=Some("jobs")
+  value %2: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(I32) = Length(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 13, col: 45 } }] @ a480-a-parameter-borrows-its-handle.ts:13:50
+    AsyncHandleArrayRelease(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 13, col: 38 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 13, col: 38 } }] @ a480-a-parameter-borrows-its-handle.ts:13:38
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 13, col: 38 } }
+fn f3 "work" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:7:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 7, col: 16 } }]
+  param %0 "v": Data(I32) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:7:21
+  value %0: Data(I32) name=Some("v")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 7, col: 45 } }
+fn f4 "many" kind=Free exported=false generator=false async=true -> Array(AsyncHandle(I32)) entry=b0 @ a480-a-parameter-borrows-its-handle.ts:8:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 16 } }]
+  value %0: Data(AsyncHandle(I32)) name=None
+  value %1: Data(AsyncHandle(I32)) name=None
+  value %2: Data(Array(AsyncHandle(I32))) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 58 } }] @ a480-a-parameter-borrows-its-handle.ts:8:58
+    %1: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 67 } }] @ a480-a-parameter-borrows-its-handle.ts:8:67
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 58 } }] @ a480-a-parameter-borrows-its-handle.ts:8:58
+    %2: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 57 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 58 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 67 } }] @ a480-a-parameter-borrows-its-handle.ts:8:57
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 57 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 57 } }] @ a480-a-parameter-borrows-its-handle.ts:8:57
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 8, col: 50 } }
+fn f5 "count" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:9:10
+  param %0 "xs": Data(Array(AsyncHandle(I32))) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:9:16
+  value %0: Data(Array(AsyncHandle(I32))) name=Some("xs")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Length(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 9, col: 50 } }] @ a480-a-parameter-borrows-its-handle.ts:9:53
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 9, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 9, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:9:43
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 9, col: 43 } }
+fn f6 "gen" kind=Free exported=false generator=true async=false -> Generator(AsyncHandle(I32)) entry=b0 @ a480-a-parameter-borrows-its-handle.ts:15:11
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 11 } }]
+  cleanup None: []
+  cleanup Some(BlockId(0)): []
+  cleanup Some(BlockId(3)): []
+  value %0: Data(AsyncHandle(I32)) name=None
+  value %1: Data(Bool) name=None
+  value %2: Data(AsyncHandle(I32)) name=None
+  value %3: Data(Bool) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 50 } }] @ a480-a-parameter-borrows-its-handle.ts:15:50
+    -> Suspend { kind: Yield(Some(ValueId(0))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 44 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [] }
+  b1 Some("yield.resume"):
+    %1: Data(Bool) = GeneratorIsClosing() @ a480-a-parameter-borrows-its-handle.ts:15:44
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(3), arguments: [], ownership: [] } }
+  b2 Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 44 } }
+  b3 Some("generator.next"):
+    %2: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 65 } }] @ a480-a-parameter-borrows-its-handle.ts:15:65
+    -> Suspend { kind: Yield(Some(ValueId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 59 }, successor: BlockId(4), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [] }
+  b4 Some("yield.resume"):
+    %3: Data(Bool) = GeneratorIsClosing() @ a480-a-parameter-borrows-its-handle.ts:15:59
+    -> ConditionalBranch { condition: Value(ValueId(3)), then_target: BlockTarget { block: BlockId(5), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] } }
+  b5 Some("generator.close"):
+    -> Return { value: None, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 59 } }
+  b6 Some("generator.next"):
+    -> Return { value: None, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 15, col: 11 } }
+fn f7 "waitAll" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:16:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 16, col: 16 } }]
+  can-raise
+  param %0 "xs": Data(Array(AsyncHandle(I32))) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:16:24
+  value %0: Data(Array(AsyncHandle(I32))) name=Some("xs")
+  value %1: Data(AsyncHandle(Array(I32))) name=None
+  value %2: Data(Array(I32)) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Array(AsyncHandle(I32))) name=Some("xs")
+  b0 Some("entry"):
+    %1: Data(AsyncHandle(Array(I32))) = AsyncAll(%0) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 17 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 17 } }] @ a480-a-parameter-borrows-its-handle.ts:17:17
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 }, successor: BlockId(1), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [ValueId(0), ValueId(2)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }] }
+  b1(%2: Data(Array(I32)), %4: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }] @ a480-a-parameter-borrows-its-handle.ts:17:11
+    %3: Data(I32) = Length(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }] @ a480-a-parameter-borrows-its-handle.ts:17:34
+    AsyncHandleArrayRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:17:3
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 3 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:17:11
+    AsyncHandleArrayRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }] @ a480-a-parameter-borrows-its-handle.ts:17:11
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }] @ a480-a-parameter-borrows-its-handle.ts:17:11
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 17, col: 11 } }
+fn f8 "earlier" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:19:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 16 } }]
+  can-raise
+  param %0 "p": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:19:24
+  param %1 "q": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:19:41
+  value %0: Data(AsyncHandle(I32)) name=Some("p")
+  value %1: Data(AsyncHandle(I32)) name=Some("q")
+  value %2: Data(I32) name=None
+  value %3: Data(AsyncHandle(I32)) name=Some("p")
+  value %4: Data(AsyncHandle(I32)) name=Some("q")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(1), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 }, successor: BlockId(1), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }] }
+  b1(%2: Data(I32), %3: Data(AsyncHandle(I32)), %4: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }] @ a480-a-parameter-borrows-its-handle.ts:19:85
+    AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 78 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 78 } }] @ a480-a-parameter-borrows-its-handle.ts:19:78
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 78 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 78 } }] @ a480-a-parameter-borrows-its-handle.ts:19:78
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 78 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:19:85
+    AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }] @ a480-a-parameter-borrows-its-handle.ts:19:85
+    AsyncHandleRelease(%3) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }] @ a480-a-parameter-borrows-its-handle.ts:19:85
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }] @ a480-a-parameter-borrows-its-handle.ts:19:85
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 85 } }
+fn f9 "choose" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:20:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 16 } }]
+  can-raise
+  param %0 "c": Data(Bool) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:20:23
+  param %1 "p": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:20:35
+  param %2 "q": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:20:52
+  value %0: Data(Bool) name=Some("c")
+  value %1: Data(AsyncHandle(I32)) name=Some("p")
+  value %2: Data(AsyncHandle(I32)) name=Some("q")
+  value %3: Data(AsyncHandle(I32)) name=None
+  value %4: Data(Bool) name=None
+  value %5: Data(AsyncHandle(I32)) name=None
+  value %6: Data(AsyncHandle(I32)) name=None
+  value %7: Data(AsyncHandle(I32)) name=None
+  value %8: Data(AsyncHandle(I32)) name=None
+  value %9: Data(I32) name=None
+  value %10: Data(AsyncHandle(I32)) name=None
+  value %11: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    -> ConditionalBranch { condition: Value(ValueId(0)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %7: Data(AsyncHandle(I32)) = AsyncHandleRetain(%1) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 103 } }] @ a480-a-parameter-borrows-its-handle.ts:20:103
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(7)), Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2))], ownership: [true, false, true, true] })
+  b2 Some("cond.else"):
+    %8: Data(AsyncHandle(I32)) = AsyncHandleRetain(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 107 } }] @ a480-a-parameter-borrows-its-handle.ts:20:107
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(8)), Value(ValueId(0)), Value(ValueId(1)), Value(ValueId(2))], ownership: [true, false, true, true] })
+  b3(%3: Data(AsyncHandle(I32)), %4: Data(Bool), %5: Data(AsyncHandle(I32)), %6: Data(AsyncHandle(I32))) Some("cond.merge"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(3), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 }, successor: BlockId(4), resume_value: Some(ValueId(9)), arguments: [Value(ValueId(5)), Value(ValueId(6))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }] }
+  b4(%9: Data(I32), %10: Data(AsyncHandle(I32)), %11: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(5))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }] @ a480-a-parameter-borrows-its-handle.ts:20:92
+    AsyncHandleRelease(%11) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 85 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 85 } }] @ a480-a-parameter-borrows-its-handle.ts:20:85
+    AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 85 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 85 } }] @ a480-a-parameter-borrows-its-handle.ts:20:85
+    -> Return { value: Some(Value(ValueId(9))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 85 } }
+  b5 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:20:92
+    AsyncHandleRelease(%11) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }] @ a480-a-parameter-borrows-its-handle.ts:20:92
+    AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }] @ a480-a-parameter-borrows-its-handle.ts:20:92
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }] @ a480-a-parameter-borrows-its-handle.ts:20:92
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 20, col: 92 } }
+fn f10 "defaulted" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:21:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 16 } }]
+  can-raise
+  param %0 "p": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:21:26
+  value %0: Data(AsyncHandle(I32)) name=Some("p")
+  value %1: Data(I32) name=None
+  value %2: Data(AsyncHandle(I32)) name=Some("p")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 }, successor: BlockId(1), resume_value: Some(ValueId(1)), arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }] }
+  b1(%1: Data(I32), %2: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }] @ a480-a-parameter-borrows-its-handle.ts:21:76
+    AsyncHandleRelease(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 69 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 69 } }] @ a480-a-parameter-borrows-its-handle.ts:21:69
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 69 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:21:76
+    AsyncHandleRelease(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }] @ a480-a-parameter-borrows-its-handle.ts:21:76
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }] @ a480-a-parameter-borrows-its-handle.ts:21:76
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 76 } }
+fn f11 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a480-a-parameter-borrows-its-handle.ts:22:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }]
+  can-raise
+  local l0 "[[finally.exception.0]]": Data(Class(ClassId(0))) mutable=false @ a480-a-parameter-borrows-its-handle.ts:29:3
+  local l1 "[[finally.exception.1]]": Data(Str) mutable=false @ a480-a-parameter-borrows-its-handle.ts:29:3
+  local l2 "[[finally.exception.2]]": Data(U32) mutable=false @ a480-a-parameter-borrows-its-handle.ts:29:3
+  value %0: Data(AsyncHandle(I32)) name=None
+  value %1: Data(AsyncHandle(I32)) name=None
+  value %2: Data(Array(AsyncHandle(I32))) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(AsyncHandle(Array(I32))) name=None
+  value %5: Data(Array(I32)) name=None
+  value %6: Data(I32) name=None
+  value %7: Data(Str) name=None
+  value %8: Data(AsyncHandle(I32)) name=None
+  value %9: Data(AsyncHandle(I32)) name=None
+  value %10: Data(Array(AsyncHandle(I32))) name=None
+  value %11: Data(Class(ClassId(1))) name=None
+  value %12: Data(I32) name=None
+  value %13: Data(AsyncHandle(Array(I32))) name=None
+  value %14: Data(Array(I32)) name=None
+  value %15: Data(I32) name=None
+  value %16: Data(Str) name=None
+  value %17: Data(Generator(AsyncHandle(I32))) name=None
+  value %18: Data(I32) name=None
+  value %19: Data(I32) name=None
+  value %20: Data(I32) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(IterResult(AsyncHandle(I32))) name=None
+  value %23: Data(Bool) name=None
+  value %24: Data(AsyncHandle(I32)) name=None
+  value %25: Data(I32) name=None
+  value %26: Data(I32) name=None
+  value %27: Data(Class(ClassId(0))) name=None
+  value %28: Data(Str) name=None
+  value %29: Data(U32) name=None
+  value %30: Data(I32) name=None
+  value %31: Data(Str) name=None
+  value %32: Data(U32) name=None
+  value %33: Data(Class(ClassId(0))) name=None
+  value %34: Data(Class(ClassId(0))) name=None
+  value %35: Data(Str) name=None
+  value %36: Data(U32) name=None
+  value %37: Data(Str) name=None
+  value %38: Data(Array(AsyncHandle(I32))) name=None
+  value %39: Data(Array(AsyncHandle(I32))) name=None
+  value %40: Data(AsyncHandle(Array(I32))) name=None
+  value %41: Data(Array(I32)) name=None
+  value %42: Data(I32) name=None
+  value %43: Data(Str) name=None
+  value %44: Data(AsyncHandle(I32)) name=None
+  value %45: Data(AsyncHandle(I32)) name=None
+  value %46: Data(Array(AsyncHandle(I32))) name=None
+  value %47: Data(I32) name=None
+  value %48: Data(Str) name=None
+  value %49: Data(AsyncHandle(I32)) name=None
+  value %50: Data(Array(AsyncHandle(I32))) name=None
+  value %51: Data(I32) name=None
+  value %52: Data(AsyncHandle(Array(I32))) name=None
+  value %53: Data(Array(I32)) name=None
+  value %54: Data(I32) name=None
+  value %55: Data(Str) name=None
+  value %56: Data(Func(FuncType { params: [Array(AsyncHandle(I32))], ret: I32 })) name=None
+  value %57: Data(AsyncHandle(I32)) name=None
+  value %58: Data(Array(AsyncHandle(I32))) name=None
+  value %59: Data(I32) name=None
+  value %60: Data(AsyncHandle(Array(I32))) name=None
+  value %61: Data(Array(I32)) name=None
+  value %62: Data(I32) name=None
+  value %63: Data(Str) name=None
+  value %64: Data(AsyncHandle(I32)) name=None
+  value %65: Data(AsyncHandle(I32)) name=None
+  value %66: Data(I32) name=None
+  value %67: Data(I32) name=None
+  value %68: Data(I32) name=None
+  value %69: Data(Str) name=None
+  value %70: Data(AsyncHandle(I32)) name=None
+  value %71: Data(AsyncHandle(I32)) name=None
+  value %72: Data(I32) name=None
+  value %73: Data(I32) name=None
+  value %74: Data(Str) name=None
+  value %75: Data(AsyncHandle(I32)) name=None
+  value %76: Data(AsyncHandle(I32)) name=None
+  value %77: Data(Bool) name=None
+  value %78: Data(I32) name=None
+  value %79: Data(I32) name=None
+  value %80: Data(I32) name=None
+  value %81: Data(Str) name=None
+  value %82: Data(AsyncHandle(I32)) name=None
+  value %83: Data(I32) name=None
+  value %84: Data(Str) name=None
+  value %85: Data(Array(AsyncHandle(I32))) name=None
+  value %86: Data(I32) name=None
+  value %87: Data(Array(AsyncHandle(I32))) name=None
+  value %88: Data(Array(AsyncHandle(I32))) name=None
+  value %89: Data(Class(ClassId(1))) name=None
+  value %90: Data(I32) name=None
+  value %91: Data(Array(AsyncHandle(I32))) name=None
+  value %92: Data(Array(AsyncHandle(I32))) name=None
+  value %93: Data(Class(ClassId(1))) name=None
+  value %94: Data(Generator(AsyncHandle(I32))) name=None
+  value %95: Data(I32) name=None
+  value %96: Data(IterResult(AsyncHandle(I32))) name=None
+  value %97: Data(AsyncHandle(I32)) name=None
+  value %98: Data(Array(AsyncHandle(I32))) name=None
+  value %99: Data(Array(AsyncHandle(I32))) name=None
+  value %100: Data(Class(ClassId(1))) name=None
+  value %101: Data(Array(AsyncHandle(I32))) name=None
+  value %102: Data(Array(AsyncHandle(I32))) name=None
+  value %103: Data(Class(ClassId(1))) name=None
+  value %104: Data(Array(AsyncHandle(I32))) name=None
+  value %105: Data(Array(AsyncHandle(I32))) name=None
+  value %106: Data(Array(AsyncHandle(I32))) name=None
+  value %107: Data(Class(ClassId(1))) name=None
+  value %108: Data(Array(AsyncHandle(I32))) name=None
+  value %109: Data(Array(AsyncHandle(I32))) name=None
+  value %110: Data(Array(AsyncHandle(I32))) name=None
+  value %111: Data(Array(AsyncHandle(I32))) name=None
+  value %112: Data(Array(AsyncHandle(I32))) name=None
+  value %113: Data(I32) name=None
+  value %114: Data(Array(AsyncHandle(I32))) name=None
+  value %115: Data(Array(AsyncHandle(I32))) name=None
+  value %116: Data(Array(AsyncHandle(I32))) name=None
+  value %117: Data(Array(AsyncHandle(I32))) name=None
+  value %118: Data(Array(AsyncHandle(I32))) name=None
+  value %119: Data(I32) name=None
+  value %120: Data(Array(AsyncHandle(I32))) name=None
+  value %121: Data(Array(AsyncHandle(I32))) name=None
+  value %122: Data(Array(AsyncHandle(I32))) name=None
+  value %123: Data(Array(AsyncHandle(I32))) name=None
+  value %124: Data(Array(AsyncHandle(I32))) name=None
+  value %125: Data(AsyncHandle(I32)) name=None
+  value %126: Data(AsyncHandle(I32)) name=None
+  value %127: Data(Array(AsyncHandle(I32))) name=None
+  value %128: Data(Array(AsyncHandle(I32))) name=None
+  value %129: Data(Array(AsyncHandle(I32))) name=None
+  value %130: Data(Array(AsyncHandle(I32))) name=None
+  value %131: Data(Array(AsyncHandle(I32))) name=None
+  value %132: Data(AsyncHandle(I32)) name=None
+  value %133: Data(AsyncHandle(I32)) name=None
+  value %134: Data(I32) name=None
+  value %135: Data(Array(AsyncHandle(I32))) name=None
+  value %136: Data(Array(AsyncHandle(I32))) name=None
+  value %137: Data(Array(AsyncHandle(I32))) name=None
+  value %138: Data(Array(AsyncHandle(I32))) name=None
+  value %139: Data(Array(AsyncHandle(I32))) name=None
+  value %140: Data(AsyncHandle(I32)) name=None
+  value %141: Data(AsyncHandle(I32)) name=None
+  value %142: Data(I32) name=None
+  value %143: Data(I32) name=None
+  value %144: Data(Array(AsyncHandle(I32))) name=None
+  value %145: Data(Array(AsyncHandle(I32))) name=None
+  value %146: Data(Array(AsyncHandle(I32))) name=None
+  value %147: Data(Array(AsyncHandle(I32))) name=None
+  value %148: Data(Array(AsyncHandle(I32))) name=None
+  value %149: Data(AsyncHandle(I32)) name=None
+  value %150: Data(AsyncHandle(I32)) name=None
+  value %151: Data(AsyncHandle(I32)) name=None
+  value %152: Data(Array(AsyncHandle(I32))) name=None
+  value %153: Data(Array(AsyncHandle(I32))) name=None
+  value %154: Data(Array(AsyncHandle(I32))) name=None
+  value %155: Data(Array(AsyncHandle(I32))) name=None
+  value %156: Data(Array(AsyncHandle(I32))) name=None
+  value %157: Data(AsyncHandle(I32)) name=None
+  value %158: Data(AsyncHandle(I32)) name=None
+  value %159: Data(AsyncHandle(I32)) name=None
+  value %160: Data(I32) name=None
+  value %161: Data(Array(AsyncHandle(I32))) name=None
+  value %162: Data(Array(AsyncHandle(I32))) name=None
+  value %163: Data(Array(AsyncHandle(I32))) name=None
+  value %164: Data(Array(AsyncHandle(I32))) name=None
+  value %165: Data(Array(AsyncHandle(I32))) name=None
+  value %166: Data(AsyncHandle(I32)) name=None
+  value %167: Data(AsyncHandle(I32)) name=None
+  value %168: Data(AsyncHandle(I32)) name=None
+  value %169: Data(AsyncHandle(I32)) name=None
+  value %170: Data(AsyncHandle(I32)) name=None
+  value %171: Data(Array(AsyncHandle(I32))) name=None
+  value %172: Data(Array(AsyncHandle(I32))) name=None
+  value %173: Data(Array(AsyncHandle(I32))) name=None
+  value %174: Data(Array(AsyncHandle(I32))) name=None
+  value %175: Data(Array(AsyncHandle(I32))) name=None
+  value %176: Data(AsyncHandle(I32)) name=None
+  value %177: Data(AsyncHandle(I32)) name=None
+  value %178: Data(AsyncHandle(I32)) name=None
+  value %179: Data(AsyncHandle(I32)) name=None
+  value %180: Data(AsyncHandle(I32)) name=None
+  value %181: Data(I32) name=None
+  value %182: Data(Array(AsyncHandle(I32))) name=None
+  value %183: Data(Array(AsyncHandle(I32))) name=None
+  value %184: Data(Array(AsyncHandle(I32))) name=None
+  value %185: Data(Array(AsyncHandle(I32))) name=None
+  value %186: Data(Array(AsyncHandle(I32))) name=None
+  value %187: Data(AsyncHandle(I32)) name=None
+  value %188: Data(AsyncHandle(I32)) name=None
+  value %189: Data(AsyncHandle(I32)) name=None
+  value %190: Data(AsyncHandle(I32)) name=None
+  value %191: Data(AsyncHandle(I32)) name=None
+  value %192: Data(I32) name=None
+  value %193: Data(I32) name=None
+  value %194: Data(Array(AsyncHandle(I32))) name=None
+  value %195: Data(Array(AsyncHandle(I32))) name=None
+  value %196: Data(Array(AsyncHandle(I32))) name=None
+  value %197: Data(Array(AsyncHandle(I32))) name=None
+  value %198: Data(Array(AsyncHandle(I32))) name=None
+  value %199: Data(AsyncHandle(I32)) name=None
+  value %200: Data(AsyncHandle(I32)) name=None
+  value %201: Data(AsyncHandle(I32)) name=None
+  value %202: Data(AsyncHandle(I32)) name=None
+  value %203: Data(AsyncHandle(I32)) name=None
+  value %204: Data(Array(AsyncHandle(I32))) name=None
+  value %205: Data(Array(AsyncHandle(I32))) name=None
+  value %206: Data(Class(ClassId(1))) name=None
+  value %207: Data(Generator(AsyncHandle(I32))) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 15 } }] @ a480-a-parameter-borrows-its-handle.ts:23:15
+    %1: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:23:24
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 15 } }] @ a480-a-parameter-borrows-its-handle.ts:23:15
+    %2: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%0, %1) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 15 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:23:14
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 23, col: 14 } }] @ a480-a-parameter-borrows-its-handle.ts:23:14
+    AsyncHandleArrayRetain(%2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 27 } }] @ a480-a-parameter-borrows-its-handle.ts:24:27
+    %3: Data(I32) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Array(AsyncHandle(I32)))], return_type: Some(Data(I32)) })(%2) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 21 } }] @ a480-a-parameter-borrows-its-handle.ts:24:21
+    %4: Data(AsyncHandle(Array(I32))) = AsyncAll(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 41 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 41 } }] @ a480-a-parameter-borrows-its-handle.ts:24:41
+    -> Suspend { kind: AsyncHandle { handle: ValueId(4), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 }, successor: BlockId(1), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(2)), Value(ValueId(3))], ownership: [false, false], invalidates: [ValueId(2), ValueId(5)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }] }
+  b1(%5: Data(Array(I32)), %85: Data(Array(AsyncHandle(I32))), %86: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }] @ a480-a-parameter-borrows-its-handle.ts:24:35
+    %6: Data(I32) = Length(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }] @ a480-a-parameter-borrows-its-handle.ts:24:58
+    %7: Data(Str) = Template([Text("function "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%86, %6) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 21 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 58 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:24:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%7) invalidates=[ValueId(85), ValueId(5)] @ a480-a-parameter-borrows-its-handle.ts:24:3
+    %8: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(3):I32) invalidates=[ValueId(85), ValueId(5)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 17 } }] @ a480-a-parameter-borrows-its-handle.ts:25:17
+    %9: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(4):I32) invalidates=[ValueId(85), ValueId(5)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 26 } }] @ a480-a-parameter-borrows-its-handle.ts:25:26
+    AsyncHandleRetain(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 17 } }] @ a480-a-parameter-borrows-its-handle.ts:25:17
+    %10: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%8, %9) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 16 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 26 } }] @ a480-a-parameter-borrows-its-handle.ts:25:16
+    AsyncHandleRelease(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 25, col: 16 } }] @ a480-a-parameter-borrows-its-handle.ts:25:16
+    %11: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 26, col: 13 } }] @ a480-a-parameter-borrows-its-handle.ts:26:13
+    AsyncHandleArrayRetain(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 26, col: 25 } }] @ a480-a-parameter-borrows-its-handle.ts:26:25
+    Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(1))), Data(Array(AsyncHandle(I32)))], return_type: None })(%11, %10) invalidates=[ValueId(85), ValueId(5), ValueId(10)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 26, col: 13 } }] @ a480-a-parameter-borrows-its-handle.ts:26:13
+    %12: Data(I32) = LoadField(Class(FieldId(3)))(%11) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:27:26
+    %13: Data(AsyncHandle(Array(I32))) = AsyncAll(%10) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 38 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 38 } }] @ a480-a-parameter-borrows-its-handle.ts:27:38
+    -> Suspend { kind: AsyncHandle { handle: ValueId(13), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 }, successor: BlockId(3), resume_value: Some(ValueId(14)), arguments: [Value(ValueId(85)), Value(ValueId(10)), Value(ValueId(11)), Value(ValueId(12))], ownership: [false, false, false, false], invalidates: [ValueId(85), ValueId(5), ValueId(10), ValueId(14)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }] }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:24:35
+    AsyncHandleArrayRelease(%85) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }] @ a480-a-parameter-borrows-its-handle.ts:24:35
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }] @ a480-a-parameter-borrows-its-handle.ts:24:35
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 24, col: 35 } }
+  b3(%14: Data(Array(I32)), %87: Data(Array(AsyncHandle(I32))), %88: Data(Array(AsyncHandle(I32))), %89: Data(Class(ClassId(1))), %90: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(4))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }] @ a480-a-parameter-borrows-its-handle.ts:27:32
+    %15: Data(I32) = Length(%14) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }] @ a480-a-parameter-borrows-its-handle.ts:27:57
+    %16: Data(Str) = Template([Text("constructor "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%90, %15) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 26 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 57 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:27:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%16) invalidates=[ValueId(87), ValueId(5), ValueId(88), ValueId(14)] @ a480-a-parameter-borrows-its-handle.ts:27:3
+    %17: Data(Generator(AsyncHandle(I32))) = Call(CallTarget { kind: Function(FunctionId(6)), parameter_types: [], return_type: Some(Data(Generator(AsyncHandle(I32)))) })() invalidates=[ValueId(87), ValueId(5), ValueId(88), ValueId(14)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:29:19
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(87)), Value(ValueId(88)), Value(ValueId(89)), Value(ValueId(17))], ownership: [false, false, false, false, false] })
+  b4 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:27:32
+    AsyncHandleArrayRelease(%88) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }] @ a480-a-parameter-borrows-its-handle.ts:27:32
+    AsyncHandleArrayRelease(%87) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }] @ a480-a-parameter-borrows-its-handle.ts:27:32
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }] @ a480-a-parameter-borrows-its-handle.ts:27:32
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 27, col: 32 } }
+  b5(%18: Data(I32), %204: Data(Array(AsyncHandle(I32))), %205: Data(Array(AsyncHandle(I32))), %206: Data(Class(ClassId(1))), %207: Data(Generator(AsyncHandle(I32)))) Some("generator-for-of.next"):
+    %22: Data(IterResult(AsyncHandle(I32))) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(AsyncHandle(I32)))], return_type: Some(Data(IterResult(AsyncHandle(I32)))) })(%207) invalidates=[ValueId(204), ValueId(5), ValueId(205), ValueId(14)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 19 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %23: Data(Bool) = LoadField(IterDone)(%22) @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(18))], ownership: [false] }, else_target: BlockTarget { block: BlockId(6), arguments: [], ownership: [] } }
+  b6 Some("generator-for-of.body"):
+    %24: Data(AsyncHandle(I32)) = LoadField(IterValue)(%22) traps=[Trap { kind: GeneratorDoneValue, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleRetain(%24) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> Suspend { kind: AsyncHandle { handle: ValueId(24), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 37 }, successor: BlockId(10), resume_value: Some(ValueId(25)), arguments: [Value(ValueId(204)), Value(ValueId(205)), Value(ValueId(206)), Value(ValueId(207)), Value(ValueId(18)), Value(ValueId(22)), Value(ValueId(24))], ownership: [false, false, false, false, false, false, false], invalidates: [ValueId(204), ValueId(5), ValueId(205), ValueId(14)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 37 } }] }
+  b7(%19: Data(I32)) Some("generator-for-of.exhausted"):
+    AsyncHandleArrayRelease(%22) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> Branch(BlockTarget { block: BlockId(9), arguments: [Value(ValueId(19))], ownership: [false] })
+  b8(%20: Data(I32)) Some("generator-for-of.consumer-exit"):
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }
+  b9(%21: Data(I32)) Some("generator-for-of.exit"):
+    AsyncHandleArrayRelease(%207) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %37: Data(Str) = Template([Text("yield "), Operand { index: 0, format: I32 }])(%21) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 30, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 30, col: 18 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 30, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:30:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%37) invalidates=[ValueId(204), ValueId(5), ValueId(205), ValueId(14)] @ a480-a-parameter-borrows-its-handle.ts:30:3
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(4)), parameter_types: [], return_type: Some(Data(Array(AsyncHandle(I32)))) }, operands: [] }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 15 }, successor: BlockId(14), resume_value: Some(ValueId(38)), arguments: [Value(ValueId(204)), Value(ValueId(205)), Value(ValueId(206))], ownership: [false, false, false], invalidates: [ValueId(204), ValueId(5), ValueId(205), ValueId(14), ValueId(38)], traps: [Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 15 } }] }
+  b10(%25: Data(I32), %91: Data(Array(AsyncHandle(I32))), %92: Data(Array(AsyncHandle(I32))), %93: Data(Class(ClassId(1))), %94: Data(Generator(AsyncHandle(I32))), %95: Data(I32), %96: Data(IterResult(AsyncHandle(I32))), %97: Data(AsyncHandle(I32))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(11))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:29:37
+    %26: Data(I32) = Binary(Add)(%95, %25) @ a480-a-parameter-borrows-its-handle.ts:29:28
+    AsyncHandleRelease(%97) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleArrayRelease(%96) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> Branch(BlockTarget { block: BlockId(5), arguments: [Value(ValueId(26)), Value(ValueId(91)), Value(ValueId(92)), Value(ValueId(93)), Value(ValueId(94))], ownership: [false, false, false, false, false] })
+  b11 Some("catch.landing"):
+    %31: Data(Str) = ExceptionMessage() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %32: Data(U32) = ExceptionPosition() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %33: Data(Class(ClassId(0))) = CatchEntry() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> Branch(BlockTarget { block: BlockId(12), arguments: [Value(ValueId(33)), Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(95))], ownership: [false, false, false, false] })
+  b12(%27: Data(Class(ClassId(0))), %28: Data(Str), %29: Data(U32), %30: Data(I32)) Some("finally.exception"):
+    StoreLocal(LocalId(0))(%27) @ a480-a-parameter-borrows-its-handle.ts:29:3
+    StoreLocal(LocalId(1))(%28) @ a480-a-parameter-borrows-its-handle.ts:29:3
+    StoreLocal(LocalId(2))(%29) @ a480-a-parameter-borrows-its-handle.ts:29:3
+    GeneratorClose(%94) @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %34: Data(Class(ClassId(0))) = LoadLocal(LocalId(0))() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %35: Data(Str) = LoadLocal(LocalId(1))() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    %36: Data(U32) = LoadLocal(LocalId(2))() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    ExceptionRestore(%34, %35, %36) traps=[Trap { kind: Raise(Handler(BlockId(13))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }
+  b13 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleRelease(%97) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleArrayRelease(%96) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleArrayRelease(%94) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleArrayRelease(%92) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    AsyncHandleArrayRelease(%91) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }] @ a480-a-parameter-borrows-its-handle.ts:29:3
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 29, col: 3 } }
+  b14(%38: Data(Array(AsyncHandle(I32))), %98: Data(Array(AsyncHandle(I32))), %99: Data(Array(AsyncHandle(I32))), %100: Data(Class(ClassId(1)))) Some("async-call.resume"):
+    AwaitRaise() count=Counted(Array(Handle)) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 15 } }] @ a480-a-parameter-borrows-its-handle.ts:31:15
+    %39: Data(Array(AsyncHandle(I32))) = Call(CallTarget { kind: Intrinsic(Intrinsic { family: Array, operation: 4, type_argument: None, worker_entry: None }), parameter_types: [Data(Array(AsyncHandle(I32))), Data(I32), Data(I32)], return_type: Some(Data(Array(AsyncHandle(I32)))) })(%38, Integer(0):I32, Integer(2147483647):I32) count=Counted(Handle) invalidates=[ValueId(98), ValueId(5), ValueId(99), ValueId(14), ValueId(38)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 15 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 14 } }] @ a480-a-parameter-borrows-its-handle.ts:31:14
+    AsyncHandleArrayRelease(%38) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 14 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 31, col: 14 } }] @ a480-a-parameter-borrows-its-handle.ts:31:14
+    %40: Data(AsyncHandle(Array(I32))) = AsyncAll(%39) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 25 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 25 } }] @ a480-a-parameter-borrows-its-handle.ts:32:25
+    -> Suspend { kind: AsyncHandle { handle: ValueId(40), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 }, successor: BlockId(15), resume_value: Some(ValueId(41)), arguments: [Value(ValueId(98)), Value(ValueId(99)), Value(ValueId(100)), Value(ValueId(39))], ownership: [false, false, false, false], invalidates: [ValueId(98), ValueId(5), ValueId(99), ValueId(14), ValueId(38), ValueId(39), ValueId(41)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] }
+  b15(%41: Data(Array(I32)), %101: Data(Array(AsyncHandle(I32))), %102: Data(Array(AsyncHandle(I32))), %103: Data(Class(ClassId(1))), %104: Data(Array(AsyncHandle(I32)))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(16))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:32:19
+    %42: Data(I32) = Length(%41) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:32:42
+    %43: Data(Str) = Template([Text("slice "), Operand { index: 0, format: I32 }])(%42) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 42 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:32:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%43) invalidates=[ValueId(101), ValueId(5), ValueId(102), ValueId(14), ValueId(38), ValueId(104), ValueId(41)] @ a480-a-parameter-borrows-its-handle.ts:32:3
+    %44: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(1):I32) invalidates=[ValueId(101), ValueId(5), ValueId(102), ValueId(14), ValueId(38), ValueId(104), ValueId(41)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 35 } }] @ a480-a-parameter-borrows-its-handle.ts:33:35
+    %45: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(2):I32) invalidates=[ValueId(101), ValueId(5), ValueId(102), ValueId(14), ValueId(38), ValueId(104), ValueId(41)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 44 } }] @ a480-a-parameter-borrows-its-handle.ts:33:44
+    AsyncHandleRetain(%44) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 35 } }] @ a480-a-parameter-borrows-its-handle.ts:33:35
+    %46: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%44, %45) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 34 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 35 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 44 } }] @ a480-a-parameter-borrows-its-handle.ts:33:34
+    AsyncHandleRelease(%44) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 34 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 34 } }] @ a480-a-parameter-borrows-its-handle.ts:33:34
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(7)), parameter_types: [Data(Array(AsyncHandle(I32)))], return_type: Some(Data(I32)) }, operands: [ValueId(46)] }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 }, successor: BlockId(17), resume_value: Some(ValueId(47)), arguments: [Value(ValueId(101)), Value(ValueId(102)), Value(ValueId(103)), Value(ValueId(104))], ownership: [false, false, false, false], invalidates: [ValueId(101), ValueId(5), ValueId(102), ValueId(14), ValueId(38), ValueId(104), ValueId(41), ValueId(46)], traps: [Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }] }
+  b16 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:32:19
+    AsyncHandleArrayRelease(%104) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:32:19
+    AsyncHandleArrayRelease(%102) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:32:19
+    AsyncHandleArrayRelease(%101) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:32:19
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:32:19
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 32, col: 19 } }
+  b17(%47: Data(I32), %105: Data(Array(AsyncHandle(I32))), %106: Data(Array(AsyncHandle(I32))), %107: Data(Class(ClassId(1))), %108: Data(Array(AsyncHandle(I32)))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(18))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:33:20
+    %48: Data(Str) = Template([Text("control "), Operand { index: 0, format: I32 }])(%47) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:33:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%48) invalidates=[ValueId(105), ValueId(5), ValueId(106), ValueId(14), ValueId(38), ValueId(108), ValueId(41), ValueId(46)] @ a480-a-parameter-borrows-its-handle.ts:33:3
+    %49: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(5):I32) invalidates=[ValueId(105), ValueId(5), ValueId(106), ValueId(14), ValueId(38), ValueId(108), ValueId(41), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 34, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:34:23
+    %50: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%49) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 34, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 34, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:34:22
+    AsyncHandleArrayRetain(%50) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 27 } }] @ a480-a-parameter-borrows-its-handle.ts:35:27
+    %51: Data(I32) = Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(1))), Data(Array(AsyncHandle(I32)))], return_type: Some(Data(I32)) })(%107, %50) invalidates=[ValueId(105), ValueId(5), ValueId(106), ValueId(14), ValueId(38), ValueId(108), ValueId(41), ValueId(46), ValueId(50)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:35:19
+    %52: Data(AsyncHandle(Array(I32))) = AsyncAll(%50) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 49 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 49 } }] @ a480-a-parameter-borrows-its-handle.ts:35:49
+    -> Suspend { kind: AsyncHandle { handle: ValueId(52), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 }, successor: BlockId(19), resume_value: Some(ValueId(53)), arguments: [Value(ValueId(105)), Value(ValueId(106)), Value(ValueId(108)), Value(ValueId(50)), Value(ValueId(51))], ownership: [false, false, false, false, false], invalidates: [ValueId(105), ValueId(5), ValueId(106), ValueId(14), ValueId(38), ValueId(108), ValueId(41), ValueId(46), ValueId(50), ValueId(53)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] }
+  b18 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:33:20
+    AsyncHandleArrayRelease(%108) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:33:20
+    AsyncHandleArrayRelease(%106) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:33:20
+    AsyncHandleArrayRelease(%105) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:33:20
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:33:20
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 33, col: 20 } }
+  b19(%53: Data(Array(I32)), %109: Data(Array(AsyncHandle(I32))), %110: Data(Array(AsyncHandle(I32))), %111: Data(Array(AsyncHandle(I32))), %112: Data(Array(AsyncHandle(I32))), %113: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(20))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:43
+    %54: Data(I32) = Length(%53) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:74
+    %55: Data(Str) = Template([Text("method "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%113, %54) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 74 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:35:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%55) invalidates=[ValueId(109), ValueId(5), ValueId(110), ValueId(14), ValueId(38), ValueId(111), ValueId(41), ValueId(46), ValueId(112), ValueId(53)] @ a480-a-parameter-borrows-its-handle.ts:35:3
+    %56: Data(Func(FuncType { params: [Array(AsyncHandle(I32))], ret: I32 })) = MakeClosure(FunctionId(12))() @ a480-a-parameter-borrows-its-handle.ts:36:18
+    %57: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(6):I32) invalidates=[ValueId(109), ValueId(5), ValueId(110), ValueId(14), ValueId(38), ValueId(111), ValueId(41), ValueId(46), ValueId(112), ValueId(53)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 38, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:38:23
+    %58: Data(Array(AsyncHandle(I32))) = ArrayLiteral(%57) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 38, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 38, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:38:22
+    AsyncHandleArrayRetain(%58) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 21 } }] @ a480-a-parameter-borrows-its-handle.ts:39:21
+    %59: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Array(AsyncHandle(I32))], ret: I32 })), Data(Array(AsyncHandle(I32)))], return_type: Some(Data(I32)) })(%56, %58) invalidates=[ValueId(109), ValueId(5), ValueId(110), ValueId(14), ValueId(38), ValueId(111), ValueId(41), ValueId(46), ValueId(112), ValueId(53), ValueId(58)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Raise(Handler(BlockId(21))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    %60: Data(AsyncHandle(Array(I32))) = AsyncAll(%58) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 43 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:39:43
+    -> Suspend { kind: AsyncHandle { handle: ValueId(60), owned: true }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 }, successor: BlockId(22), resume_value: Some(ValueId(61)), arguments: [Value(ValueId(109)), Value(ValueId(110)), Value(ValueId(111)), Value(ValueId(112)), Value(ValueId(58)), Value(ValueId(59))], ownership: [false, false, false, false, false, false], invalidates: [ValueId(109), ValueId(5), ValueId(110), ValueId(14), ValueId(38), ValueId(111), ValueId(41), ValueId(46), ValueId(112), ValueId(53), ValueId(58), ValueId(61)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] }
+  b20 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:35:43
+    AsyncHandleArrayRelease(%112) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:43
+    AsyncHandleArrayRelease(%111) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:43
+    AsyncHandleArrayRelease(%110) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:43
+    AsyncHandleArrayRelease(%109) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:43
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:35:43
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 35, col: 43 } }
+  b21 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:39:19
+    AsyncHandleArrayRelease(%58) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    AsyncHandleArrayRelease(%112) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    AsyncHandleArrayRelease(%111) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    AsyncHandleArrayRelease(%110) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    AsyncHandleArrayRelease(%109) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:39:19
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }
+  b22(%61: Data(Array(I32)), %114: Data(Array(AsyncHandle(I32))), %115: Data(Array(AsyncHandle(I32))), %116: Data(Array(AsyncHandle(I32))), %117: Data(Array(AsyncHandle(I32))), %118: Data(Array(AsyncHandle(I32))), %119: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(23))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    %62: Data(I32) = Length(%61) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:68
+    %63: Data(Str) = Template([Text("lambda "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%119, %62) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 68 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:39:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%63) invalidates=[ValueId(114), ValueId(5), ValueId(115), ValueId(14), ValueId(38), ValueId(116), ValueId(41), ValueId(46), ValueId(117), ValueId(53), ValueId(118), ValueId(61)] @ a480-a-parameter-borrows-its-handle.ts:39:3
+    %64: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(8):I32) invalidates=[ValueId(114), ValueId(5), ValueId(115), ValueId(14), ValueId(38), ValueId(116), ValueId(41), ValueId(46), ValueId(117), ValueId(53), ValueId(118), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 40, col: 13 } }] @ a480-a-parameter-borrows-its-handle.ts:40:13
+    %65: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(9):I32) invalidates=[ValueId(114), ValueId(5), ValueId(115), ValueId(14), ValueId(38), ValueId(116), ValueId(41), ValueId(46), ValueId(117), ValueId(53), ValueId(118), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 41, col: 13 } }] @ a480-a-parameter-borrows-its-handle.ts:41:13
+    AsyncHandleRetain(%64) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 34 } }] @ a480-a-parameter-borrows-its-handle.ts:42:34
+    AsyncHandleRetain(%65) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:42:37
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(AsyncHandle(I32)), Data(AsyncHandle(I32))], return_type: Some(Data(I32)) }, operands: [ValueId(64), ValueId(65)] }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 }, successor: BlockId(24), resume_value: Some(ValueId(66)), arguments: [Value(ValueId(114)), Value(ValueId(115)), Value(ValueId(116)), Value(ValueId(117)), Value(ValueId(118)), Value(ValueId(64)), Value(ValueId(65))], ownership: [false, false, false, false, false, false, false], invalidates: [ValueId(114), ValueId(5), ValueId(115), ValueId(14), ValueId(38), ValueId(116), ValueId(41), ValueId(46), ValueId(117), ValueId(53), ValueId(118), ValueId(61)], traps: [Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] }
+  b23 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:39:37
+    AsyncHandleArrayRelease(%118) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    AsyncHandleArrayRelease(%117) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    AsyncHandleArrayRelease(%116) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    AsyncHandleArrayRelease(%115) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    AsyncHandleArrayRelease(%114) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }] @ a480-a-parameter-borrows-its-handle.ts:39:37
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 39, col: 37 } }
+  b24(%66: Data(I32), %120: Data(Array(AsyncHandle(I32))), %121: Data(Array(AsyncHandle(I32))), %122: Data(Array(AsyncHandle(I32))), %123: Data(Array(AsyncHandle(I32))), %124: Data(Array(AsyncHandle(I32))), %125: Data(AsyncHandle(I32)), %126: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(25))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    -> Suspend { kind: AsyncHandle { handle: ValueId(125), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 }, successor: BlockId(26), resume_value: Some(ValueId(67)), arguments: [Value(ValueId(120)), Value(ValueId(121)), Value(ValueId(122)), Value(ValueId(123)), Value(ValueId(124)), Value(ValueId(125)), Value(ValueId(126)), Value(ValueId(66))], ownership: [false, false, false, false, false, false, false, false], invalidates: [ValueId(120), ValueId(5), ValueId(121), ValueId(14), ValueId(38), ValueId(122), ValueId(41), ValueId(46), ValueId(123), ValueId(53), ValueId(124), ValueId(61)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] }
+  b25 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleRelease(%126) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleRelease(%125) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleArrayRelease(%124) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleArrayRelease(%123) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleArrayRelease(%122) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleArrayRelease(%121) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    AsyncHandleArrayRelease(%120) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:42:20
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }
+  b26(%67: Data(I32), %127: Data(Array(AsyncHandle(I32))), %128: Data(Array(AsyncHandle(I32))), %129: Data(Array(AsyncHandle(I32))), %130: Data(Array(AsyncHandle(I32))), %131: Data(Array(AsyncHandle(I32))), %132: Data(AsyncHandle(I32)), %133: Data(AsyncHandle(I32)), %134: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(27))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    -> Suspend { kind: AsyncHandle { handle: ValueId(133), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 }, successor: BlockId(28), resume_value: Some(ValueId(68)), arguments: [Value(ValueId(127)), Value(ValueId(128)), Value(ValueId(129)), Value(ValueId(130)), Value(ValueId(131)), Value(ValueId(132)), Value(ValueId(133)), Value(ValueId(134)), Value(ValueId(67))], ownership: [false, false, false, false, false, false, false, false, false], invalidates: [ValueId(127), ValueId(5), ValueId(128), ValueId(14), ValueId(38), ValueId(129), ValueId(41), ValueId(46), ValueId(130), ValueId(53), ValueId(131), ValueId(61)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] }
+  b27 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleRelease(%133) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleRelease(%132) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleArrayRelease(%131) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleArrayRelease(%130) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleArrayRelease(%129) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleArrayRelease(%128) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    AsyncHandleArrayRelease(%127) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:42:43
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }
+  b28(%68: Data(I32), %135: Data(Array(AsyncHandle(I32))), %136: Data(Array(AsyncHandle(I32))), %137: Data(Array(AsyncHandle(I32))), %138: Data(Array(AsyncHandle(I32))), %139: Data(Array(AsyncHandle(I32))), %140: Data(AsyncHandle(I32)), %141: Data(AsyncHandle(I32)), %142: Data(I32), %143: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(29))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    %69: Data(Str) = Template([Text("earlier "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%142, %143, %68) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 43 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:42:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%69) invalidates=[ValueId(135), ValueId(5), ValueId(136), ValueId(14), ValueId(38), ValueId(137), ValueId(41), ValueId(46), ValueId(138), ValueId(53), ValueId(139), ValueId(61)] @ a480-a-parameter-borrows-its-handle.ts:42:3
+    %70: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(12):I32) invalidates=[ValueId(135), ValueId(5), ValueId(136), ValueId(14), ValueId(38), ValueId(137), ValueId(41), ValueId(46), ValueId(138), ValueId(53), ValueId(139), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 43, col: 19 } }] @ a480-a-parameter-borrows-its-handle.ts:43:19
+    AsyncHandleRetain(%70) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }] @ a480-a-parameter-borrows-its-handle.ts:19:59
+    %71: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Function(FunctionId(13)), parameter_types: [Data(AsyncHandle(I32))], return_type: Some(Data(AsyncHandle(I32))) })(%70) invalidates=[ValueId(135), ValueId(5), ValueId(136), ValueId(14), ValueId(38), ValueId(137), ValueId(41), ValueId(46), ValueId(138), ValueId(53), ValueId(139), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }, Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }] @ a480-a-parameter-borrows-its-handle.ts:19:59
+    AsyncHandleRetain(%70) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 42 } }] @ a480-a-parameter-borrows-its-handle.ts:44:42
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(AsyncHandle(I32)), Data(AsyncHandle(I32))], return_type: Some(Data(I32)) }, operands: [ValueId(70), ValueId(71)] }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 }, successor: BlockId(30), resume_value: Some(ValueId(72)), arguments: [Value(ValueId(135)), Value(ValueId(136)), Value(ValueId(137)), Value(ValueId(138)), Value(ValueId(139)), Value(ValueId(140)), Value(ValueId(141)), Value(ValueId(70))], ownership: [false, false, false, false, false, false, false, false], invalidates: [ValueId(135), ValueId(5), ValueId(136), ValueId(14), ValueId(38), ValueId(137), ValueId(41), ValueId(46), ValueId(138), ValueId(53), ValueId(139), ValueId(61)], traps: [Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] }
+  b29 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleRelease(%141) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleRelease(%140) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleArrayRelease(%139) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleArrayRelease(%138) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleArrayRelease(%137) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleArrayRelease(%136) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    AsyncHandleArrayRelease(%135) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:42:54
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 42, col: 54 } }
+  b30(%72: Data(I32), %144: Data(Array(AsyncHandle(I32))), %145: Data(Array(AsyncHandle(I32))), %146: Data(Array(AsyncHandle(I32))), %147: Data(Array(AsyncHandle(I32))), %148: Data(Array(AsyncHandle(I32))), %149: Data(AsyncHandle(I32)), %150: Data(AsyncHandle(I32)), %151: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(31))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    -> Suspend { kind: AsyncHandle { handle: ValueId(151), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 }, successor: BlockId(32), resume_value: Some(ValueId(73)), arguments: [Value(ValueId(144)), Value(ValueId(145)), Value(ValueId(146)), Value(ValueId(147)), Value(ValueId(148)), Value(ValueId(149)), Value(ValueId(150)), Value(ValueId(151)), Value(ValueId(72))], ownership: [false, false, false, false, false, false, false, false, false], invalidates: [ValueId(144), ValueId(5), ValueId(145), ValueId(14), ValueId(38), ValueId(146), ValueId(41), ValueId(46), ValueId(147), ValueId(53), ValueId(148), ValueId(61)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] }
+  b31 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleRelease(%151) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleRelease(%150) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleRelease(%149) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleArrayRelease(%148) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleArrayRelease(%147) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleArrayRelease(%146) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleArrayRelease(%145) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    AsyncHandleArrayRelease(%144) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }] @ a480-a-parameter-borrows-its-handle.ts:44:28
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }
+  b32(%73: Data(I32), %152: Data(Array(AsyncHandle(I32))), %153: Data(Array(AsyncHandle(I32))), %154: Data(Array(AsyncHandle(I32))), %155: Data(Array(AsyncHandle(I32))), %156: Data(Array(AsyncHandle(I32))), %157: Data(AsyncHandle(I32)), %158: Data(AsyncHandle(I32)), %159: Data(AsyncHandle(I32)), %160: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(33))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    %74: Data(Str) = Template([Text("earlier-default "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }])(%160, %73) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 28 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:44:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%74) invalidates=[ValueId(152), ValueId(5), ValueId(153), ValueId(14), ValueId(38), ValueId(154), ValueId(41), ValueId(46), ValueId(155), ValueId(53), ValueId(156), ValueId(61)] @ a480-a-parameter-borrows-its-handle.ts:44:3
+    %75: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(10):I32) invalidates=[ValueId(152), ValueId(5), ValueId(153), ValueId(14), ValueId(38), ValueId(154), ValueId(41), ValueId(46), ValueId(155), ValueId(53), ValueId(156), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 45, col: 13 } }] @ a480-a-parameter-borrows-its-handle.ts:45:13
+    %76: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(11):I32) invalidates=[ValueId(152), ValueId(5), ValueId(153), ValueId(14), ValueId(38), ValueId(154), ValueId(41), ValueId(46), ValueId(155), ValueId(53), ValueId(156), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 46, col: 13 } }] @ a480-a-parameter-borrows-its-handle.ts:46:13
+    AsyncHandleRetain(%75) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 43 } }] @ a480-a-parameter-borrows-its-handle.ts:47:43
+    AsyncHandleRetain(%76) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 46 } }] @ a480-a-parameter-borrows-its-handle.ts:47:46
+    %77: Data(Bool) = Copy(Boolean(true):Bool) @ a480-a-parameter-borrows-its-handle.ts:47:24
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(Bool), Data(AsyncHandle(I32)), Data(AsyncHandle(I32))], return_type: Some(Data(I32)) }, operands: [ValueId(77), ValueId(75), ValueId(76)] }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 }, successor: BlockId(34), resume_value: Some(ValueId(78)), arguments: [Value(ValueId(152)), Value(ValueId(153)), Value(ValueId(154)), Value(ValueId(155)), Value(ValueId(156)), Value(ValueId(157)), Value(ValueId(158)), Value(ValueId(159)), Value(ValueId(75)), Value(ValueId(76))], ownership: [false, false, false, false, false, false, false, false, false, false], invalidates: [ValueId(152), ValueId(5), ValueId(153), ValueId(14), ValueId(38), ValueId(154), ValueId(41), ValueId(46), ValueId(155), ValueId(53), ValueId(156), ValueId(61)], traps: [Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] }
+  b33 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleRelease(%159) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleRelease(%158) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleRelease(%157) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleArrayRelease(%156) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleArrayRelease(%155) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleArrayRelease(%154) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleArrayRelease(%153) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    AsyncHandleArrayRelease(%152) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }] @ a480-a-parameter-borrows-its-handle.ts:44:54
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 44, col: 54 } }
+  b34(%78: Data(I32), %161: Data(Array(AsyncHandle(I32))), %162: Data(Array(AsyncHandle(I32))), %163: Data(Array(AsyncHandle(I32))), %164: Data(Array(AsyncHandle(I32))), %165: Data(Array(AsyncHandle(I32))), %166: Data(AsyncHandle(I32)), %167: Data(AsyncHandle(I32)), %168: Data(AsyncHandle(I32)), %169: Data(AsyncHandle(I32)), %170: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(35))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    -> Suspend { kind: AsyncHandle { handle: ValueId(169), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 }, successor: BlockId(36), resume_value: Some(ValueId(79)), arguments: [Value(ValueId(161)), Value(ValueId(162)), Value(ValueId(163)), Value(ValueId(164)), Value(ValueId(165)), Value(ValueId(166)), Value(ValueId(167)), Value(ValueId(168)), Value(ValueId(169)), Value(ValueId(170)), Value(ValueId(78))], ownership: [false, false, false, false, false, false, false, false, false, false, false], invalidates: [ValueId(161), ValueId(5), ValueId(162), ValueId(14), ValueId(38), ValueId(163), ValueId(41), ValueId(46), ValueId(164), ValueId(53), ValueId(165), ValueId(61)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] }
+  b35 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleRelease(%170) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleRelease(%169) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleRelease(%168) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleRelease(%167) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleRelease(%166) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleArrayRelease(%165) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleArrayRelease(%164) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleArrayRelease(%163) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleArrayRelease(%162) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    AsyncHandleArrayRelease(%161) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }] @ a480-a-parameter-borrows-its-handle.ts:47:24
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }
+  b36(%79: Data(I32), %171: Data(Array(AsyncHandle(I32))), %172: Data(Array(AsyncHandle(I32))), %173: Data(Array(AsyncHandle(I32))), %174: Data(Array(AsyncHandle(I32))), %175: Data(Array(AsyncHandle(I32))), %176: Data(AsyncHandle(I32)), %177: Data(AsyncHandle(I32)), %178: Data(AsyncHandle(I32)), %179: Data(AsyncHandle(I32)), %180: Data(AsyncHandle(I32)), %181: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(37))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    -> Suspend { kind: AsyncHandle { handle: ValueId(180), owned: false }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 }, successor: BlockId(38), resume_value: Some(ValueId(80)), arguments: [Value(ValueId(171)), Value(ValueId(172)), Value(ValueId(173)), Value(ValueId(174)), Value(ValueId(175)), Value(ValueId(176)), Value(ValueId(177)), Value(ValueId(178)), Value(ValueId(179)), Value(ValueId(180)), Value(ValueId(181)), Value(ValueId(79))], ownership: [false, false, false, false, false, false, false, false, false, false, false, false], invalidates: [ValueId(171), ValueId(5), ValueId(172), ValueId(14), ValueId(38), ValueId(173), ValueId(41), ValueId(46), ValueId(174), ValueId(53), ValueId(175), ValueId(61)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] }
+  b37 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleRelease(%180) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleRelease(%179) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleRelease(%178) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleRelease(%177) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleRelease(%176) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleArrayRelease(%175) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleArrayRelease(%174) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleArrayRelease(%173) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleArrayRelease(%172) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    AsyncHandleArrayRelease(%171) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:47:52
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }
+  b38(%80: Data(I32), %182: Data(Array(AsyncHandle(I32))), %183: Data(Array(AsyncHandle(I32))), %184: Data(Array(AsyncHandle(I32))), %185: Data(Array(AsyncHandle(I32))), %186: Data(Array(AsyncHandle(I32))), %187: Data(AsyncHandle(I32)), %188: Data(AsyncHandle(I32)), %189: Data(AsyncHandle(I32)), %190: Data(AsyncHandle(I32)), %191: Data(AsyncHandle(I32)), %192: Data(I32), %193: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(39))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    %81: Data(Str) = Template([Text("conditional "), Operand { index: 0, format: I32 }, Text(" "), Operand { index: 1, format: I32 }, Text(" "), Operand { index: 2, format: I32 }])(%192, %193, %80) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 24 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 52 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:47:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%81) invalidates=[ValueId(182), ValueId(5), ValueId(183), ValueId(14), ValueId(38), ValueId(184), ValueId(41), ValueId(46), ValueId(185), ValueId(53), ValueId(186), ValueId(61)] @ a480-a-parameter-borrows-its-handle.ts:47:3
+    %82: Data(AsyncHandle(I32)) = Call(CallTarget { kind: Function(FunctionId(14)), parameter_types: [], return_type: Some(Data(AsyncHandle(I32))) })() invalidates=[ValueId(182), ValueId(5), ValueId(183), ValueId(14), ValueId(38), ValueId(184), ValueId(41), ValueId(46), ValueId(185), ValueId(53), ValueId(186), ValueId(61)] traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 44 } }] @ a480-a-parameter-borrows-its-handle.ts:21:44
+    -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(10)), parameter_types: [Data(AsyncHandle(I32))], return_type: Some(Data(I32)) }, operands: [ValueId(82)] }, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 }, successor: BlockId(40), resume_value: Some(ValueId(83)), arguments: [Value(ValueId(182)), Value(ValueId(183)), Value(ValueId(184)), Value(ValueId(185)), Value(ValueId(186)), Value(ValueId(187)), Value(ValueId(188)), Value(ValueId(189)), Value(ValueId(190)), Value(ValueId(191))], ownership: [false, false, false, false, false, false, false, false, false, false], invalidates: [ValueId(182), ValueId(5), ValueId(183), ValueId(14), ValueId(38), ValueId(184), ValueId(41), ValueId(46), ValueId(185), ValueId(53), ValueId(186), ValueId(61)], traps: [Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] }
+  b39 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleRelease(%191) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleRelease(%190) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleRelease(%189) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleRelease(%188) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleRelease(%187) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleArrayRelease(%186) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleArrayRelease(%185) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleArrayRelease(%184) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleArrayRelease(%183) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    AsyncHandleArrayRelease(%182) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }] @ a480-a-parameter-borrows-its-handle.ts:47:63
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 47, col: 63 } }
+  b40(%83: Data(I32), %194: Data(Array(AsyncHandle(I32))), %195: Data(Array(AsyncHandle(I32))), %196: Data(Array(AsyncHandle(I32))), %197: Data(Array(AsyncHandle(I32))), %198: Data(Array(AsyncHandle(I32))), %199: Data(AsyncHandle(I32)), %200: Data(AsyncHandle(I32)), %201: Data(AsyncHandle(I32)), %202: Data(AsyncHandle(I32)), %203: Data(AsyncHandle(I32))) Some("async-call.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(41))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    %84: Data(Str) = Template([Text("default "), Operand { index: 0, format: I32 }])(%83) traps=[Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Allocation, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 9 } }] @ a480-a-parameter-borrows-its-handle.ts:48:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%84) invalidates=[ValueId(194), ValueId(5), ValueId(195), ValueId(14), ValueId(38), ValueId(196), ValueId(41), ValueId(46), ValueId(197), ValueId(53), ValueId(198), ValueId(61)] @ a480-a-parameter-borrows-its-handle.ts:48:3
+    AsyncHandleRelease(%203) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleRelease(%202) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleRelease(%201) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleRelease(%200) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleRelease(%199) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleArrayRelease(%198) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleArrayRelease(%197) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleArrayRelease(%196) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleArrayRelease(%195) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    AsyncHandleArrayRelease(%194) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }] @ a480-a-parameter-borrows-its-handle.ts:22:23
+    -> Return { value: None, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 22, col: 23 } }
+  b41 Some("release.landing"):
+    ExceptionPark() @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleRelease(%203) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleRelease(%202) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleRelease(%201) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleRelease(%200) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleRelease(%199) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleArrayRelease(%198) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleArrayRelease(%197) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleArrayRelease(%196) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleArrayRelease(%195) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    AsyncHandleArrayRelease(%194) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }] @ a480-a-parameter-borrows-its-handle.ts:48:20
+    -> Unreachable { pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 48, col: 20 } }
+fn f12 "<lambda a480-a-parameter-borrows-its-handle.ts:36:18>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a480-a-parameter-borrows-its-handle.ts:36:18
+  param %0 "handles": Data(Array(AsyncHandle(I32))) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:36:18
+  value %0: Data(Array(AsyncHandle(I32))) name=Some("handles")
+  value %1: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(I32) = Length(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 36, col: 52 } }] @ a480-a-parameter-borrows-its-handle.ts:36:60
+    AsyncHandleArrayRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 36, col: 60 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 36, col: 60 } }] @ a480-a-parameter-borrows-its-handle.ts:36:60
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 36, col: 60 } }
+fn f13 "<default a480-a-parameter-borrows-its-handle.ts:19:59>" kind=SynthesizedHelper exported=false generator=false async=false -> AsyncHandle(I32) entry=b0 @ a480-a-parameter-borrows-its-handle.ts:19:59
+  param %0 "p": Data(AsyncHandle(I32)) kind=Explicit storage=None @ a480-a-parameter-borrows-its-handle.ts:19:59
+  value %0: Data(AsyncHandle(I32)) name=Some("p")
+  b0 Some("entry"):
+    AsyncHandleRetain(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }] @ a480-a-parameter-borrows-its-handle.ts:19:59
+    AsyncHandleRelease(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }, Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }] @ a480-a-parameter-borrows-its-handle.ts:19:59
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 19, col: 59 } }
+fn f14 "<default a480-a-parameter-borrows-its-handle.ts:21:44>" kind=SynthesizedHelper exported=false generator=false async=false -> AsyncHandle(I32) entry=b0 @ a480-a-parameter-borrows-its-handle.ts:21:44
+  value %0: Data(AsyncHandle(I32)) name=None
+  b0 Some("entry"):
+    %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(7):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 44 } }] @ a480-a-parameter-borrows-its-handle.ts:21:44
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 44 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

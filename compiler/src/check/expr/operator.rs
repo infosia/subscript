@@ -1804,6 +1804,10 @@ impl<'p> Checker<'p> {
                         }
                     }
                 }
+                if self.apparent_type(&e.ty).holds_async_handle() {
+                    let origins = self.expr_async_origins(&e, fx);
+                    fx.handle_return_async_origins(&origins);
+                }
                 Some(Box::new(e))
             }
             None => {

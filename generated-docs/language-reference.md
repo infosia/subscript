@@ -265,20 +265,21 @@ Header guidance:
 
 Promise constructors and unsupported combinators are not in the language; every async handle must have an awaited completion.
 
-Pinned corpus: [`corpus/reject/r533-default-reads-earlier-handle.ts`](../corpus/reject/r533-default-reads-earlier-handle.ts), line 8.
+Pinned corpus: [`corpus/reject/r542-dropped-slice-handle-result.ts`](../corpus/reject/r542-dropped-slice-handle-result.ts), line 10.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: S013 at line 8
+// expected-error: S013 at line 10, column 15
 ```
 
 ```ts
-// expected-error: S013 at line 8
-async function v(n: i32): Promise<i32> { return n; }
-async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { return await q; }
-export function main(): void {}
+async function many(): Promise<Promise<i32>[]> { return [work()]; }
+export async function main(): Promise<void> {
+  const ps = (await many()).slice(0);
+  print(`${ps.length}`);
+}
 ```
 
 ### S014

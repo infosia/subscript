@@ -10233,7 +10233,8 @@ END FILE
 END PROGRAM
 PROGRAM	s317-AsyncDefaultReadsParameter			0
 FILE	E	main.ts
-async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { return await q; }
+async function v(): Promise<i32> { return 1; }
+async function f(p: Promise<i32> = v(), q: Promise<i32> = p): Promise<i32> { return await q; }
 export function main(): void {}
 END FILE
 END PROGRAM
@@ -10246,7 +10247,9 @@ END FILE
 END PROGRAM
 PROGRAM	s317-AsyncConditionalParameter			0
 FILE	E	main.ts
-async function h(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return await (c ? p : q); }
+async function v(): Promise<i32> { return 1; }
+async function many(): Promise<Promise<i32>[]> { return [v()]; }
+async function h(c: boolean): Promise<void> { const take = c; const empty: Promise<i32>[] = []; await many().then(async (p: Promise<i32>[]): Promise<void> => { await Promise.all(take ? p : empty); }); }
 export function main(): void {}
 END FILE
 END PROGRAM
@@ -10259,7 +10262,9 @@ END FILE
 END PROGRAM
 PROGRAM	s317-AsyncConditionalReturnParameter			0
 FILE	E	main.ts
-async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return c ? p : q; }
+async function v(): Promise<i32> { return 1; }
+async function many(): Promise<Promise<i32>[]> { return [v()]; }
+async function f(c: boolean): Promise<Promise<i32>[]> { const take = c; return await many().then((p: Promise<i32>[]): Promise<i32>[] => take ? p : []); }
 export function main(): void {}
 END FILE
 END PROGRAM

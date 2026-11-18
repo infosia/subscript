@@ -121,6 +121,7 @@ impl<'p> Checker<'p> {
         let result_hint = self.lambda_result_hint.take();
         let void_context = std::mem::take(&mut self.lambda_void_context);
         let called_at_once = std::mem::take(&mut self.lambda_called_at_once);
+        let reaction_parameter = self.reaction_lambda == Some(a.span);
         let value = self.with_expression_work(|checker| {
             if a.type_params
                 .as_deref()
@@ -285,6 +286,7 @@ impl<'p> Checker<'p> {
                         params,
                         result: result.clone(),
                         called_at_once,
+                        reaction_parameter,
                     },
                     fx,
                 );
@@ -333,7 +335,7 @@ impl<'p> Checker<'p> {
             let value = checker.check_lambda_body(
                 a,
                 params,
-                (ret, result_kind, void_block),
+                (ret, result_kind, void_block, reaction_parameter),
                 result_hint.as_ref(),
                 fx,
                 pos,
@@ -351,6 +353,7 @@ impl<'p> Checker<'p> {
         patterns: &[ast::Pat],
         pos: &Pos,
         fx: &mut FnCtx,
+        reaction_parameter: bool,
     ) -> Vec<hir::Param> {
         let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let mut hir_params = Vec::new();
@@ -363,22 +366,26 @@ impl<'p> Checker<'p> {
                 }
             }
             let mut initializer = p.initializer.clone();
-            let default = if let Some(value) = self.finish_initializer(&mut initializer) {
-                Some(value)
-            } else if let ast::Pat::Assign(assign) = pattern {
-                let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
-                self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
-                self.discharge_parameter_default(&value, p.ty(), fx);
-                Some(value)
-            } else {
-                None
-            };
+            let default =
+                if let Some(value) = self.finish_parameter_initializer(&mut initializer, p.ty()) {
+                    Some(value)
+                } else if let ast::Pat::Assign(assign) = pattern {
+                    let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
+                    self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
+                    Some(value)
+                } else {
+                    None
+                };
             let param_pos = self.pos(pattern.span());
-            let async_origins = if self.apparent_type(p.ty()).holds_async_handle() {
-                crate::check::AsyncOrigins::made(fx.register_async_parameter(param_pos.clone()))
-            } else {
-                Default::default()
-            };
+            let origins = default
+                .as_ref()
+                .map_or_else(Default::default, |value| self.expr_async_origins(value, fx));
+            let mut async_origins = fx.parameter_default_origins(origins, &hir_params);
+            if reaction_parameter && self.apparent_type(p.ty()).holds_async_handle() {
+                async_origins.extend(crate::check::AsyncOrigins::made(
+                    fx.register_async_parameter(param_pos.clone()),
+                ));
+            }
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.parameter_names.insert(p.name.clone());
             }
@@ -413,7 +420,12 @@ impl<'p> Checker<'p> {
         &mut self,
         a: &ast::ArrowExpr,
         params: Vec<ParamSig>,
-        (mut ret, result_kind, inferred_void): (Option<Type>, ContextKind, bool),
+        (mut ret, result_kind, inferred_void, reaction_parameter): (
+            Option<Type>,
+            ContextKind,
+            bool,
+            bool,
+        ),
         result_hint: Option<&Type>,
         fx: &mut FnCtx,
         pos: Pos,
@@ -530,7 +542,8 @@ impl<'p> Checker<'p> {
         let saved_adoptions = std::mem::take(&mut fx.adoptions);
         let saved_switch_depth = std::mem::replace(&mut fx.switch_depth, 0);
         let saved_reachable = std::mem::replace(&mut fx.flow_reachable, true);
-        let hir_params = self.check_lambda_parameter_defaults(&params, &a.params, &pos, fx);
+        let hir_params =
+            self.check_lambda_parameter_defaults(&params, &a.params, &pos, fx, reaction_parameter);
         // §293 rule 7: parameter defaults are outside the member body.
         if let Some(member) = &member {
             let members = fx

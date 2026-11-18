@@ -1,9 +1,10 @@
 //! Origin facts for conditional values and parameter defaults (§317).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::{rejection::RejectionSite, FnCtx};
 use crate::diag::Pos;
+use crate::hir;
 
 #[derive(Clone, Copy, Debug)]
 enum OriginUse {
@@ -149,19 +150,31 @@ impl FnCtx {
         }
     }
 
-    /// An omitted argument cannot discharge a supplied earlier parameter
-    /// (§317.1 rule 2); other default origins keep the ordinary transfer.
-    pub(super) fn handle_default_origins(&mut self, mut origins: AsyncOrigins) {
+    /// A default cannot transfer origins carried by earlier parameters of
+    /// the same function (compiler.md §329 rule 3, §317 rule 2).
+    pub(super) fn parameter_default_origins(
+        &mut self,
+        mut origins: AsyncOrigins,
+        parameters: &[hir::Param],
+    ) -> AsyncOrigins {
+        if origins.is_empty() {
+            return origins;
+        }
+        let earlier_origins: HashSet<_> = parameters
+            .iter()
+            .flat_map(|parameter| self.local_async_origins(&parameter.name).0.into_keys())
+            .collect();
         origins.0.retain(|id, _| {
-            if let Some(origin) = self.async_origins.get_mut(*id as usize) {
-                if origin.parameter {
+            if earlier_origins.contains(id) {
+                if let Some(origin) = self.async_origins.get_mut(*id as usize) {
                     origin.parameter_default = true;
-                    return false;
                 }
+                false
+            } else {
+                true
             }
-            true
         });
-        self.handle_async_origins(&origins);
+        origins
     }
 
     pub(crate) fn local_async_origins(&self, name: &str) -> AsyncOrigins {

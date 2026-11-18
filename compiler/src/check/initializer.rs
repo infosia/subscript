@@ -68,6 +68,8 @@ pub(crate) enum DeferredWork {
         result: Type,
         /// The lambda is the callee of a call (compiler.md §241 rule 2).
         called_at_once: bool,
+        /// Its parameter receives a runtime value (§329 rule 2).
+        reaction_parameter: bool,
     },
     Arguments {
         source: Vec<ast::ExprOrSpread>,
@@ -801,6 +803,20 @@ impl<'p> Checker<'p> {
         Some(value)
     }
 
+    /// Check a handle default in its body so its origins use that body's
+    /// registry (compiler.md §329 rule 3). Type inference has its own frame.
+    pub(crate) fn finish_parameter_initializer(
+        &mut self,
+        source: &mut Option<Initializer>,
+        ty: &Type,
+    ) -> Option<hir::Expr> {
+        if self.apparent_type(ty).holds_async_handle() {
+            None
+        } else {
+            self.finish_initializer(source)
+        }
+    }
+
     pub(super) fn finish_expression(
         &mut self,
         value: &mut hir::Expr,
@@ -822,6 +838,7 @@ impl<'p> Checker<'p> {
                     result,
                     called_at_once,
                     inferred_void,
+                    reaction_parameter,
                 } => {
                     self.lambda_called_at_once = called_at_once;
                     *value = self.check_lambda_body(
@@ -831,6 +848,7 @@ impl<'p> Checker<'p> {
                             Some(result),
                             crate::check::expr::ContextKind::Contextual,
                             inferred_void,
+                            reaction_parameter,
                         ),
                         None,
                         &mut deferred.frame,

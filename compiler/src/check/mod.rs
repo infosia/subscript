@@ -1370,6 +1370,8 @@ pub(crate) struct Checker<'p> {
     /// The next lambda is the callee of a call, so its body runs at once
     /// (compiler.md §241 rule 2).
     lambda_called_at_once: bool,
+    /// The lambda written at a Promise callback argument (§329 rule 2).
+    reaction_lambda: Option<swc_common::Span>,
     /// The parameters and the result of a built-in callback place with an
     /// optional trailing index, for the leaves of the next conditional
     /// (compiler.md §242 rule 1a).

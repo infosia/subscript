@@ -474,7 +474,7 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     }
     assert_eq!(
         omissions.len(),
-        9537,
+        9527,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(

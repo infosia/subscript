@@ -64,7 +64,7 @@ fn conditional_values_preserve_origin_kind_and_selected_coverage() {
     ] {
         check(&format!("async function f(c: boolean): Promise<void> {{ {usage} }}"), true);
     }
-    check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return await (c ? p : q); }", false);
+    check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return await (c ? p : q); }", true);
     check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { await p; await q; return await (c ? p : q); }", true);
     check("async function f(c: boolean): Promise<void> { const p = await many(); const q = await many(); const [r] = c ? p : q; await r; }", false);
     for (declarations, usage) in [
@@ -87,7 +87,7 @@ fn conditional_values_preserve_origin_kind_and_selected_coverage() {
             check(&format!("{declarations} async function f(c: boolean): Promise<void> {{ const p = v(1); const q = v(2); {usage} {discharge} }}"), !discharge.is_empty());
         }
     }
-    check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return c ? p : q; }", false);
+    check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { return c ? p : q; }", true);
     check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32>): Promise<i32> { await p; await q; return c ? p : q; }", true);
     check("async function f(c: boolean): Promise<i32> { const p = v(1); const q = v(2); return c ? p : q; }", false);
     check("async function f(c: boolean): Promise<i32> { const p = v(1); const q = v(2); await p; await q; return c ? p : q; }", true);
@@ -96,7 +96,7 @@ fn conditional_values_preserve_origin_kind_and_selected_coverage() {
 
 /// Measured cost: 13 ms for 16 checker runs with one test thread.
 #[test]
-fn parameter_defaults_do_not_discharge_an_earlier_parameter() {
+fn parameter_defaults_borrow_earlier_parameters() {
     let started = Instant::now();
     for declaration in [
         "async function f(p: Promise<i32>, q: Promise<i32> = p): Promise<i32> { DISCHARGE return await q; }",
@@ -106,7 +106,7 @@ fn parameter_defaults_do_not_discharge_an_earlier_parameter() {
         "function outer(): void { const f = async (p: Promise<i32>, q: Promise<i32> = p): Promise<i32> => { DISCHARGE return await q; }; }",
         "function* f(p: Promise<i32>[], q: Promise<i32>[] = p): Generator<i32> { DISCHARGE const held = new Map<i32, Promise<i32>[]>(); held.set(1, q); yield 1; }",
     ] {
-        check(&declaration.replace("DISCHARGE", ""), false);
+        check(&declaration.replace("DISCHARGE", ""), true);
         let discharged = if declaration.contains("constructor") {
             "this.p = p;"
         } else if declaration.contains("function*") || declaration.contains("static f") {
@@ -117,8 +117,8 @@ fn parameter_defaults_do_not_discharge_an_earlier_parameter() {
         check(&declaration.replace("DISCHARGE", discharged), true);
     }
     check("async function f(p: Promise<i32>, q: Promise<i32> = v(2)): Promise<i32> { await p; return await q; }", true);
-    check("async function f(p: Promise<i32>, q: Promise<i32> = v(2)): Promise<i32> { return await q; }", false);
-    check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32> = c ? p : v(2)): Promise<i32> { return await q; }", false);
+    check("async function f(p: Promise<i32>, q: Promise<i32> = v(2)): Promise<i32> { return await q; }", true);
+    check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32> = c ? p : v(2)): Promise<i32> { return await q; }", true);
     check("async function f(c: boolean, p: Promise<i32>, q: Promise<i32> = c ? p : v(2)): Promise<i32> { await p; return await q; }", true);
     eprintln!("s317 default checker cost: {:?}", started.elapsed());
 }
@@ -136,7 +136,7 @@ fn one_handle_alternatives_fit_sync_returns_and_all_discharge_forms() {
             &declaration
                 .replace("PARAMS", "c: boolean, p: Promise<i32>, q: Promise<i32>")
                 .replace("VALUE", "c ? p : q"),
-            false,
+            true,
         );
         check(
             &declaration
@@ -170,7 +170,7 @@ fn one_handle_alternatives_fit_sync_returns_and_all_discharge_forms() {
                     "{setup} async function f({params}): Promise<void> {{ {locals} {} }}",
                     usage.replace("VALUE", "c ? p : q")
                 ),
-                false,
+                parameters,
             );
             let params = if parameters { "p: Promise<i32>" } else { "" };
             let locals = if parameters { "" } else { "const p = v(1);" };
