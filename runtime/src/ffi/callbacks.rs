@@ -141,6 +141,9 @@ pub(crate) unsafe fn fire_callback(
     // boundary copy-in implementation so callback parameters and struct
     // fields have exactly the same null/empty semantics.
     let s = unsafe { alloc_str_from_view(context, message.data, message.len as u64, 0) };
+    if s.is_null() {
+        return;
+    }
     // The language function value's wrapper takes `(ctx, env, args...)`
     // with the host C calling convention; here the args are the `string`
     // handle and the two userdata slots (§14.4).
@@ -159,5 +162,65 @@ pub(crate) unsafe fn fire_callback(
     context.settle_uncaught_exception();
     if entered {
         context.end_host_entry();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{fire_callback, SubStrView};
+    use crate::{Context, TrapKind};
+
+    // compiler.md §327 rule 2: an allocation trap cannot enter a callback with a null string.
+    #[test]
+    fn a_string_allocation_trap_does_not_enter_script_code() {
+        unsafe extern "C" fn count_entry(
+            _ctx: *mut Context,
+            env: *const u8,
+            _message: *mut u8,
+            _first: *mut u8,
+            _second: *mut u8,
+        ) {
+            // SAFETY: the test supplies a live, writable counter as the environment.
+            unsafe { *env.cast_mut().cast::<usize>() += 1 };
+        }
+
+        for releasing in [false, true] {
+            for bytes in [&b"a\xffb"[..], &b"valid"[..]] {
+                let mut ctx = if releasing {
+                    Context::new_releasing()
+                } else {
+                    Context::new()
+                };
+                let mut entered = 0usize;
+                ctx.fail_alloc_after(1);
+                for fail in [true, false] {
+                    // SAFETY: the Context, callback, counter, and byte view stay live for the call.
+                    unsafe {
+                        fire_callback(
+                            &mut *ctx,
+                            count_entry as *const u8,
+                            (&mut entered as *mut usize).cast(),
+                            std::ptr::null_mut(),
+                            std::ptr::null_mut(),
+                            SubStrView {
+                                data: bytes.as_ptr(),
+                                len: bytes.len(),
+                            },
+                        );
+                    }
+                    if fail {
+                        assert_eq!(entered, 0);
+                        assert_eq!(
+                            ctx.trap_record().expect("allocation trap").kind,
+                            TrapKind::AllocationFailure
+                        );
+                        ctx.clear_trap();
+                    } else {
+                        assert_eq!(entered, 1);
+                        assert!(!ctx.trapped());
+                    }
+                }
+            }
+        }
     }
 }

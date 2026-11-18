@@ -185,6 +185,9 @@
 // @subscript-c-parameter function="sub326Nested" parameter="out" const=false
 // @subscript-c-parameter function="sub326Links" parameter="out" const=false
 // @subscript-c-parameter function="sub326ByteCompare" parameter="out" const=false
+// @subscript-c-parameter function="sub327Fill" parameter="out" const=false
+// @subscript-c-parameter function="sub327Receive" parameter="out" const=false
+// @subscript-c-parameter function="sub327Keep" parameter="out" const=false
 
 declare enum SubChainKind {
   SUB_CHAIN_KIND_BASE = 0,
@@ -1224,6 +1227,11 @@ declare class Sub326ByteCompare {
 }
 
 declare function sub326ByteCompare(out: Sub326ByteCompare | null, info: SubCallbackInfo): void;
+declare function sub327Fill(out: SubDescReadStr | null, sequence: i32): void;
+declare function sub327Callback(info: SubCallbackInfo, sequence: i32): void;
+declare function sub327Registration(info: SubRequestInfo, sequence: i32): void;
+declare function sub327Receive(out: Sub325Texts | null, sequence: i32): void;
+declare function sub327Keep(out: SubDescReadStr | null): void;
 
 type SubFloat16 = f16;
 

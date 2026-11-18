@@ -865,7 +865,7 @@ impl Context {
     /// Allocates an immutable string and writes its bytes in place.
     ///
     /// The payload is `[len: u64][bytes]`. The writer receives exactly
-    /// `len` bytes and must write every byte.
+    /// `len` bytes and must write valid UTF-8 to every byte (compiler.md §327 rule 2).
     /// Returns the payload pointer, or null after an allocation trap.
     pub fn alloc_str_with(
         &mut self,
@@ -898,6 +898,9 @@ impl Context {
 
     /// Allocates an immutable string; payload = `[len: u64][bytes]`.
     /// Returns the payload pointer (the string handle).
+    ///
+    /// `bytes` must contain valid UTF-8 (compiler.md §327 rule 2). This function does not decode.
+    /// Rust hosts with other bytes call [`crate::ffi::alloc_str_from_view`].
     pub fn alloc_str(&mut self, bytes: &[u8], pos_id: u32) -> *mut u8 {
         self.alloc_str_with(bytes.len(), pos_id, |destination| {
             destination.copy_from_slice(bytes);

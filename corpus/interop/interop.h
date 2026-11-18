@@ -1454,4 +1454,11 @@ typedef struct Sub326Point { int32_t x; int32_t y; } Sub326Point;
 typedef struct Sub326ByteCompare { Sub326Point ps[2]; SubStringView name; } Sub326ByteCompare;
 void sub326ByteCompare(Sub326ByteCompare *out, SubCallbackInfo info);
 
+/* compiler.md §327 rule 1: C bytes decode at each string entry. */
+void sub327Fill(SubDescReadStr *out, int32_t sequence);
+void sub327Callback(SubCallbackInfo info, int32_t sequence);
+void sub327Registration(SubRequestInfo info, int32_t sequence);
+void sub327Receive(Sub325Texts *out, int32_t sequence);
+void sub327Keep(SubDescReadStr *out);
+
 #endif /* SUBSCRIPT_INTEROP_H */

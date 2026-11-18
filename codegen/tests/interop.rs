@@ -792,6 +792,17 @@ fn fixed_struct_arrays_keep_nested_receives_and_compares() {
     }
 }
 
+// compiler.md §327 acceptance 1: invalid bytes come from the C fixture.
+// Cost: one corpus compilation and execution per tier.
+fn c_bytes_become_a_valid_string() {
+    assert_eq!(
+        both_tiers(include_str!(
+            "../../corpus/accept/a477-c-bytes-become-a-valid-string.ts"
+        )),
+        include_bytes!("../../corpus/accept/a477-c-bytes-become-a-valid-string.expected")
+    );
+}
+
 // compiler.md §326 acceptance 1: one corpus run per tier.
 fn fixed_struct_array_members_use_each_element_pass() {
     let source = include_str!("../../corpus/accept/a476-fixed-struct-array-members.ts");
@@ -1177,6 +1188,7 @@ pub(super) fn main() -> std::process::ExitCode {
         parallel: [
         ],
         main_thread: [
+            c_bytes_become_a_valid_string,
             fixed_struct_array_members_use_each_element_pass,
             fixed_struct_array_byte_elements_compare_as_embedded_members,
             fixed_struct_arrays_keep_nested_receives_and_compares,

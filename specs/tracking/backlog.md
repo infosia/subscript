@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§326. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§327. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -14,9 +14,7 @@ implementation commit of that section.
 
 ## 1. Wrong output, a stopped process, or a failed build on accepted code
 
-6. Invalid UTF-8 stays at a string-view parameter, a string field
-   written through a pointer, and `subscript_rt_str_from_view`
-   (§184.4 item 2). Effect not measured. Medium.
+No item is open in this group.
 
 ## 2. Forms that `tsc` accepts and subscript rejects (and the reverse)
 
@@ -87,7 +85,7 @@ implementation commit of that section.
 27. Checker cost 1.04–1.06 of the pin (§160.4 items 1, 2).
 28. The a22 x86-64 ship ratio at 2.18; §323.4 item 1; §269.4 item 1;
     §169.4 item 9; §325.5 items 2, 4; §326.5 item 1 (code size grows
-    with the length of a fixed array of rebuilt structs).
+    with the length of a fixed array of rebuilt structs); §327.5 item 1.
 
 ## 6. Contrived or MINOR (about 70)
 

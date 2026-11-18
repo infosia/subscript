@@ -276,6 +276,11 @@ fn using_program_type_checks_against_the_generated_mirror() {
             "sub326Nested",
             "sub326Links",
             "sub326ByteCompare",
+            "sub327Fill",
+            "sub327Callback",
+            "sub327Registration",
+            "sub327Receive",
+            "sub327Keep",
         ]
     );
 

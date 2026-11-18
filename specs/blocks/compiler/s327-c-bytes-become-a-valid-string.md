@@ -83,3 +83,49 @@ The cost of a UTF-8 check at entry E, release, ship allocator: 16 B
 
 - §184.3 item 2 closes.
 - §187 rule 2 and §28: a string view that C writes is decoded by rule 1.
+
+### 327.4 Phase Review
+
+Form. One runtime function, `alloc_str_from_view` in
+`runtime/src/ffi/strings.rs`, decodes for each entry A to E. A valid
+view pays one `from_utf8` pass and one copy. An invalid view is
+measured once by `utf8_chunks()` from the end of its valid prefix, then
+written directly into the string allocation. A length that cannot be
+represented, or an allocation failure, gives the Context
+`AllocationFailure` trap. `Context::alloc_str` and
+`alloc_str_with` state that their bytes must be valid UTF-8.
+
+Measured with a477 at entries A, B, C, and D, development tier and ship
+tier the same:
+
+| C bytes in `a<seq>b` | Pin | After (string, `length`) |
+|---|---|---|
+| `ff`, `80`, `e2 82` | `codePointAt(0)` stops the process | `a�b`, 5 |
+| `ed a0 80` | the same | `a���b`, 11 |
+| `c0 80` | the same | `a��b`, 8 |
+
+Each operation of acceptance 1 gives the result of the literal with
+U+FFFD. The CLI `check` output of 1,077 corpus entries is the same at
+the pin and after.
+
+Cost of entry E, release, ns per call, pin then after (development
+allocator, ship allocator):
+
+| Input | 16 B | 1 KiB | 1 MiB |
+|---|---|---|---|
+| Valid ASCII | 28.4 to 29.6, 6.5 to 10.1 | 67.5 to 99.3, 24.0 to 45.9 | 23,641 to 55,902, 23,651 to 56,107 |
+| One invalid byte | 24.6 to 55.7, 6.8 to 47.5 | 68.0 to 430.3, 23.9 to 375.9 | 23,572 to 342,375, 23,573 to 342,408 |
+
+One fresh review found no CRITICAL or MAJOR finding. Its four MINOR
+findings are fixed: the invalid path validated twice and copied up to
+three times through a temporary `String`; that `String` could fail with
+no trap; the unit test had no truncated end sequence and no two
+adjacent invalid subparts; a callback ran after a failed string
+allocation.
+
+### 327.5 Open
+
+1. A view with one invalid byte costs about 14 times the pin at 1 MiB:
+   `utf8_chunks()` has no ASCII fast path. A loop over `from_utf8` with
+   `valid_up_to()` and `error_len()` is the cheaper form. Only invalid
+   input pays it.

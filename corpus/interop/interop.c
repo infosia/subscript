@@ -1959,3 +1959,33 @@ void sub326ByteCompare(Sub326ByteCompare *out, SubCallbackInfo info) {
     info.callback((SubStringView){"compare", 7}, info.userdata, info.userparam);
     out->ps[1].x += 10;
 }
+
+/* compiler.md §327 rule 1: each row contains an invalid UTF-8 subpart. */
+static SubStringView sub327View(int32_t sequence) {
+    static const unsigned char bytes[5][5] = {
+        {'a', 0xff, 'b'}, {'a', 0x80, 'b'}, {'a', 0xe2, 0x82, 'b'},
+        {'a', 0xed, 0xa0, 0x80, 'b'}, {'a', 0xc0, 0x80, 'b'}
+    };
+    static const size_t lengths[5] = {3, 3, 4, 5, 4};
+    return (SubStringView){(const char *)bytes[sequence], lengths[sequence]};
+}
+void sub327Fill(SubDescReadStr *out, int32_t sequence) { out->label = sub327View(sequence); }
+void sub327Callback(SubCallbackInfo info, int32_t sequence) {
+    info.callback(sub327View(sequence), info.userdata, info.userparam);
+}
+void sub327Registration(SubRequestInfo info, int32_t sequence) {
+    subscript_rt_context *ctx = subscript_rt_cb_registration_context(info.userdata);
+    info.callback(sub327View(sequence), info.userdata, info.userparam);
+    subscript_rt_ctx_callback_release(ctx, info.userdata);
+}
+void sub327Receive(Sub325Texts *out, int32_t sequence) {
+    static Sub325Text value;
+    value.label = sub327View(sequence); value.value = sequence;
+    out->items = &value; out->itemsCount = 1;
+}
+/* compiler.md §327 rule 5: an unchanged view keeps its script storage. */
+void sub327Keep(SubDescReadStr *out) {
+    static const char *before;
+    if (out->n == 0) { before = out->label.data; out->n = 1; }
+    else { out->n = before == out->label.data ? 2 : -1; }
+}

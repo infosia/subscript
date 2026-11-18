@@ -20,7 +20,7 @@ pub unsafe extern "C" fn subscript_rt_str_lit(
     unsafe { (*ctx).intern_literal(ptr, len as usize, pos_id) }
 }
 
-/// Materializes a language string by copying a C `(ptr, len)` view.
+/// Decodes a C `(ptr, len)` view as UTF-8 with replacement (compiler.md §327 rule 1).
 ///
 /// This is the field-level form of the callback trampoline's view-to-string
 /// copy-in. A null pointer or zero length denotes the empty string, including
@@ -43,13 +43,16 @@ pub unsafe extern "C" fn subscript_rt_str_from_view(
     unsafe { alloc_str_from_view(ctx, ptr, len, pos_id) }
 }
 
-/// Shared implementation for callback and boundary-struct view copy-in.
+/// Decodes C bytes with maximal-subpart replacement (compiler.md §327 rule 3).
+///
+/// Valid UTF-8 needs one validation pass and one copy into Context storage.
+/// Rust hosts with unvalidated bytes use this function instead of [`Context::alloc_str`].
 ///
 /// # Safety
 ///
 /// When `ptr` is non-null and `len` is nonzero it points at `len` readable
 /// bytes for this call.
-pub(super) unsafe fn alloc_str_from_view(
+pub unsafe fn alloc_str_from_view(
     ctx: &mut Context,
     ptr: *const u8,
     len: u64,
@@ -60,7 +63,7 @@ pub(super) unsafe fn alloc_str_from_view(
     } else {
         let Ok(len) = usize::try_from(len) else {
             ctx.trap(
-                TrapKind::Internal,
+                TrapKind::AllocationFailure,
                 "C string view length does not fit the host address space",
                 pos_id,
             );
@@ -69,7 +72,41 @@ pub(super) unsafe fn alloc_str_from_view(
         // SAFETY: caller guarantees this readable view.
         unsafe { std::slice::from_raw_parts(ptr, len) }
     };
-    ctx.alloc_str(bytes, pos_id)
+    let prefix = match std::str::from_utf8(bytes) {
+        Ok(_) => return ctx.alloc_str(bytes, pos_id),
+        Err(error) => error.valid_up_to(),
+    };
+    let tail = &bytes[prefix..];
+    // compiler.md §327 rules 1 and 4: size the replacement bytes before the Context allocation.
+    let length = tail.utf8_chunks().try_fold(prefix, |length, chunk| {
+        let length = length.checked_add(chunk.valid().len())?;
+        if chunk.invalid().is_empty() {
+            Some(length)
+        } else {
+            length.checked_add(3)
+        }
+    });
+    let Some(length) = length else {
+        ctx.trap(
+            TrapKind::AllocationFailure,
+            "decoded C string length does not fit the host address space",
+            pos_id,
+        );
+        return std::ptr::null_mut();
+    };
+    ctx.alloc_str_with(length, pos_id, |destination| {
+        destination[..prefix].copy_from_slice(&bytes[..prefix]);
+        let mut at = prefix;
+        for chunk in tail.utf8_chunks() {
+            let valid = chunk.valid().as_bytes();
+            destination[at..at + valid.len()].copy_from_slice(valid);
+            at += valid.len();
+            if !chunk.invalid().is_empty() {
+                destination[at..at + 3].copy_from_slice(b"\xef\xbf\xbd");
+                at += 3;
+            }
+        }
+    })
 }
 
 /// String byte length (Q5: `length` is the byte length).
@@ -1021,4 +1058,58 @@ pub unsafe extern "C" fn subscript_rt_str_replace_all(
     let repl = unsafe { ctx.str_view(repl) };
     let out = crate::strops::replace_all(bytes, pat, repl);
     ctx.alloc_str(&out, pos_id)
+}
+
+#[cfg(test)]
+mod view_tests {
+    use super::{alloc_str_from_view, subscript_rt_str_from_view};
+    use crate::Context;
+
+    // compiler.md §327 acceptance 2: build invalid byte views, then compare literal UTF-8 bytes.
+    #[test]
+    fn c_views_decode_maximal_invalid_subparts_in_both_allocators() {
+        let cases: &[(&[u8], &str)] = &[
+            (b"a\xffb", "a�b"),
+            (b"a\x80b", "a�b"),
+            (b"a\xe2\x82b", "a�b"),
+            (b"a\xed\xa0\x80b", "a���b"),
+            (b"a\xc0\x80b", "a��b"),
+            (b"a\xe2\x82", "a�"),
+            (b"\xf0\x9f\x98", "�"),
+            (b"\xe2\x82\xe2\x82", "��"),
+            ("é中😀".as_bytes(), "é中😀"),
+            (b"plain ASCII", "plain ASCII"),
+            (b"", ""),
+        ];
+        for releasing in [false, true] {
+            let mut ctx = if releasing {
+                Context::new_releasing()
+            } else {
+                Context::new()
+            };
+            for &(bytes, expected) in cases {
+                // SAFETY: each slice supplies a readable view and the Context stays live.
+                unsafe {
+                    let decoded =
+                        alloc_str_from_view(&mut ctx, bytes.as_ptr(), bytes.len() as u64, 7);
+                    assert_eq!(ctx.str_bytes(decoded), expected.as_bytes());
+                    let copied = subscript_rt_str_from_view(
+                        &mut *ctx,
+                        bytes.as_ptr(),
+                        bytes.len() as u64,
+                        7,
+                    );
+                    assert_eq!(ctx.str_bytes(copied), expected.as_bytes());
+                }
+            }
+            // SAFETY: compiler.md §327 acceptance 2 permits a null pointer with length zero.
+            unsafe {
+                let decoded = alloc_str_from_view(&mut ctx, std::ptr::null(), 0, 7);
+                assert_eq!(ctx.str_bytes(decoded), b"");
+                let copied = subscript_rt_str_from_view(&mut *ctx, std::ptr::null(), 0, 7);
+                assert_eq!(ctx.str_bytes(copied), b"");
+            }
+            assert!(!ctx.trapped());
+        }
+    }
 }
