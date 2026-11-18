@@ -377,3 +377,4 @@ Every section, with its status:
 | §334 | An interface method, a spread, and a `then` callback take handle variance | active | [`s334-an-interface-method-a-spread-and-a-then-callback-take-handle-variance.md`](compiler/s334-an-interface-method-a-spread-and-a-then-callback-take-handle-variance.md) |
 | §335 | A call through a constraint has the constraint type | active | [`s335-a-call-through-a-constraint-has-the-constraint-type.md`](compiler/s335-a-call-through-a-constraint-has-the-constraint-type.md) |
 | §336 | A type argument and a plain template give their literal context | active | [`s336-a-type-argument-and-a-plain-template-give-their-literal-context.md`](compiler/s336-a-type-argument-and-a-plain-template-give-their-literal-context.md) |
+| §337 | A test states its cost and does no work twice | active | [`s337-a-test-states-its-cost-and-does-no-work-twice.md`](compiler/s337-a-test-states-its-cost-and-does-no-work-twice.md) |
