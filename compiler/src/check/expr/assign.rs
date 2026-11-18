@@ -246,6 +246,7 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             };
+            let signature = self.member_signature(id, signature, fx);
             let Some(parameter) = signature.params.first() else {
                 self.reject_subset(
                     RejectionSite::StaticSetterParameterMissing,
@@ -321,6 +322,7 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             };
+            let signature = self.member_signature(id, signature, fx);
             let Some(parameter) = signature.params.first() else {
                 self.reject_subset(
                     RejectionSite::SetterParameterMissing,
@@ -858,7 +860,7 @@ impl<'p> Checker<'p> {
                         pos: prop_pos,
                     };
                 };
-                let ty = signature.ret.clone();
+                let ty = self.member_value_type(*id, &signature.ret, fx);
                 let call_pos = obj.pos.clone();
                 return Place::Accessor {
                     class: *id,

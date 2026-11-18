@@ -1426,6 +1426,7 @@ fn coroutine_and_measurement_lir_text_matches_goldens() {
                     | "a151-lambda-env-outlives-block"
                     | "a171-static-array-callbacks"
                     | "a474-c-array-parameter-storage"
+                    | "a485-call-through-constraint-type"
             )
         {
             actual.push_str("===== ");

@@ -12,10 +12,10 @@ use crate::types::InterfaceType;
 /// signature (§208.1 rule 1).
 #[derive(Debug, Clone)]
 pub(crate) struct InterfaceMember {
-    name: String,
-    accessor: bool,
-    params: Vec<Type>,
-    ret: Type,
+    pub(super) name: String,
+    pub(super) accessor: bool,
+    pub(super) params: Vec<Type>,
+    pub(super) ret: Type,
 }
 
 impl InterfaceMember {
@@ -535,7 +535,11 @@ impl<'p> Checker<'p> {
         })))
     }
 
-    fn interface_member(&self, interface: &InterfaceType, name: &str) -> Option<InterfaceMember> {
+    pub(super) fn interface_member(
+        &self,
+        interface: &InterfaceType,
+        name: &str,
+    ) -> Option<InterfaceMember> {
         self.interfaces
             .get(interface.identity)?
             .members

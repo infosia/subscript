@@ -83,7 +83,11 @@ impl<'p> Checker<'p> {
     /// equality plus the decided widenings (`null`/`T` into `T | null`,
     /// reference classes into the boundary-opaque `object`).
     pub(crate) fn assignable(&self, from: &Type, to: &Type) -> bool {
-        self.assignable_through_constraints(from, to, &mut Vec::new())
+        self.assignable_through_constraints(
+            &from.instance_type(),
+            &to.instance_type(),
+            &mut Vec::new(),
+        )
     }
 
     fn assignable_through_constraints(

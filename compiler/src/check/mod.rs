@@ -46,6 +46,7 @@ mod bodies;
 mod body_check_cost;
 mod capture;
 mod class_shape;
+mod constraint_call;
 mod container_argument;
 mod declarations;
 mod deferred_body;
@@ -309,6 +310,8 @@ impl ParamSig {
 /// A resolved function signature.
 #[derive(Debug, Clone)]
 pub(crate) struct FnSig {
+    /// The cached result pattern before caller substitution (compiler.md §335 rule 1b).
+    pub result_template: Option<Type>,
     /// True when the source signature declares type parameters.
     pub generic: bool,
     pub params: Vec<ParamSig>,

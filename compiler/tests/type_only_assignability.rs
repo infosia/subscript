@@ -26,7 +26,7 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
         "The binding annotation and the element type are compared in both directions, so they are the same type and need no conversion.",
     ),
     (
-        "expr/call.rs",
+        "expr/construction.rs",
         "check_set_source",
         1,
         "The element type of a `Set` source is a type of a collection, not a value; the strict check accepts no conversion.",

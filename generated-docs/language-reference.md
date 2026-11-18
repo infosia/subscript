@@ -364,20 +364,20 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r555-interface-method-narrow-parameter.ts`](../corpus/reject/r555-interface-method-narrow-parameter.ts), line 9.
+Pinned corpus: [`corpus/reject/r558-external-generic-member-callback.ts`](../corpus/reject/r558-external-generic-member-callback.ts), line 17.
 
 Header guidance:
 
 ```text
-// tsc: accepts
-// expected-error: S100 at line 9, the interface requires
+// tsc: rejects TS2322
+// expected-error: S100 at line 17, the assignment expects `C`, got `null`
 ```
 
 ```ts
-class C { v: i32 = 7; }
-interface I { m(x: C | null): i32; }
-class K implements I { m(x: C): i32 { return x.v; } }
-export function main(): void {}
+export function main(): void {
+  const b = new B(new K());
+  print(`${b.each((t) => { let o = t.m(); o = null; return 1; })}`);
+}
 ```
 
 ## Listed diagnostic examples (§182)

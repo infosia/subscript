@@ -535,6 +535,24 @@ struct AllowGroup {
 
 const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup {
+        name: "complete-member-function-type",
+        reason: "The complete method type is constructed as Func and projected through the shared member rule (compiler.md §335 rule 1a).",
+        sites: &[("constraint_call.rs", "member_signature", 0x41f5b508b2d6c477)],
+    },
+    AllowGroup {
+        name: "instance-result-parameter-identity",
+        reason: "The result template reads callee parameter identity and its own constraint before caller substitution (compiler.md §335 rule 1b).",
+        sites: &[("constraint_call.rs", "instance_result_template", 0xd5d7b96687c15bfe)],
+    },
+    AllowGroup {
+        name: "instance-constraint-type",
+        reason: "The receiver retains its declared interface constraint before apparent_type selects the instance class (compiler.md §335 rules 1 and 2).",
+        sites: &[
+            ("constraint_call.rs", "check_constrained_method_call", 0x37a699478f014c1b),
+            ("expr/namespace.rs", "check_receiver", 0x0c1e88cd9b565bdb),
+        ],
+    },
+    AllowGroup {
         name: "concrete-spelling-walk",
         reason: "The absence spelling walk reads the assembled module, which holds no opaque instance (§135 rule 1, §195.1 rule 6).",
         sites: &[("undefined_spelling.rs", "outside_value_diagnostics", 0x2c602b16c6c9e2fe)],
@@ -617,8 +635,8 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("instance_chain.rs", "argument_has_error", 0xa9def2fd9d81a55),
     ] },
     AllowGroup { name: "interface-constraint", reason: "An interface is a declared constraint form, and a type argument declares an interface by its class identity; T identity stays (§143 rule 1b, §208.1 rule 4).", sites: &[
-        ("generics.rs", "apply_type_parameter_constraints", 0x919e7cf47f45b1c4),
-        ("generics.rs", "satisfies_constraint_through_parameters", 0x70ed506a5277da01),
+        ("generics.rs", "apply_type_parameter_constraints", 0xcd27572974ecfef5),
+        ("generics.rs", "satisfies_constraint_through_parameters", 0x21e9bf6c03a557f6),
         ("interface.rs", "declares_interface", 0x592deb6e367505cd),
     ] },
     AllowGroup { name: "concrete-initializers", reason: "Initializer effect analysis runs on the final concrete HIR (§135 rule 1).", sites: &[
@@ -627,12 +645,12 @@ const ALLOWLIST: &[AllowGroup] = &[
     AllowGroup { name: "json-number", reason: "The callers supply apparent_type to this scalar conversion-code selector.", sites: &[
         ("json.rs", "json_number_target", 0xb5c32cde6ace4634),
     ] },
-    AllowGroup { name: "concrete-layout", reason: "Layout validation runs after opaque instances leave the HIR (§135 rule 1).", sites: &[
+    AllowGroup { name: "concrete-layout", reason: "Layout validation excludes opaque instances (§135 rule 1). A constrained instance uses its stored concrete type (compiler.md §335 rule 1).", sites: &[
         ("layout.rs", "expression_builds_into_destination", 0x749d74fbcd88c2ea),
         ("layout.rs", "has_managed_interior", 0x85b9753494a323a4),
         ("layout.rs", "is_managed", 0x21addcb1ee53ba12),
         ("layout.rs", "is_aggregate", 0x7641530cd3f750a2),
-        ("layout.rs", "type_layout", 0x27b75ab225bb5ce7),
+        ("layout.rs", "type_layout", 0x28e38fa293e1f772),
         ("layout.rs", "validate_expr_frame", 0xdfca9be927a9059),
     ] },
     AllowGroup { name: "storage-layout", reason: "Storage layout inspects the declared type form; T has no concrete layout (§143 rule 2a).", sites: &[
@@ -652,7 +670,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("opaque.rs", "is_type_parameter", 0x291d692ffcac9b32),
         ("opaque.rs", "is_unconstrained_type_parameter", 0xc11d80573c40a67b),
         ("opaque.rs", "non_null_type", 0x585cfc2fd9141f7d),
-        ("opaque.rs", "resolve_apparent_type", 0xc8989ef6e47e12cb),
+        ("opaque.rs", "resolve_apparent_type", 0x733f6944b5102706),
     ] },
     AllowGroup { name: "operation-signatures", reason: "The operation dispatcher constructs these outer container, function, and Worker shapes before this pass.", sites: &[
         ("pipeline.rs", "normalize_operation_parameter_types", 0x3a8927e5a46cd33f),

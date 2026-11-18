@@ -468,6 +468,7 @@ impl Checker<'_> {
                 | Type::AsyncHandle(_)
                 | Type::IterResult(_)
                 | Type::Error
+                | Type::ConstrainedInstance(_)
                 | Type::TypeParameter(_)
                 | Type::Interface(_)
                 | Type::GenericNumber

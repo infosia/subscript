@@ -67,6 +67,21 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
     (
+        "r558-external-generic-member-callback.ts",
+        RuleCode::S100,
+        17,
+    ),
+    (
+        "r557-unconstrained-result-keeps-caller-type.ts",
+        RuleCode::S100,
+        18,
+    ),
+    (
+        "r556-generic-class-external-member-constraint.ts",
+        RuleCode::S100,
+        14,
+    ),
+    (
         "r555-interface-method-narrow-parameter.ts",
         RuleCode::S100,
         9,

@@ -105,6 +105,9 @@ impl Expr {
 
 fn receiver_is_shared(ty: &Type, classes: &[ClassDef], boxed: bool) -> bool {
     match ty {
+        Type::ConstrainedInstance(instance) => {
+            receiver_is_shared(&instance.instance, classes, boxed)
+        }
         Type::Class(id) => classes
             .get(id.0)
             .is_some_and(|class| !class.is_value || boxed && class.is_boundary),

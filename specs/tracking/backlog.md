@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§334. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§335. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -18,10 +18,11 @@ No item is open in this group.
 
 ## 2. Forms that `tsc` accepts and subscript rejects (and the reverse)
 
-13. A generic body that calls a method through a constraint gets the
-    class method type in each instance, so a null test of an interface
-    result that the class narrows is S100 (§334.5 item 1). The instance
-    check must keep the constraint. Medium.
+13. A generic class instance read inside another generic body has the
+    plain type, and a conditional join takes its first branch's type,
+    so a null test of a narrowed interface result is S100 there
+    (§335.5 items 1, 2). A class instance type would need the type
+    arguments of each use site. Medium to large.
 14. Small gaps: `Worker.spawn(work)` with a value result (§240.4 item
     6); `new Set([1, zero()])` (§212.4 item 6); `new Set<i32>([])`
     (§103.5 item 7); `const b = (a = new A())` (§159.4 item 1); a

@@ -19,6 +19,7 @@ impl<'p> Checker<'p> {
 
     /// Assigns an instance symbol from its template identity and nominal argument types.
     pub(crate) fn mono_name(&mut self, base: &str, args: &[Type]) -> String {
+        let args: Vec<_> = args.iter().map(Type::instance_type).collect();
         let key = format!("{base:?}:{args:?}");
         if let Some(symbol) = self.instance_symbols.get(&key) {
             return symbol.clone();
@@ -71,6 +72,19 @@ impl<'p> Checker<'p> {
                 continue;
             }
             if self.satisfies_constraint(argument, &constraint) {
+                if matches!(constraint, Type::Interface(_))
+                    && !self.involves_type_parameter(argument)
+                {
+                    self.subst.insert(
+                        parameter.name.sym.to_string(),
+                        Type::ConstrainedInstance(Box::new(crate::types::ConstrainedInstance {
+                            identity: parameter.name.span.lo.0,
+                            name: parameter.name.sym.to_string(),
+                            constraint: Some(constraint),
+                            instance: argument.instance_type(),
+                        })),
+                    );
+                }
                 continue;
             }
             satisfied = false;
@@ -125,6 +139,13 @@ impl<'p> Checker<'p> {
         constraint: &Type,
         seen: &mut Vec<usize>,
     ) -> bool {
+        if let Type::ConstrainedInstance(instance) = argument {
+            return self.satisfies_constraint_through_parameters(
+                &instance.instance,
+                constraint,
+                seen,
+            );
+        }
         // §143 rule 1b preserves identity before each constraint step.
         if self.involves_type_parameter(argument) && self.assignable(argument, constraint) {
             return true;
@@ -278,7 +299,7 @@ impl<'p> Checker<'p> {
         let saved_context = self.suspend_container_context();
         self.cur_file = file;
         for (param, arg) in type_params.iter().zip(args) {
-            self.subst.insert(param.clone(), arg.clone());
+            self.subst.insert(param.clone(), arg.instance_type());
         }
         let diagnostics = self.diags.len();
         self.apply_type_parameter_constraints(declaration, args, false, positions, pos);
@@ -339,7 +360,7 @@ impl<'p> Checker<'p> {
         let saved_context = self.suspend_container_context();
         self.cur_file = template.file;
         for (param, arg) in template.type_params.iter().zip(args) {
-            self.subst.insert(param.clone(), arg.clone());
+            self.subst.insert(param.clone(), arg.instance_type());
         }
         let root = std::mem::take(&mut self.opaque_root);
         let diagnostics = self.diags.len();
@@ -351,7 +372,10 @@ impl<'p> Checker<'p> {
             &pos,
         );
         let check_body = satisfied && self.instance_body_is_checked(args, root);
-        let sig = self.resolve_fn_sig(&template.function, pos.clone());
+        let mut sig = self.resolve_fn_sig(&template.function, pos.clone());
+        if self.apparent_type(&sig.ret) != Type::Error {
+            sig.result_template = self.instance_result_template(&template.function, &pos);
+        }
         self.fn_sigs.insert(name.clone(), sig);
         // §207.1 rule 2a: an instance keeps the class body of its template.
         if let Some(class) = self.local_function_classes.get(key).cloned() {
@@ -457,7 +481,7 @@ impl<'p> Checker<'p> {
         let saved_context = self.suspend_container_context();
         self.cur_file = template.file;
         for (param, arg) in template.type_params.iter().zip(args) {
-            self.subst.insert(param.clone(), arg.clone());
+            self.subst.insert(param.clone(), arg.instance_type());
         }
         let root = std::mem::take(&mut self.opaque_root);
         let diagnostics = self.diags.len();
@@ -470,6 +494,9 @@ impl<'p> Checker<'p> {
         );
         let check_body = satisfied && self.instance_body_is_checked(args, root);
         let mut sig = self.resolve_fn_sig(&template.function, pos.clone());
+        if self.apparent_type(&sig.ret) != Type::Error {
+            sig.result_template = self.instance_result_template(&template.function, &pos);
+        }
         // The signature lands before the body check, so a recursive call
         // inside the body resolves against this instance.
         let function_name = if is_static {
@@ -606,7 +633,7 @@ impl<'p> Checker<'p> {
         let saved_context = self.suspend_container_context();
         self.cur_file = template.file;
         for (param, arg) in template.type_params.iter().zip(args) {
-            self.subst.insert(param.clone(), arg.clone());
+            self.subst.insert(param.clone(), arg.instance_type());
         }
         let root = std::mem::take(&mut self.opaque_root);
         let diagnostics = self.diags.len();
@@ -644,8 +671,13 @@ impl<'p> Checker<'p> {
             template.alignment_override.clone(),
             template.pos.clone(),
         );
-        self.instance_arguments
-            .insert(id, (key.to_string(), args.to_vec()));
+        self.instance_arguments.insert(
+            id,
+            (
+                key.to_string(),
+                args.iter().map(Type::instance_type).collect(),
+            ),
+        );
         if args
             .iter()
             .any(|argument| self.involves_type_parameter(argument))
@@ -689,7 +721,7 @@ impl<'p> Checker<'p> {
                 .type_params
                 .iter()
                 .cloned()
-                .zip(pending.types.iter().cloned())
+                .zip(pending.types.iter().map(Type::instance_type))
                 .collect();
             let diagnostics = self.diags.len();
             let satisfied = self.apply_type_parameter_constraints(
@@ -734,9 +766,22 @@ impl<'p> Checker<'p> {
             let saved_subst = std::mem::take(&mut self.subst);
             let saved_context = self.suspend_container_context();
             self.cur_file = template.file;
-            self.subst = template.type_params.iter().cloned().zip(args).collect();
+            self.subst = template
+                .type_params
+                .iter()
+                .cloned()
+                .zip(args.iter().map(Type::instance_type))
+                .collect();
             let saved_chain = std::mem::replace(&mut self.instance_chain, chain);
             let diagnostics = self.diags.len();
+            // compiler.md §335 rule 1b: deferred bodies restore only their own constraints.
+            self.apply_type_parameter_constraints(
+                template.class.type_params.as_deref(),
+                &args,
+                false,
+                &[],
+                &template.pos,
+            );
             if template.is_descriptor {
                 self.check_descriptor_defaults(id, &template.class);
             } else {

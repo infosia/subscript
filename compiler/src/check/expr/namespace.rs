@@ -34,7 +34,12 @@ impl<'p> Checker<'p> {
             );
             checked.ty = Type::Error;
         }
-        self.apparent_expr(checked)
+        // compiler.md §335 rule 1: the method receiver keeps its substituted type.
+        if matches!(checked.ty, Type::ConstrainedInstance(_)) {
+            checked
+        } else {
+            self.apparent_expr(checked)
+        }
     }
 
     /// Resolves `obj` in `obj.prop` when `obj` is a type name used as a

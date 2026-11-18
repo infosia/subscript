@@ -567,6 +567,8 @@ fn run_with_effects(
                 return Err(spelling);
             }
         }
+        // compiler.md §335 rule 1: lowering reads only instance types.
+        crate::hir::spelling::for_each_type(&mut module, &mut |ty, _, _| *ty = ty.instance_type());
         // §195.7 rule 2: HIR carries the `null` spelling only.
         crate::hir::spelling::erase_undefined(&mut module);
         if ck.diags.is_empty() {

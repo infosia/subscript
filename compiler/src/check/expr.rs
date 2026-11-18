@@ -9,6 +9,7 @@ mod await_handle;
 mod call;
 mod callback_shape;
 mod conditional;
+mod construction;
 mod container_new;
 mod entry;
 mod function_list;

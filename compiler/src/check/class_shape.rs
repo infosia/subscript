@@ -255,6 +255,7 @@ impl<'p> Checker<'p> {
                 return;
             };
             let sig = FnSig {
+                result_template: None,
                 generic: false,
                 params: Vec::new(),
                 ret: self.resolve_result_type(&return_type.type_ann),
@@ -339,6 +340,7 @@ impl<'p> Checker<'p> {
                 return;
             };
             let sig = FnSig {
+                result_template: None,
                 generic: false,
                 params: vec![ParamSig {
                     annotated: self.written_type(&annotation.type_ann),

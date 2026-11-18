@@ -5,7 +5,10 @@ use std::fmt;
 #[cfg(test)]
 mod absence_tests;
 mod counted;
+mod equality;
+mod instance;
 pub use counted::CountedType;
+pub use instance::ConstrainedInstance;
 
 /// Maximum supported byte size of one aggregate layout.
 ///
@@ -235,7 +238,7 @@ pub enum Absence {
 /// Sized numerics are all distinct; classes are nominal (two same-shaped
 /// classes are different types); `Nullable` and named string-literal
 /// aliases are the only union forms (`Ref | null`, C7/Q32).
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone)]
 #[non_exhaustive]
 pub enum Type {
     /// 8-bit signed integer.
@@ -287,6 +290,8 @@ pub enum Type {
     Class(ClassId),
     /// A type parameter with its declaration identity and constraint (§143).
     TypeParameter(Box<TypeParameterType>),
+    /// A substituted interface-constrained parameter with its instance type (compiler.md §335 rule 1).
+    ConstrainedInstance(Box<ConstrainedInstance>),
     /// A type-only interface (§208). It is the constraint of a type
     /// parameter only, so no instance and no HIR carries it.
     Interface(Box<InterfaceType>),
@@ -325,7 +330,7 @@ pub enum Type {
     /// a function type, or a boxed boundary value class (§33.5).
     ///
     /// The [`Absence`] is the absence spelling (compiler.md §195.1 rule 1):
-    /// `Ref | null` or `Ref | undefined`. The derived equality keeps the two
+    /// `Ref | null` or `Ref | undefined`. Type equality keeps the two
     /// spellings apart (§195.7 rule 1). HIR carries [`Absence::Null`] only
     /// (§195.7 rule 2).
     Nullable(Box<Type>, Absence),
@@ -379,6 +384,10 @@ impl std::fmt::Debug for Type {
             Self::TypeParameter(parameter) => {
                 f.debug_tuple("TypeParameter").field(parameter).finish()
             }
+            Self::ConstrainedInstance(instance) => f
+                .debug_tuple("ConstrainedInstance")
+                .field(instance)
+                .finish(),
             Self::Interface(interface) => f.debug_tuple("Interface").field(interface).finish(),
             Self::GenericUnion(members) => f.debug_tuple("GenericUnion").field(members).finish(),
             Self::Enum(id) => f.debug_tuple("Enum").field(id).finish(),
@@ -568,6 +577,7 @@ impl Type {
                 signature.params.iter_mut().for_each(Type::erase_undefined);
                 signature.ret.erase_undefined();
             }
+            Self::ConstrainedInstance(instance) => instance.instance.erase_undefined(),
             Self::TypeParameter(parameter) => {
                 if let Some(constraint) = parameter.constraint.as_mut() {
                     constraint.erase_undefined();
@@ -710,6 +720,9 @@ pub fn boundary_kind(ty: &Type) -> Option<&'static subscript_boundary::Kind> {
 /// scalar layout agreement structural rather than test-only.
 #[must_use]
 pub fn scalar_size_align(ty: &Type) -> Option<(u32, u32)> {
+    if let Type::ConstrainedInstance(instance) = ty {
+        return scalar_size_align(&instance.instance);
+    }
     if let Some(kind) = boundary_kind(ty) {
         return Some((kind.size, kind.align));
     }
@@ -787,6 +800,7 @@ impl Type {
     #[must_use]
     pub fn contained_types(&self) -> Vec<&Type> {
         match self {
+            Self::ConstrainedInstance(instance) => vec![&instance.instance],
             Self::GenericUnion(members) => members.iter().collect(),
             Self::FixedArray(inner, _)
             | Self::Array(inner)
@@ -901,6 +915,7 @@ impl Type {
     #[must_use]
     pub fn handle_kind(&self, classes: &[HandleClass]) -> Option<HandleKind> {
         match self {
+            Type::ConstrainedInstance(instance) => instance.instance.handle_kind(classes),
             Type::Str => Some(HandleKind::Str),
             Type::RegExp => Some(HandleKind::RegExp),
             Type::Object => Some(HandleKind::Object),
@@ -986,6 +1001,9 @@ impl Type {
         I: IntoIterator<Item = &'a Type>,
     {
         match self {
+            Type::ConstrainedInstance(instance) => {
+                instance.instance.zero_is_value(classes, fields, aliases)
+            }
             Type::I8
             | Type::U8
             | Type::I16
@@ -1103,6 +1121,9 @@ pub fn display_type(
         Type::Object => "object".to_string(),
         Type::Class(id) => class_name(*id),
         Type::TypeParameter(parameter) => parameter.name.clone(),
+        Type::ConstrainedInstance(instance) => {
+            display_type(&instance.instance, class_name, enum_name, string_alias_name)
+        }
         Type::Interface(interface) => interface.name.clone(),
         Type::GenericNumber => "number".to_string(),
         Type::GenericUnion(members) => members

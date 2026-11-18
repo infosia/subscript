@@ -589,6 +589,9 @@ pub(super) fn declared_field_type<'a>(
     classes: &'a [ClassDef],
 ) -> Option<&'a Type> {
     match ty {
+        Type::ConstrainedInstance(instance) => {
+            declared_field_type(&instance.instance, name, classes)
+        }
         Type::Class(id) => classes
             .get(id.0)
             .and_then(|class| class.fields.iter().find(|field| field.name == name))

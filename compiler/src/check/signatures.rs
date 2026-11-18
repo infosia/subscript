@@ -575,7 +575,7 @@ impl<'p> Checker<'p> {
         sig
     }
 
-    fn resolve_fn_result(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
+    pub(super) fn resolve_fn_result(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
         let params = Vec::new();
         if f.is_async {
             if f.is_generator {
@@ -585,6 +585,7 @@ impl<'p> Checker<'p> {
                     pos,
                 );
                 return FnSig {
+                    result_template: None,
                     generic: f.type_params.is_some(),
                     params,
                     ret: Type::Error,
@@ -605,6 +606,7 @@ impl<'p> Checker<'p> {
                 }
             };
             return FnSig {
+                result_template: None,
                 generic: f.type_params.is_some(),
                 params,
                 ret,
@@ -637,6 +639,7 @@ impl<'p> Checker<'p> {
             }
             let known = yield_ty.is_some();
             return FnSig {
+                result_template: None,
                 generic: f.type_params.is_some(),
                 params,
                 // An unknown yield type is a placeholder that `yield_known`
@@ -668,6 +671,7 @@ impl<'p> Checker<'p> {
             }
         };
         FnSig {
+            result_template: None,
             generic: f.type_params.is_some(),
             params,
             ret,

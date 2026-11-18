@@ -967,6 +967,7 @@ impl<'p> Checker<'p> {
                     return self.err_expr(pos);
                 }
                 let mut checked = None;
+                let mut instance_result = None;
                 let (function, checked_name, rejects_type_args) = match item {
                     Some(ScopeItem::Func(function)) => {
                         (function, name.clone(), call.type_args.is_some())
@@ -997,6 +998,7 @@ impl<'p> Checker<'p> {
                         else {
                             return self.err_expr(pos);
                         };
+                        instance_result = Some((key, arguments.types));
                         (instance.clone(), instance, false)
                     }
                     _ => {
@@ -1008,9 +1010,12 @@ impl<'p> Checker<'p> {
                         return self.err_expr(pos);
                     }
                 };
-                let Some(sig) = self.fn_sigs.get(&function).cloned() else {
+                let Some(mut sig) = self.fn_sigs.get(&function).cloned() else {
                     return self.err_expr(pos);
                 };
+                if let Some((key, arguments)) = &instance_result {
+                    sig.ret = self.call_instance_result(key, &function, arguments, false);
+                }
                 // §234 rule 1: a synchronous function whose instantiated
                 // result is a handle is an ordinary call.
                 if !sig.is_async && matches!(self.apparent_type(&sig.ret), Type::AsyncHandle(_)) {
@@ -1022,8 +1027,11 @@ impl<'p> Checker<'p> {
                         );
                     }
                     let call_pos = self.pos(call.span);
-                    let handle = self
+                    let mut handle = self
                         .check_direct_call_with_arguments(&function, call, fx, call_pos, checked);
+                    if let Some((key, arguments)) = &instance_result {
+                        handle.ty = self.call_instance_result(key, &function, arguments, true);
+                    }
                     return self.await_call_handle(handle, fx, pos);
                 }
                 if !sig.is_async {
@@ -1150,6 +1158,11 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 };
+                if let Some(value) =
+                    self.check_constrained_method_call(&receiver, method, call, fx, &pos, true)
+                {
+                    return value;
+                }
                 if let Type::Interface(interface) = self.apparent_type(&receiver.ty) {
                     return self
                         .await_interface_method(receiver, &interface, method, call, fx, pos);
@@ -1172,6 +1185,7 @@ impl<'p> Checker<'p> {
                 }
                 let generic = self.class_sigs[class.0].has_generic_method(&name, false);
                 let mut inferred = None;
+                let mut result_type = None;
                 let name = if generic {
                     // A synchronous method is rejected below, so `Promise<C>`
                     // decides no type argument of it.
@@ -1182,7 +1196,7 @@ impl<'p> Checker<'p> {
                     if !is_async {
                         self.active_call_context = None;
                     }
-                    let Some((instance, checked)) = self.instantiate_generic_method_call(
+                    let Some(instance) = self.instantiate_generic_method_call(
                         class,
                         &name,
                         call,
@@ -1192,12 +1206,13 @@ impl<'p> Checker<'p> {
                     ) else {
                         return self.err_expr(pos);
                     };
-                    inferred = checked;
-                    instance
+                    inferred = instance.arguments;
+                    result_type = Some(instance.result);
+                    instance.name
                 } else {
                     name
                 };
-                let Some(sig) = self.class_sigs[class.0].methods.get(&name).cloned() else {
+                let Some(mut sig) = self.class_sigs[class.0].methods.get(&name).cloned() else {
                     let class_name = self.classes[class.0].name.clone();
                     self.reject_subset(
                         if super::is_object_member(&name) {
@@ -1212,6 +1227,8 @@ impl<'p> Checker<'p> {
                 };
                 // §234 rule 1: a synchronous method whose instantiated result
                 // is a handle is an ordinary call.
+                sig.ret = result_type.unwrap_or(sig.ret);
+                sig = self.member_signature(class, sig, fx);
                 if !sig.is_async && matches!(self.apparent_type(&sig.ret), Type::AsyncHandle(_)) {
                     if !generic && call.type_args.is_some() {
                         self.reject_subset(

@@ -691,6 +691,7 @@ impl<'p> Checker<'p> {
                     };
                     let pos = self.pos(ctor.span);
                     let sig = FnSig {
+                        result_template: None,
                         generic: false,
                         params,
                         ret: Type::Void,

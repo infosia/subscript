@@ -868,6 +868,7 @@ fn assignment_target(operand: &hir::Expr) -> &hir::Expr {
 /// the poison expression, so an operand never has the type `Void`.
 fn has_no_absence(ty: &Type, apparent_type: &impl Fn(&Type) -> Type) -> bool {
     match apparent_type(ty) {
+        Type::ConstrainedInstance(instance) => has_no_absence(&instance.instance, apparent_type),
         Type::Null | Type::Nullable(_, _) | Type::TypeParameter(_) | Type::Error | Type::Void => {
             false
         }

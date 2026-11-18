@@ -221,7 +221,7 @@ impl<'p> Checker<'p> {
                         },
                         args: vec![index],
                     },
-                    ty: signature.element_ty,
+                    ty: self.member_value_type(*id, &signature.element_ty, fx),
                     pos,
                 };
             }
@@ -378,6 +378,7 @@ impl<'p> Checker<'p> {
                     .map(|f| f.ty.clone());
                 if field.is_some() {
                     let ty = self.decide_field(id, name, prop_pos.clone());
+                    let ty = self.member_value_type(id, &ty, fx);
                     return hir::Expr {
                         pending_work: None,
                         kind: ExprKind::Field {
@@ -407,7 +408,7 @@ impl<'p> Checker<'p> {
                             },
                             args: Vec::new(),
                         },
-                        ty: sig.ret.clone(),
+                        ty: self.member_value_type(id, &sig.ret, fx),
                         pos: call_pos,
                     };
                 }

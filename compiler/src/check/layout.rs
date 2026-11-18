@@ -214,6 +214,7 @@ impl<'a> Validator<'a> {
 
     fn type_layout(&mut self, ty: &Type) -> Outcome {
         match ty {
+            Type::ConstrainedInstance(instance) => self.type_layout(&instance.instance),
             Type::Class(id) => {
                 let Some(class) = self.classes.get(id.0) else {
                     return Outcome::Invalid;

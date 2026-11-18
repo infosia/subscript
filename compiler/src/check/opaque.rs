@@ -247,6 +247,9 @@ impl<'p> Checker<'p> {
 
     fn resolve_apparent_type(&self, ty: &Type, seen: &mut Vec<usize>) -> Type {
         match ty {
+            Type::ConstrainedInstance(instance) => {
+                self.resolve_apparent_type(&instance.instance, seen)
+            }
             Type::TypeParameter(parameter) => {
                 if seen.contains(&parameter.identity) {
                     return ty.clone();

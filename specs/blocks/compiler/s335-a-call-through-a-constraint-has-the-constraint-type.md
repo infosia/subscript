@@ -140,3 +140,62 @@ it cannot give the call the constraint type.
 ### 335.3 Sections this one amends
 
 - §334.5 item 1 closes.
+
+### 335.4 Phase Review
+
+Form. `Type::ConstrainedInstance` (`compiler/src/types/instance.rs`)
+replaces a type parameter with an interface constraint in an instance.
+It holds the parameter identity, its name, the constraint, and the
+plain instance type. Type equality and hash compare the plain instance
+type (rule 1c). A method call on such a value takes the method type of
+the constraint and records the §235 rule 5a conversion (rule 2). An
+instance is keyed and checked with plain argument types, and a call
+result maps each callee type parameter back to the caller's argument
+(rule 1b). One projection removes the constraints from a member type
+seen from outside the class body (rule 1a). Layout and lowering read
+the plain instance type.
+
+Measured, the pin `8bb5f4c6` and after, development tier, ship tier,
+and `node` the same (a485):
+
+| Form | Pin | After |
+|---|---|---|
+| `g`, `h`: a null test of `x.m()`, `x.f()` through `U extends R`, with `K` and `K0` | S100 in the `K` instance | `class:7:7`, `function:7:7` |
+| array and `Map` results | S100 | `array:7:7`, `map:1:1` |
+| a field of `B<T extends R>`, `for…of` over `U[]`, `xs[0]`, a narrowed `U \| null`, `id(x)` | S100 | accepted, each `7:7` (`field:0:0`) |
+| two type parameters `U`, `V` with one class | S100 | `both:14:14:14:14` |
+| `first<T>`, `pick<T>`, `Util.id<T>` in both call orders | accepted or S100 by call order | accepted |
+| `c ? x : y` with `x: U`, `y: V` | accepted | accepted |
+| `r556`: `let o = b.t.m(); o = null;` outside the class | S100 | S100 (`tsc` TS2322) |
+| `r557`: `let o = pick(k).m(); o = null;` after a constrained call | S100 | S100 (`tsc` TS2322) |
+| `r558`: `b.each((t) => { let o = t.m(); o = null; … })` | S100 | S100 (`tsc` TS2322) |
+
+The CLI `check` output of 1,096 other corpus entries is the same at the
+pin and after. The LIR golden changes for a484 (its calls through a
+constraint now record a `Cast`) and adds a485.
+
+The contract changed five times. The first round kept the constraint
+on three local binding sites; a review showed a field, a `for…of`
+binding, an element, a narrowed union, and a call result lost it, so
+rule 1 moved the constraint into the type. The next round stopped
+because a read from outside the class kept the constraint and accepted
+a program that `tsc` rejects (rule 1a). Further reviews found that a
+cached instance kept the constraint of its first caller (rule 1b), that
+raw type equality rejected `c ? x : y` (rule 1c, a regression from the
+pin), and that a method parameter type kept the constraint outside the
+class (rule 1a covers the whole member type). A fifth review probed
+about 30 forms for a false acceptance and found none, and no CRITICAL
+or MAJOR finding.
+
+### 335.5 Open
+
+1. Rule 1a: inside another generic body, a member of a generic class
+   instance has the plain type, so
+   `const b = new B(y); const o = b.t.m(); o === null` with
+   `y: V extends R` is S100; `tsc` accepts it. A class instance type
+   does not keep the type arguments of each use site. It errs toward
+   rejection.
+2. A conditional join takes the type of its first branch:
+   `const z = c ? new K() : x;` then a null test of `z.m()` is S100, and
+   `c ? x : new K()` is accepted; `tsc` types both as `K | U`. It errs
+   toward rejection.

@@ -336,6 +336,10 @@ impl AssocKeyKind {
     /// class-kind lookup.
     #[must_use]
     pub fn of(ty: &Type, is_value_class: &dyn Fn(ClassId) -> bool) -> Option<AssocKeyKind> {
+        // compiler.md §335 rule 1: runtime keys use the instance representation.
+        if let Type::ConstrainedInstance(instance) = ty {
+            return Self::of(&instance.instance, is_value_class);
+        }
         Some(match ty {
             Type::I8
             | Type::U8
@@ -600,6 +604,10 @@ impl ArrElemKind {
     /// (identity — included).
     #[must_use]
     pub fn of(ty: &Type, is_value_class: &dyn Fn(ClassId) -> bool) -> Option<ArrElemKind> {
+        // compiler.md §335 rule 1: runtime elements use the instance representation.
+        if let Type::ConstrainedInstance(instance) = ty {
+            return Self::of(&instance.instance, is_value_class);
+        }
         Some(match ty {
             Type::Bool
             | Type::U8
