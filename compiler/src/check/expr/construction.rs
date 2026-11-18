@@ -29,7 +29,10 @@ impl Checker<'_> {
             );
             return None;
         }
-        let source = checked.unwrap_or_else(|| self.check_expr(&argument.expr, None, fx));
+        // compiler.md §336 rule 1: the Set element gives the source its array context.
+        let source = checked.unwrap_or_else(|| {
+            self.check_expr(&argument.expr, Some(&Type::array(key.clone())), fx)
+        });
         let element = match &self.apparent_type(&source.ty) {
             Type::Error => return None,
             // A Map source yields pairs, which need a tuple type.

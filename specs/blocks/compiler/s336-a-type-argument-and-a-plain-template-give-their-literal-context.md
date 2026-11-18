@@ -46,3 +46,30 @@ empty literal its element type. `t.normalize("NFC")` is accepted.
 ### 336.3 Sections this one amends
 
 - §103.5 item 7 closes; `text-module-measure.md` §9.7 item 2 closes.
+
+### 336.4 Phase Review
+
+Form. `new Set<T>(e)` checks `e` with the context `T[]` through the
+path that an annotation already uses (`compiler/src/check/expr/construction.rs`).
+The `normalize` form check reads a template with no substitution as its
+cooked string (`compiler/src/check/expr/method.rs`). No lowering
+changes.
+
+Measured, the pin `57dfcf1a` and after, development tier, ship tier,
+and `node` the same (a486):
+
+| Form | Pin | After |
+|---|---|---|
+| `new Set<i32>([])` | S100 | `0` |
+| `new Set<string>([])` with `add("a")` | S100 | `1:true` |
+| `` t.normalize(`NFC`) `` | S014 | `é` |
+
+`new Set([])` with no context stays S100, `new Map<K, V>([])` stays
+S014, and `` `NFD` `` and a template with a substitution stay S014. The
+CLI `check` output of 1,100 other corpus entries is the same at the pin
+and after.
+
+One fresh review found no CRITICAL or MAJOR finding. Its MINOR notes
+need no change: a template with an invalid escape has no cooked value
+and cannot equal `"NFC"`; `tsc` accepts `normalize("nfc")` through the
+prelude signature, as it did before this section.

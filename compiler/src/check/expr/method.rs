@@ -299,7 +299,19 @@ impl<'p> Checker<'p> {
             [] => true,
             [argument] => {
                 argument.spread.is_none()
-                    && matches!(&*argument.expr, ast::Expr::Lit(ast::Lit::Str(form)) if form.value == *"NFC")
+                    && match &*argument.expr {
+                        ast::Expr::Lit(ast::Lit::Str(form)) => form.value == *"NFC",
+                        // compiler.md §336 rule 2: a plain template is a literal form.
+                        ast::Expr::Tpl(template) if template.exprs.is_empty() => {
+                            template
+                                .quasis
+                                .iter()
+                                .map(|part| part.cooked.as_ref().unwrap_or(&part.raw).as_ref())
+                                .collect::<String>()
+                                == "NFC"
+                        }
+                        _ => false,
+                    }
             }
             _ => false,
         };
