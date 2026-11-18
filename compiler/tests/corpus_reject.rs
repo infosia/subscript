@@ -66,6 +66,12 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// Lines are derived from reading the corpus files; r02 and r05 both
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
+    (
+        "r544-two-different-literals-do-not-compare.ts",
+        RuleCode::S100,
+        15,
+    ),
+    ("r545-switch-different-literal.ts", RuleCode::S100, 12),
     ("r542-dropped-slice-handle-result.ts", RuleCode::S013, 10),
     ("r543-dropped-default-handle.ts", RuleCode::S013, 8),
     ("r534-conditional-handle-binding.ts", RuleCode::S013, 8),

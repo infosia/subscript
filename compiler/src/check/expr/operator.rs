@@ -589,6 +589,7 @@ impl<'p> Checker<'p> {
                         self.restore_nullable_storage(&mut right);
                     }
                 }
+                self.check_literal_equality(b, &left, &right, fx);
                 let left_literal = self.checked_string_literal_operand(&b.left, &left, fx);
                 let right_literal = self.checked_string_literal_operand(&b.right, &right, fx);
                 self.convert_string_operand(

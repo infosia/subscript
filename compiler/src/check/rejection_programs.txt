@@ -10292,3 +10292,13 @@ function f(a: i32, i: i32 = 10, b: i32 = 20): i32 { return a + i + b; }
 function g(): void { let l = f; [1].sort(l); }
 END FILE
 END PROGRAM
+PROGRAM	s330-equality	TS2367		0
+FILE	E	main.ts
+const MODE = 1; export function main(): void { MODE === 2; }
+END FILE
+END PROGRAM
+PROGRAM	s330-case	TS2678		0
+FILE	E	main.ts
+const MODE = 1; export function main(): void { switch (MODE) { case 2: break; } }
+END FILE
+END PROGRAM

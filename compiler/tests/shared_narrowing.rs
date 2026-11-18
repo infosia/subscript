@@ -389,7 +389,8 @@ fn synthesized_json_helpers_preserve_shared_narrowing() {
 
 #[test]
 fn switch_dispatch_and_exit_do_not_inherit_case_local_facts() {
-    let dispatch = "if (local !== null) { switch (1) { case 0: print(`${local.v}`); break; case 1: local = null; break; } }";
+    // compiler.md §330 rule 4: an annotated subject keeps the test about dispatch facts.
+    let dispatch = "if (local !== null) { const tag: i32 = 1; switch (tag) { case 0: print(`${local.v}`); break; case 1: local = null; break; } }";
     checked_body(dispatch).expect("another case cannot end the dispatch fact");
     let invalid = dispatch.replace("case 0: print", "case 0: local = null; print");
     assert!(checked_body(&invalid)
@@ -397,16 +398,16 @@ fn switch_dispatch_and_exit_do_not_inherit_case_local_facts() {
         .iter()
         .any(|diagnostic| diagnostic.code == RuleCode::S011));
     for body in [
-        "switch (1) { case 0: if (local === null) { return; } break; case 1: print(`${local.v}`); }",
-        "switch (1) { case 0: if (local === null) { return; } break; } print(`${local.v}`);",
-        "switch (1) { case 0: if (local === null) { return; } case 1: print(`${local.v}`); }",
+        "const tag: i32 = 1; switch (tag) { case 0: if (local === null) { return; } break; case 1: print(`${local.v}`); }",
+        "const tag: i32 = 1; switch (tag) { case 0: if (local === null) { return; } break; } print(`${local.v}`);",
+        "const tag: i32 = 1; switch (tag) { case 0: if (local === null) { return; } case 1: print(`${local.v}`); }",
     ] {
         let diagnostics = checked_body(body).expect_err("a dispatch edge has no narrowing");
         assert!(diagnostics.iter().any(|diagnostic| diagnostic.code == RuleCode::S011));
         checked_body(&format!("if (local === null) {{ return; }} {}", body.replace("if (local === null) { return; }", "")))
             .expect("all dispatch edges carry the local fact");
     }
-    shared_error("if (h.c !== null) { switch (1) { case 0: clear(h); break; case 1: break; } print(`${h.c.v}`); }");
+    shared_error("if (h.c !== null) { const tag: i32 = 1; switch (tag) { case 0: clear(h); break; case 1: break; } print(`${h.c.v}`); }");
 }
 
 #[test]

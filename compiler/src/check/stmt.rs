@@ -473,11 +473,11 @@ impl<'p> Checker<'p> {
             } else {
                 None
             };
-            let string_literal = (!mutable && !dispose && pattern_type_ann(&d.name).is_none())
+            let literal_operand = (!mutable && !dispose && pattern_type_ann(&d.name).is_none())
                 .then(|| {
                     d.init
                         .as_deref()
-                        .and_then(|source| self.checked_string_literal_operand(source, &init, fx))
+                        .and_then(|source| self.checked_literal_operand(source, &init, fx))
                 })
                 .flatten();
             let async_origins = self.expr_async_origins(&init, fx);
@@ -501,8 +501,8 @@ impl<'p> Checker<'p> {
                 pos.clone(),
                 fx,
             );
-            if let (Some(text), Some(scope)) = (string_literal, fx.scopes.last_mut()) {
-                scope.string_literals.insert(name.clone(), text);
+            if let (Some(text), Some(scope)) = (literal_operand, fx.scopes.last_mut()) {
+                scope.literal_operands.insert(name.clone(), text);
             }
             if pattern_type_ann(&d.name).is_none() {
                 if let Some(source) = &d.init {
@@ -1215,7 +1215,8 @@ impl<'p> Checker<'p> {
     fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
         let pos = self.pos(sw.span);
         let mut disc = self.check_expr(&sw.discriminant, None, fx);
-        let subject_literal = self.checked_string_literal_operand(&sw.discriminant, &disc, fx);
+        let subject_literal = self.checked_literal_operand(&sw.discriminant, &disc, fx);
+        let prior_literal_test = self.literal_test_precedes(&disc, sw.span.lo, false, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::SwitchKind,
             &disc.ty,
@@ -1299,7 +1300,7 @@ impl<'p> Checker<'p> {
                     |fx| {
                         self.check_switch_case_test(
                             t,
-                            (&disc, subject_literal.as_deref()),
+                            (&disc, subject_literal.as_ref(), prior_literal_test),
                             alias_switch.as_ref(),
                             &mut alias_members_seen,
                             &mut alias_labels_valid,
@@ -1368,7 +1369,13 @@ impl<'p> Checker<'p> {
             }
         }
         self.finish_alias_string_switch(&mut disc, &mut cases, out);
-        self.finish_literal_string_switch(&mut disc, &mut cases, subject_literal.as_deref());
+        self.finish_literal_string_switch(
+            &mut disc,
+            &mut cases,
+            subject_literal
+                .as_ref()
+                .and_then(|literal| literal.as_string()),
+        );
         out.push(hir::Stmt::Switch { disc, cases, pos });
     }
 }

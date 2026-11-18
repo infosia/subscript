@@ -102,3 +102,43 @@ The string case of a string-literal alias value is §299 rule 2. The
 - §299 rule 2a: a literal operand is also a number or a boolean
   literal, and rule 2 of this section applies to two literal operands
   of one kind.
+
+### 330.4 Phase Review
+
+Form. `compiler/src/check/literal_operand.rs` gives a literal operand
+of a string, a number, or a boolean, with its value. The equality
+operators and a `case` label compare two literal operands of one kind.
+A test of a binding against its own value is recorded in its scope, and
+a later comparison in that scope or an inner scope is not checked
+(rule 3a). LIR, codegen, and the runtime do not change.
+
+Measured at the pin and after, with `tsc` 5.9.2:
+
+| Form | Pin | After | `tsc` |
+|---|---|---|---|
+| Each equality form of the problem table (`r544`, 14 lines) | accepted | S100 | TS2367 |
+| `switch (MODE) { case 1: … case 2: … }` (`r545`) | accepted | S100 | TS2678 |
+| The 13 forms of `a481` (rule 3a, an annotation, a `let`, `0x10`, `1e2`, the same value) | accepted | accepted | accepted |
+
+a481 prints the same bytes in the development tier, the ship tier, and
+`node`. The CLI `check` output of 1,153 other sources is the same at
+the pin and after. A test of shared narrowing used `switch (1)` with
+`case 0` (TS2678) as a fixture; its subject now has a type annotation.
+
+One fresh review found no CRITICAL or MAJOR finding. Its findings are
+recorded in §330.5.
+
+### 330.5 Open
+
+1. A `case` label of the subject's own value does not exempt a
+   comparison after the `switch`:
+   `switch (MODE) { case 1: return true; } return MODE === 2;` is
+   rejected, and `tsc` accepts it (the binding is `never` after the
+   `switch`). Only a `switch` that names its own value reaches it.
+2. Contrived: a truthiness test (`if (DEBUG) return;`) narrows a boolean
+   binding in `tsc`, but it is not a test of rule 3a, so
+   `DEBUG === false` after it is rejected.
+3. Rule 3a accepts some comparisons that `tsc` rejects:
+   `if (MODE === 1) { … }` then `MODE === 2`;
+   `const ok = MODE === 1; ok && MODE === 2`;
+   `X === 16 && X !== 17` with `const X = 0x10`.

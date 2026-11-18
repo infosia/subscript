@@ -89,6 +89,9 @@ use narrowing_fact::{FactSet, NarrowingFact};
 mod opaque;
 mod pipeline;
 pub(crate) use pipeline::run;
+mod literal_operand;
+#[cfg(test)]
+mod literal_operand_tests;
 pub(crate) mod pattern;
 mod signatures;
 mod snapshot;
@@ -571,7 +574,11 @@ pub(crate) struct Scope {
     /// Source declaration identities for const index keys (§163).
     pub const_keys: Shared<HashMap<String, String>>,
     /// Literal initializers of local const bindings (§299 rule 2a).
-    pub string_literals: Shared<HashMap<String, String>>,
+    literal_operands: Shared<HashMap<String, literal_operand::LiteralOperand>>,
+    /// Prior own-value comparisons in this body (compiler.md §330 rule 3a).
+    pub literal_tests: Shared<HashMap<String, u32>>,
+    /// Prior case labels exempt equality only (compiler.md §330 rule 3a).
+    pub literal_case_tests: Shared<HashMap<String, u32>>,
     /// Names whose apparent local types are the error type.
     pub rejected_local_names: Shared<std::collections::BTreeSet<String>>,
     /// Outer facts hidden by declarations in this scope.

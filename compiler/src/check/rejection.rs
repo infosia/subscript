@@ -20,6 +20,7 @@ rejection_classes! {
     Self::AsyncConditionalBinding => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
     Self::AsyncConditionalParameter => (RuleCode::S013, Diverges(Divergence::DroppedAsyncHandle)),
 
+    Self::DisjointLiteralEquality | Self::DisjointLiteralCase => (RuleCode::S100, TscRejects),
     Self::ReadonlyLiteralStore => (RuleCode::S100, TscRejects),
     Self::MirrorGeneratorType => (RuleCode::S100, Diverges(Divergence::MirrorGeneratorType)),
     Self::ParameterCapture => (RuleCode::S009, Diverges(Divergence::MutableLocalCapture)),

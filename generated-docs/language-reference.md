@@ -364,19 +364,21 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r507-c-callback-through-method.ts`](../corpus/reject/r507-c-callback-through-method.ts), line 8.
+Pinned corpus: [`corpus/reject/r544-two-different-literals-do-not-compare.ts`](../corpus/reject/r544-two-different-literals-do-not-compare.ts), line 15.
 
 Header guidance:
 
 ```text
-// tsc: accepts
-// expected-error: S100 at line 8
+// tsc: rejects TS2367
+// expected-error: S100 at line 15
 ```
 
 ```ts
-// expected-error: S100 at line 8
-class Holder { constructor(public cb:SubLogCallback) {} install():void { new SubCallbackInfo(this.cb,null,null); } }
-export function main():void { const k:i32=7; new Holder((m,u1,u2):void=>{print(`${k}`);}).install(); }
+class K { readonly size = 4; static readonly Z = 0; }
+export function main(): void {
+  MODE === 2;
+  MODE !== 2;
+  MODE == 2;
 ```
 
 ## Listed diagnostic examples (§182)

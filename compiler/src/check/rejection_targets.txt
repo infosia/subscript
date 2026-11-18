@@ -1592,3 +1592,5 @@ AsyncConditionalReturnBinding	s317-AsyncConditionalReturnBinding	S013	an async h
 AsyncConditionalReturnParameter	s317-AsyncConditionalReturnParameter	S013	an async handle is dropped without any await of its completion
 FunctionDefaultsAdapterNeedsConstName	s320-selected-local.ts	S100	function value `saved` needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function
 FunctionDefaultsCallbackNeedsConstName	s320-callback.ts	S100	`sort` callback `l` needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function
+DisjointLiteralEquality	s330-equality	S100	comparison of different literals 1 and 2
+DisjointLiteralCase	s330-case	S100	case literal 2 differs from subject literal 1

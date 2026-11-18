@@ -69,6 +69,8 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
         RejectionSite::AsyncConditionalBinding => WitnessEntry::Reachable { files: &["s317-AsyncConditionalBinding"], variant: Divergence::DroppedAsyncHandle },
         RejectionSite::AsyncConditionalParameter => WitnessEntry::Reachable { files: &["s317-AsyncConditionalParameter"], variant: Divergence::DroppedAsyncHandle },
 
+        RejectionSite::DisjointLiteralEquality => WitnessEntry::General { files: &["s330-equality"], variant: None, reason: "" },
+        RejectionSite::DisjointLiteralCase => WitnessEntry::General { files: &["s330-case"], variant: None, reason: "" },
         RejectionSite::ReadonlyLiteralStore => WitnessEntry::General { files: &["s316-readonly-store"], variant: None, reason: "" },
         RejectionSite::ParameterCapture => WitnessEntry::General { files: &["s312-ParameterCapture.ts", "c-lookup-context-capture"], variant: Some(Divergence::MutableLocalCapture), reason: "" },
         RejectionSite::LaterLocalCaptureRead => WitnessEntry::General { files: &["s312-LaterLocalCaptureRead.ts", "s173-pending-lambda", "c-lookup-pending-closure"], variant: Some(Divergence::DeclarationScope), reason: "" },

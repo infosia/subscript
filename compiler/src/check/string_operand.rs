@@ -2,7 +2,7 @@
 
 use super::rejection::RejectionSite;
 use super::type_rules::cast_value;
-use super::{Checker, FnCtx, ScopeItem};
+use super::{Checker, FnCtx};
 use crate::{hir, Type};
 use std::collections::HashSet;
 use swc_ecma_ast::{self as ast, BinaryOp};
@@ -145,161 +145,47 @@ impl Checker<'_> {
         None
     }
 
-    /// The source forms of §299 rule 2a and §316. Local lookup stops at the
-    /// owning scope, including parameters and declarations that shadow a const.
-    pub(super) fn string_literal_operand(&self, source: &ast::Expr, fx: &FnCtx) -> Option<String> {
-        self.string_literal_source(source, Some(fx), self.cur_file, None, &mut HashSet::new())
-    }
-
     pub(super) fn checked_string_literal_operand(
         &self,
         source: &ast::Expr,
         checked: &hir::Expr,
         fx: &FnCtx,
     ) -> Option<String> {
-        if let hir::ExprKind::Field { obj, name } = &checked.kind {
-            let Type::Class(class) = self.apparent_type(&obj.ty) else {
-                return None;
-            };
-            let signatures = self.class_sigs.get(class.0)?;
-            let signature = signatures.fields.get(name)?;
-            if signature.mutable || signature.annotated {
-                return None;
-            }
-            let initializer = signature.initializer.as_ref()?;
-            let mut seen = HashSet::new();
-            seen.insert(format!("field:{}:false:{name}", class.0));
-            return self.string_literal_source(
-                &initializer.expression,
-                None,
-                initializer.file,
-                Some(class),
-                &mut seen,
-            );
-        }
-        self.string_literal_operand(source, fx)
+        self.checked_literal_operand(source, checked, fx)
+            .and_then(|literal| literal.as_string().map(str::to_owned))
     }
 
-    fn string_literal_source(
-        &self,
-        source: &ast::Expr,
-        fx: Option<&FnCtx>,
-        file: usize,
-        field_class: Option<crate::types::ClassId>,
-        seen: &mut HashSet<String>,
-    ) -> Option<String> {
-        match source {
-            ast::Expr::Lit(ast::Lit::Str(text)) => Some(text.value.to_string()),
-            ast::Expr::Tpl(tpl) if tpl.exprs.is_empty() => Some(
-                tpl.quasis
-                    .iter()
-                    .map(|q| q.cooked.as_ref().unwrap_or(&q.raw).as_ref())
-                    .collect(),
-            ),
-            ast::Expr::Paren(paren) => {
-                self.string_literal_source(&paren.expr, fx, file, field_class, seen)
-            }
-            ast::Expr::Ident(id) => {
-                let name = id.sym.as_ref();
-                if let Some(scope) = fx.and_then(|fx| fx.scopes.iter().rev().find(|s| s.owns(name)))
-                {
-                    return scope.string_literals.get(name).cloned();
-                }
-                let binding = self.file_scopes.get(file)?.get(name)?;
-                let ScopeItem::Global(symbol) = &binding.item else {
-                    return None;
-                };
-                if binding.type_only || !seen.insert(symbol.clone()) {
-                    return None;
-                }
-                let sig = self.global_sigs.get(symbol)?;
-                if sig.mutable || sig.annotated {
-                    return None;
-                }
-                let init = sig.initializer.as_ref()?;
-                self.string_literal_source(&init.expression, None, init.file, None, seen)
-            }
-            ast::Expr::Member(member) => {
-                let ast::MemberProp::Ident(name) = &member.prop else {
-                    return None;
-                };
-                let (class, is_static) = match super::expr::unparen_expr(&member.obj) {
-                    ast::Expr::Ident(id) => {
-                        let local = fx.and_then(|fx| {
-                            fx.scopes.iter().rev().find(|s| s.owns(id.sym.as_ref()))
-                        });
-                        if let Some(scope) = local {
-                            let Type::Class(class) =
-                                self.apparent_type(&scope.vars.get(id.sym.as_ref())?.ty)
-                            else {
-                                return None;
-                            };
-                            (class, false)
-                        } else {
-                            let binding = self.file_scopes.get(file)?.get(id.sym.as_ref())?;
-                            if binding.type_only {
-                                return None;
-                            }
-                            match &binding.item {
-                                ScopeItem::Class(class) => (*class, true),
-                                ScopeItem::Global(symbol) => {
-                                    let Type::Class(class) =
-                                        self.apparent_type(self.global_sigs.get(symbol)?.ty())
-                                    else {
-                                        return None;
-                                    };
-                                    (class, false)
-                                }
-                                _ => return None,
-                            }
-                        }
-                    }
-                    ast::Expr::This(_) => {
-                        (fx.and_then(|fx| fx.lexical_class).or(field_class)?, false)
-                    }
-                    _ => return None,
-                };
-                let signatures = self.class_sigs.get(class.0)?;
-                let signature = if is_static {
-                    &signatures.static_fields
-                } else {
-                    &signatures.fields
-                }
-                .get(name.sym.as_ref())?;
-                if signature.mutable || signature.annotated {
-                    return None;
-                }
-                let key = format!("field:{}:{is_static}:{}", class.0, name.sym);
-                if !seen.insert(key) {
-                    return None;
-                }
-                let initializer = signature.initializer.as_ref()?;
-                self.string_literal_source(
-                    &initializer.expression,
-                    None,
-                    initializer.file,
-                    Some(class),
-                    seen,
-                )
-            }
-            _ => None,
-        }
-    }
     pub(super) fn check_switch_case_test(
         &mut self,
         t: &ast::Expr,
-        subject: (&hir::Expr, Option<&str>),
+        subject: (
+            &hir::Expr,
+            Option<&super::literal_operand::LiteralOperand>,
+            bool,
+        ),
         alias_switch: Option<&(String, Vec<String>)>,
         alias_members_seen: &mut HashSet<usize>,
         alias_labels_valid: &mut bool,
         fx: &mut FnCtx,
     ) -> hir::Expr {
-        let (disc, subject_literal) = subject;
+        let (disc, subject_literal, prior_test) = subject;
         let mut subject_value = disc.clone();
         let disc = &mut subject_value;
         self.mark_operand_calls(t);
         let mut checked = self.check_expr(t, Some(&disc.ty), fx);
-        let label_literal = self.checked_string_literal_operand(t, &checked, fx);
+        let label_operand = self.checked_literal_operand(t, &checked, fx);
+        self.check_literal_case(
+            disc,
+            (subject_literal, label_operand.as_ref()),
+            prior_test,
+            t,
+            fx,
+        );
+        let subject_literal = subject_literal.and_then(|literal| literal.as_string());
+        let label_literal = label_operand
+            .as_ref()
+            .and_then(|literal| literal.as_string())
+            .map(str::to_owned);
         self.convert_string_operand(
             disc,
             StringOperand::Binary {
