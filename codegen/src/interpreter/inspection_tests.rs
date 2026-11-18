@@ -73,6 +73,8 @@ fn interpreter_snapshot(interpreter: &Interpreter<'_>) -> String {
         })
         .collect()
 }
+// compiler.md §337 rule 3: debug best of three: 2.96 s; 9 C builds.
+// Uses the corpus gate's C11 -O2 build.
 #[test]
 fn async_task_snapshots_match_three_tiers() {
     let dir = std::env::temp_dir().join(format!("subscript-inspection-{}", std::process::id()));

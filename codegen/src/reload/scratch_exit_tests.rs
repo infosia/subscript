@@ -1,5 +1,4 @@
 //! §296: second scratch request fails; the same call without a fault is the control.
-//! Measured cost: two dev sessions and two ship builds, 0.83 s together.
 use super::*;
 
 fn files() -> [SourceFile; 2] {
@@ -59,7 +58,7 @@ fn dev_scratch_allocation_exit() {
     }
 }
 
-// §296. Measured cost: two ship builds, <0.83 s.
+// compiler.md §337 rule 3: debug best of three: 0.78 s; two C builds.
 #[cfg(unix)]
 #[test]
 fn ship_scratch_allocation_exit() {
@@ -90,7 +89,8 @@ void observe(const Outer *a, const Outer *b) {{ (void)a; (void)b; }}
         let mut config = crate::RunConfig::default().with_native_libraries(&libraries);
         config.pre_entry_hook = Some("arm");
         config.post_run_hook = Some("count");
-        clear_count(&count_file);
+        // compiler.md §337 rule 5: a missing hook must leave a failing count.
+        std::fs::write(&count_file, "unwritten").unwrap();
         let result = crate::run_c_aot_configured(&files(), config);
         if failure != 0 {
             assert!(
@@ -114,14 +114,6 @@ impl Drop for ScratchDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-#[cfg(unix)]
-fn clear_count(path: &std::path::Path) {
-    match std::fs::remove_file(path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => panic!("remove count {}: {error}", path.display()),
-    }
-}
 
 // §302: measured cost: <0.01 s; one directory and one unwind, no build.
 #[cfg(unix)]
@@ -137,16 +129,4 @@ fn scratch_guard_cleans_on_assertion_failure() {
     let exists = root.exists();
     let _ = std::fs::remove_dir_all(&root);
     assert!(!exists);
-}
-
-// §302: measured cost: <0.01 s; one count file, no build.
-#[cfg(unix)]
-#[test]
-fn missing_count_cannot_reuse_previous_run() {
-    let path = std::env::temp_dir().join(format!("subscript-302-count-{}", std::process::id()));
-    std::fs::write(&path, "0").unwrap();
-    clear_count(&path);
-    let result = std::fs::read_to_string(&path);
-    let _ = std::fs::remove_file(path);
-    assert!(result.is_err(), "a missing hook reused a stale count");
 }

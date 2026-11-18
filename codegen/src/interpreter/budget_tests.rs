@@ -36,6 +36,8 @@ fn line(report: subscript_runtime::context::AsyncStepReport) -> String {
     )
 }
 
+// compiler.md §337 rule 3: debug best of three: 0.82 s; 2 C builds.
+// Uses the corpus gate's C11 -O2 build.
 #[test]
 fn checkpoint_reports_match_jit_ship_and_interpreter() {
     let dir = std::env::temp_dir().join(format!("subscript-budget-{}", std::process::id()));
@@ -49,6 +51,56 @@ fn checkpoint_reports_match_jit_ship_and_interpreter() {
         let emitted = emit_c(&hir).unwrap();
         std::fs::write(dir.join("program.c"), &emitted.source).unwrap();
         std::fs::write(dir.join("program.h"), &emitted.host_header).unwrap();
+        let host = crate::host_entry(
+            r#"
+#include <stdio.h>
+#include <stddef.h>
+#include <stdlib.h>
+_Static_assert(sizeof(subscript_rt_async_step_report) == 32, "report size");
+_Static_assert(offsetof(subscript_rt_async_step_report, dispatched) == 0, "dispatched");
+_Static_assert(offsetof(subscript_rt_async_step_report, pending) == 8, "pending");
+_Static_assert(offsetof(subscript_rt_async_step_report, unfinished) == 16, "unfinished");
+_Static_assert(offsetof(subscript_rt_async_step_report, budget_exhausted) == 24, "budget");
+int main(int argc, char **argv) {
+ if (argc != 2) return 1;
+ uint64_t budget = strtoull(argv[1], NULL, 10);
+ subscript_rt_context* ctx = subscript_rt_ctx_new();
+ subscript_rt_ctx_enter_script(ctx);
+ subscript_init(ctx); subscript_export_main(ctx); OTHER
+ subscript_rt_ctx_exit_script(ctx);
+ subscript_rt_async_step_report zero = subscript_rt_ctx_async_step_budget(ctx, 0);
+ fprintf(stderr, "%llu %llu %llu %llu\n", (unsigned long long)zero.dispatched,
+  (unsigned long long)zero.pending, (unsigned long long)zero.unfinished, (unsigned long long)zero.budget_exhausted);
+ while (subscript_rt_ctx_async_pending(ctx)) {
+  subscript_rt_ctx_collect(ctx);
+  subscript_rt_async_step_report r = subscript_rt_ctx_async_step_budget(ctx, budget);
+  fprintf(stderr, "%llu %llu %llu %llu\n", (unsigned long long)r.dispatched,
+   (unsigned long long)r.pending, (unsigned long long)r.unfinished, (unsigned long long)r.budget_exhausted);
+ }
+ uint64_t n = 0; const uint8_t* bytes = subscript_rt_ctx_stdout(ctx, &n);
+ fwrite(bytes, 1, n, stdout); subscript_rt_ctx_release(ctx); return 0;
+}
+"#, &emitted.host_header).unwrap()
+        .replace("OTHER", if source.contains("function other") {
+            "subscript_export_other(ctx);"
+        } else { "" });
+        std::fs::write(dir.join("host.c"), host).unwrap();
+        let exe = dir.join(format!("budget{}", std::env::consts::EXE_SUFFIX));
+        let mut command = compiler.command();
+        crate::add_c11_optimized_flags(&mut command, compiler.style());
+        crate::add_object_directory(&mut command, &dir, compiler.style());
+        command
+            .arg(dir.join("program.c"))
+            .arg(dir.join("host.c"))
+            .arg(&runtime)
+            .args(runtime_system_libraries(compiler.style()));
+        crate::add_executable_output(&mut command, &exe, compiler.style());
+        let built = command.output().unwrap();
+        assert!(
+            built.status.success(),
+            "{}",
+            crate::tool_output_report(&built)
+        );
         for budget in [1, 3, u64::MAX] {
             let mut jit = ReloadSession::new(&files).unwrap();
             jit.call_export("main").unwrap();
@@ -111,55 +163,10 @@ fn checkpoint_reports_match_jit_ship_and_interpreter() {
                 }
             );
             assert_eq!(interpreter.context.take_stdout(), output);
-            let host = crate::host_entry(
-                r#"
-#include <stdio.h>
-#include <stddef.h>
-_Static_assert(sizeof(subscript_rt_async_step_report) == 32, "report size");
-_Static_assert(offsetof(subscript_rt_async_step_report, dispatched) == 0, "dispatched");
-_Static_assert(offsetof(subscript_rt_async_step_report, pending) == 8, "pending");
-_Static_assert(offsetof(subscript_rt_async_step_report, unfinished) == 16, "unfinished");
-_Static_assert(offsetof(subscript_rt_async_step_report, budget_exhausted) == 24, "budget");
-int main(void) {
- subscript_rt_context* ctx = subscript_rt_ctx_new();
- subscript_rt_ctx_enter_script(ctx);
- subscript_init(ctx); subscript_export_main(ctx); OTHER
- subscript_rt_ctx_exit_script(ctx);
- subscript_rt_async_step_report zero = subscript_rt_ctx_async_step_budget(ctx, 0);
- fprintf(stderr, "%llu %llu %llu %llu\n", (unsigned long long)zero.dispatched,
-  (unsigned long long)zero.pending, (unsigned long long)zero.unfinished, (unsigned long long)zero.budget_exhausted);
- while (subscript_rt_ctx_async_pending(ctx)) {
-  subscript_rt_ctx_collect(ctx);
-  subscript_rt_async_step_report r = subscript_rt_ctx_async_step_budget(ctx, UINT64_C(BUDGET));
-  fprintf(stderr, "%llu %llu %llu %llu\n", (unsigned long long)r.dispatched,
-   (unsigned long long)r.pending, (unsigned long long)r.unfinished, (unsigned long long)r.budget_exhausted);
- }
- uint64_t n = 0; const uint8_t* bytes = subscript_rt_ctx_stdout(ctx, &n);
- fwrite(bytes, 1, n, stdout); subscript_rt_ctx_release(ctx); return 0;
-}
-"#, &emitted.host_header).unwrap()
-            .replace("BUDGET", &budget.to_string())
-            .replace("OTHER", if source.contains("function other") {
-                "subscript_export_other(ctx);"
-            } else { "" });
-            std::fs::write(dir.join("host.c"), host).unwrap();
-            let exe = dir.join(format!("budget{}", std::env::consts::EXE_SUFFIX));
-            let mut command = compiler.command();
-            crate::add_c11_optimized_flags(&mut command, compiler.style());
-            crate::add_object_directory(&mut command, &dir, compiler.style());
-            command
-                .arg(dir.join("program.c"))
-                .arg(dir.join("host.c"))
-                .arg(&runtime)
-                .args(runtime_system_libraries(compiler.style()));
-            crate::add_executable_output(&mut command, &exe, compiler.style());
-            let built = command.output().unwrap();
-            assert!(
-                built.status.success(),
-                "{}",
-                crate::tool_output_report(&built)
-            );
-            let ran = std::process::Command::new(&exe).output().unwrap();
+            let ran = std::process::Command::new(&exe)
+                .arg(budget.to_string())
+                .output()
+                .unwrap();
             assert!(ran.status.success(), "{}", crate::tool_output_report(&ran));
             assert_eq!(ran.stdout, output);
             assert_eq!(String::from_utf8(ran.stderr).unwrap(), reports);

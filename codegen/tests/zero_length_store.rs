@@ -3,20 +3,7 @@
 use subscript_codegen::{interpreter::interpret, lir::lower_module, run_c_aot, run_jit};
 use subscript_compiler::{check_program, SourceFile};
 
-#[test]
-fn zero_store_corpus_agrees_in_three_tiers() {
-    let files = [SourceFile::new(
-        "a344.ts",
-        include_str!("../../corpus/accept/a344-zero-length-store.ts"),
-    )];
-    let expected = include_bytes!("../../corpus/accept/a344-zero-length-store.expected");
-    let hir = check_program(&files).expect("accepted zero store");
-    let lir = lower_module(&hir).expect("verified clear");
-    assert_eq!(interpret(&lir).expect("interpreter"), expected);
-    assert_eq!(run_jit(&files).expect("JIT"), expected);
-    assert_eq!(run_c_aot(&files).expect("C AOT"), expected);
-}
-
+// compiler.md §337 rule 3: debug best of three: 0.31 s; 1 C build.
 #[test]
 fn clear_evaluates_a_receiver_once_and_releases_temporary_receivers() {
     let source = r#"
@@ -45,6 +32,7 @@ export async function main(): Promise<void> { await use(); }
     assert!(session.async_tasks().is_empty());
 }
 
+// compiler.md §337 rule 3: debug best of three: 0.45 s; 2 C builds.
 #[test]
 fn clear_traps_before_the_next_statement_like_a_discarded_pop() {
     let corpus = include_str!("../../corpus/trap/t102-zero-length-store.ts");

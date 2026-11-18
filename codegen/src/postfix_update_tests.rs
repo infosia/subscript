@@ -46,6 +46,7 @@ fn dev_prefix_and_postfix_values_and_statements() {
     assert_eq!(run_jit(&source()).expect("dev updates"), EXPECTED);
 }
 
+// compiler.md §337 rule 3: debug best of three: 0.21 s; 1 C build.
 #[test]
 fn ship_prefix_and_postfix_values_and_statements() {
     assert_eq!(run_c_aot(&source()).expect("ship updates"), EXPECTED);
@@ -56,18 +57,4 @@ fn interpreter_prefix_and_postfix_values_and_statements() {
     let hir = check_program(&source()).expect("updates check");
     let lir = lower_module(&hir).expect("updates lower");
     assert_eq!(interpret(&lir).expect("interpreter updates"), EXPECTED);
-}
-
-#[test]
-fn postfix_corpus_matches_all_three_forms() {
-    let files = [SourceFile::new(
-        "postfix.ts",
-        include_str!("../../corpus/accept/a326-postfix-update.ts"),
-    )];
-    let expected = include_bytes!("../../corpus/accept/a326-postfix-update.expected");
-    let hir = check_program(&files).expect("corpus checks");
-    let lir = lower_module(&hir).expect("corpus lowers");
-    assert_eq!(interpret(&lir).expect("interpreter corpus"), expected);
-    assert_eq!(run_jit(&files).expect("dev corpus"), expected);
-    assert_eq!(run_c_aot(&files).expect("ship corpus"), expected);
 }

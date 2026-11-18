@@ -67,3 +67,40 @@ Measured at `61293f78` by reading the tests:
 
 - §150.3 items 1, 2, §168.3 item 2, §169.3 item 7, §174.3 items 1, 2,
   and §302.4 item 1 close.
+
+### 337.4 Phase Review
+
+Form. The gate tests that run each accept entry against its golden are
+`codegen/tests/golden.rs` `jit_ship_c_aot_and_golden_agree_byte_for_byte`
+(development tier and ship tier) and `codegen/tests/lir.rs`
+`lir_interpreter_profile_matches_corpus_goldens` (interpreter). They run
+`a326` and `a344`, so the two tests that ran these entries again are
+removed. The budget test passes the budget in `argv`. The ship scratch
+test writes `unwritten` into the count file before each run. The unused
+`compiler/tests/support/lifetime_sites.rs` is removed.
+
+Measured, debug, best of three, the pin `5c2403f4` and after:
+
+| Test | Pin | After | C builds |
+|---|---|---|---|
+| `checkpoint_reports_match_jit_ship_and_interpreter` | 1.93 s | 0.82 s | 6 to 2 |
+| `postfix_corpus_matches_all_three_forms` | 0.28 s | removed | 1 to 0 |
+| `zero_store_corpus_agrees_in_three_tiers` | 0.30 s | removed | 1 to 0 |
+| `async_task_snapshots_match_three_tiers` | 2.88 s | 2.96 s | 9 (one per program) |
+| `ship_scratch_allocation_exit` | 0.76 s | 0.78 s | 2 |
+
+With an empty post-run hook, the ship scratch test fails: it reads
+`unwritten`, not `0`.
+
+One fresh review found no CRITICAL or MAJOR finding.
+
+1. MINOR, realistic, fixed: the test of §302 rule 1 checked only a
+   helper that no other test used after rule 5, so it could not fail.
+   It is removed; rule 5 shows the rule in the ship test.
+2. MINOR, contrived, recorded: §337.5 item 1.
+
+### 337.5 Open
+
+1. If the budget test passes a budget that parses to 0, the ship host
+   loop makes no progress, and the test does not end. The test passes
+   1, 3, and `u64::MAX` only.

@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§336. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§337. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -43,9 +43,6 @@ No item is open in this group.
 18. Checks that cannot fail, or missing firing tests: §168.4 item 1,
     §169.4 items 3, 4, 10, §172.4 item 2, §174.4 item 3, §176.4 item
     3, §268.4 item 2, §270.4 item 1, §323.4 item 3.
-19. Test cost not stated, or work done twice (core principle 15):
-    §150.4 items 1, 2, §168.4 item 2, §169.4 item 7, §174.4 items 1,
-    2, §302.4 item 1.
 20. Platform runs not recorded: §298.4 item 1 (`cl`), §280.4 item 3
     (Windows), §226.4 items 1–3 (x86-64), §225.4 item 1, C4029 (§183).
 21. `a355` has no `node` run (§185.4 item 2); `jit-runner-fork.md`
@@ -95,6 +92,7 @@ No item is open in this group.
   §321.4 item 2, callback arity in `cemit/collection.rs`;
   `runtime/src/arrops.rs` is past 2,000 lines.
 - Tutorial: §323.4 item 4.
+- Tests: §337.5 item 1.
 
 ## 7. Process and tooling
 
