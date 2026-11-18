@@ -103,7 +103,12 @@ single-threaded caller (§190.1 rule 3).
 1. A function with trailing default parameters
    (`function f(a: i32, b: i32 = 2, c: i32 = 3)`) is rejected at a
    two-parameter C callback type. An ordinary function type place
-   accepts it (§320), and `tsc` accepts it.
+   accepts it (§320), and `tsc` accepts it. Contrived: `bind` gives
+   only the shape `(message: string, userdata1: object | null,
+   userdata2: object | null) => void`, and it rejects other callback
+   typedefs. A trailing default comes after the two `object | null`
+   parameters, which S011 rejects in a named function and in a lambda
+   (measured at `1e41fa24`). Only a hand-written mirror reaches it.
 2. The development tier and the ship tier each compute which
    synthetic helper needs a wrapper. The LIR does not carry the fact.
 3. No test reloads a program while an adapter is bound, and a479 has
