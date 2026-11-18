@@ -364,20 +364,21 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r548-an-indirect-call-runs-its-argument.ts`](../corpus/reject/r548-an-indirect-call-runs-its-argument.ts), line 10.
+Pinned corpus: [`corpus/reject/r554-a-nonliteral-array-still-moves-the-receiver.ts`](../corpus/reject/r554-a-nonliteral-array-still-moves-the-receiver.ts), line 16.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: S100: `LATER` is accessed before its declaration, through `run` -> an indirect call
+// expected-error: S100: `W.parameter` can move a dynamic array
 ```
 
 ```ts
-function run(f: () => void): void { f(); }
-const later = (): void => { print(`${LATER}`); };
-run(later);
-const LATER: i32 = 5;
+const keep: W[] = [];
+const all: W[] = [new W()];
+all[0].parameter(keep);
+all[0].assigned();
+all[0].sliced();
 ```
 
 ## Listed diagnostic examples (§182)

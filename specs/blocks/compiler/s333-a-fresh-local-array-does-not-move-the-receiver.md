@@ -70,3 +70,35 @@ stays valid.
 
 - §221 rule 5: an operation on a fresh local of the same body is not a
   move. §221.4 item 3 closes.
+
+### 333.4 Phase Review
+
+Form. `compiler/src/check/element_receiver_fresh.rs` gives the fresh
+locals of each body that is not a generator body: each local whose
+initializer and every assignment, in its scope, is an array literal.
+The move reach of §221 skips an operation whose array operand reads one
+of them. The diagnostic, the reach, and the address form do not change.
+
+Measured, the pin `1be04b99` and after:
+
+| Form | Pin | After, development tier and ship tier |
+|---|---|---|
+| `all[0].twice()`: `out.push(this)` twice on a local `[]` | S100 | `3,3` |
+| `all[1].plus()`: `let xs = [new V(1)]; xs.push(…)` | S100 | `9` |
+| a push to an array parameter, to a `let` from a global, to a `slice` result (`r554`) | S100 | S100, the same text |
+
+`tsc` accepts each form. a483 is not `js-comparable` (C2, the
+`@ValueType` decorator). The CLI `check` output of 1,094 other corpus
+entries is the same at the pin and after.
+
+One fresh review found one finding: a generator body runs across
+several `next` calls, so a fresh local could exist before a later step
+moved it. A method on an element of that array resumed the generator,
+and the development tier printed `40 1` for `41 41`. The review rated
+it contrived to borderline. Rule 1 now excludes a generator body, and a
+unit test pins the shape. The review found no other defect.
+
+### 333.5 Open
+
+1. A fresh local passed to a helper that pushes to it stays a move
+   (rule 3); the reach does not follow the array object.

@@ -4,9 +4,13 @@
 //! One walk over the checked program builds the reversed call graph. It
 //! records each operation that moves a dynamic array and each call on an
 //! unstable receiver. A breadth-first search over the reversed graph then
-//! runs once for each element type that an unstable receiver crosses. The
-//! cost is O(program + types × graph), and a program with no unstable receiver
-//! stops after the walk.
+//! runs once for each element type that an unstable receiver crosses. Each
+//! body first identifies fresh local reads (compiler.md §333). The reach
+//! costs O(types × graph). A program with no unstable receiver stops after
+//! the walks.
+
+#[path = "element_receiver_fresh.rs"]
+mod fresh;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -57,6 +61,7 @@ struct Graph<'a> {
     targets: HashMap<&'a Type, usize>,
     moves: Vec<Move<'a>>,
     sites: Vec<Site<'a>>,
+    fresh_reads: HashSet<*const Expr>,
 }
 
 impl<'a> Graph<'a> {
@@ -72,6 +77,7 @@ impl<'a> Graph<'a> {
             targets: HashMap::new(),
             moves: Vec::new(),
             sites: Vec::new(),
+            fresh_reads: HashSet::new(),
         };
         for function in &module.functions {
             let unit = graph.unit();
@@ -153,6 +159,11 @@ impl<'a> Graph<'a> {
     }
 
     fn walk_function(&mut self, unit: usize, function: &'a hir::Function) {
+        self.fresh_reads.extend(fresh::reads(
+            &function.params,
+            &function.body,
+            function.is_generator,
+        ));
         for default in function.params.iter().filter_map(|p| p.default.as_ref()) {
             self.expr(unit, default);
         }
@@ -251,7 +262,13 @@ impl<'a> Graph<'a> {
                 };
                 self.call(unit, target);
             }
-            ExprKind::Lambda { .. } => {
+            ExprKind::Lambda {
+                params,
+                body: statements,
+                ..
+            } => {
+                self.fresh_reads
+                    .extend(fresh::reads(params, statements, false));
                 body = self.unit();
                 self.call(unit, Some(body));
                 let target = self.target(&expression.ty);
@@ -419,6 +436,10 @@ impl<'a> Graph<'a> {
         (operation, effect): (&'static str, ElementMove),
         pos: &'a Pos,
     ) {
+        // compiler.md §333 rule 2: only a fresh read in this body excludes a move.
+        if array.is_some_and(|array| self.fresh_reads.contains(&(array as *const Expr))) {
+            return;
+        }
         if let Some(Type::Array(element)) = array.map(|array| &array.ty) {
             self.moves.push(Move {
                 element,
