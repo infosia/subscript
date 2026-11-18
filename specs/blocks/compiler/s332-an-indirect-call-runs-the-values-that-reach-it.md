@@ -116,3 +116,55 @@ call of `run` can run only the lambda that it receives.
 - §137 rule 5b: an indirect call runs the values that reach it
   (rules 1 to 4), not every value in M(k). §137.3 closes.
 - §137 rule 5c: the residual is rule 6 of this section.
+
+### 332.4 Phase Review
+
+Form. `compiler/src/check/init_effects/values.rs` computes, once per
+program, the escaped values, the values of each parameter, and the
+count of calls of each unit that are not known calls. The route scan of
+§137 follows, at each indirect call, the values of its callee
+expression in place of every value in M(k). Each match of the use scan
+names every HIR kind; `compiler/tests/initializer_use_totality.rs`
+fails to build when a kind is added.
+
+Measured, the pin `5dd2718f` and after, development tier, ship tier,
+and `node`:
+
+| Form | Pin | After |
+|---|---|---|
+| `run((): void => …)` with an unrelated lambda that reads a later global | S100 | accepted, `first` |
+| a helper with `xs.map(f)` and an unrelated `const scale` | S100 | accepted, `2,3` |
+| `outer` passes its parameter to `run` | S100 | accepted, `two` |
+| `early()`, a `const` lambda | S100 | accepted, `early` |
+| `r548` to `r551`: the lambda passed, passed through two helpers, stored in a `let`, called in place | S100 | S100, the same route |
+| `r552`, `r553`: `Map.forEach` over function values, a lambda and a declared callback | S100 | S100 |
+
+`node` throws `ReferenceError` for each reject entry, and `tsc` accepts
+each. The CLI `check` output of 1,085 other corpus entries is the same
+at the pin and after. Checker time over the corpus, debug, best of
+three: 9.90 s to 10.22 s (1.032).
+
+The contract was corrected three times before the review, each when the
+round stopped on a missing value source: a lambda called in place, an
+argument of a known indirect call, and an assigned parameter. Three
+negative tests of `codegen/tests/module_init_routes.rs` encoded the
+former over-approximation; each now passes or stores the value that
+reads the later global.
+
+The first review found one MAJOR finding, realistic: a unit that a
+built-in calls as a callback had no parameter values, so
+`m.forEach((h) => { h(); })` over a `Map` of function values read a
+global before its initializer ran (signal 11 in the development tier).
+Rule 3 now states when a parameter's values are complete, and the code
+counts the calls of each unit that are not known calls. Its MINOR
+findings are fixed: a catch-all arm in the callback match, and changed
+indentation in test strings. A second review probed about 50 forms
+and found no CRITICAL or MAJOR finding.
+
+### 332.5 Open
+
+1. Contrived: a unary or binary expression other than `||` and `??`
+   gives a callee no values. No such expression gives a function value
+   in the subset now.
+2. Rule 6: a parameter holds the values of every known call in M(k),
+   not of one call.

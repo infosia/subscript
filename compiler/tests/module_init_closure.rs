@@ -29,7 +29,7 @@ fn a_generator_step_follows_values_made_after_creation() {
 fn twelve_callbacks(read_later: bool) -> String {
     let mut source = "const values: i32[] = [1]; function leaf(): i32 { return 1; } const stored: () => i32 = leaf;".to_string();
     for index in 0..12 {
-        let body = if read_later && index == 11 {
+        let body = if read_later && index == 0 {
             "later"
         } else {
             "stored()"

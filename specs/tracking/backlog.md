@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§331. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§332. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -18,8 +18,6 @@ No item is open in this group.
 
 ## 2. Forms that `tsc` accepts and subscript rejects (and the reverse)
 
-11. An indirect call follows every function value made so far, so an
-    unrelated lambda causes a rejection (§137 Open). Medium.
 12. A method that moves a fresh local array of the same element type
     (`out.push(this)`) (§221.4 item 3). Small to medium.
 13. Variance gaps: `Array.from<F>`, spread, `Set` source, a `then`
@@ -85,7 +83,8 @@ No item is open in this group.
 ## 6. Contrived or MINOR (about 70)
 
 - Narrowing and flow: §155, §158, §163, §164, §315–§318, §330.5
-  items 1–3, §331.5 item 1.
+  items 1–3, §331.5 item 1, §332.5
+  items 1, 2.
 - Inference and cycles: §149, §156, §290, §306, §308, §312.
 - Async and counted values: §166–§172, §176, §295, §323.4 item 2, §329.5 items 1, 2.
 - Interop and runtime: §179, §187.3 items 3, 5, 7, 9–12, §259, §261,

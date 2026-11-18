@@ -195,23 +195,23 @@ fn generator_parameter_next_scans_the_made_body() {
 }
 
 fn values_made_in_followed_bodies_reach_later_indirect_calls() {
-    let definitions = "function make(): void { const cb: () => i32 = (): i32 => later; } function apply(cb: () => i32): void { print(`${cb()}`); }";
+    let definitions = "let hook: () => i32 = (): i32 => 0; function make(): void { hook = (): i32 => later; } function apply(cb: () => i32): void { print(`${cb()}`); }";
     rejected(
-        &[SourceFile::entry("main.ts", format!("{definitions} make(); apply((): i32 => 3); const later: i32 = 1; export function main(): void {{}}"))],
+        &[SourceFile::entry("main.ts", format!("{definitions} make(); apply(hook); const later: i32 = 1; export function main(): void {{}}"))],
         "`later` is accessed before its declaration, through `apply` -> an indirect call",
     );
     all_engines(
-        "function make(): void { const cb: () => i32 = (): i32 => 2; } function apply(cb: () => i32): void { print(`${cb()}`); } make(); apply((): i32 => 3); const later: i32 = 1; export function main(): void {}",
+        "let hook: () => i32 = (): i32 => 0; function make(): void { hook = (): i32 => 3; } function apply(cb: () => i32): void { print(`${cb()}`); } make(); apply(hook); const later: i32 = 1; export function main(): void {}",
         "3\n",
     );
 }
 
 fn an_indirect_call_follows_new_values_to_a_fixed_point() {
     rejected(
-        &[SourceFile::entry("main.ts", "function make(): void { const cb: () => i32 = (): i32 => later; } const stored: () => void = make; stored(); const later: i32 = 1; export function main(): void {}")],
+        &[SourceFile::entry("main.ts", "let hook: () => i32 = (): i32 => 0; function make(): void { hook = (): i32 => later; hook(); } const stored: () => void = make; stored(); const later: i32 = 1; export function main(): void {}")],
         "`later` is accessed before its declaration, through an indirect call",
     );
-    all_engines("function make(): void { const cb: () => i32 = (): i32 => 2; } const stored: () => void = make; stored(); const later: i32 = 1; export function main(): void { print(`${later}`); }", "1\n");
+    all_engines("let hook: () => i32 = (): i32 => 0; function make(): void { hook = (): i32 => 2; hook(); } const stored: () => void = make; stored(); const later: i32 = 1; export function main(): void { print(`${later}`); }", "1\n");
 }
 
 fn lambda_creation_alone_does_not_read_its_body() {
@@ -221,7 +221,7 @@ fn lambda_creation_alone_does_not_read_its_body() {
 
 fn a_later_lambda_is_not_followed_by_an_earlier_call() {
     all_engines("function apply(cb: () => i32): void { print(`${cb()}`); } apply((): i32 => 3); const cb: () => i32 = (): i32 => later; const later: i32 = 1; export function main(): void {}", "3\n");
-    rejected(&[SourceFile::entry("main.ts", "function apply(cb: () => i32): void { print(`${cb()}`); } const cb: () => i32 = (): i32 => later; apply((): i32 => 3); const later: i32 = 1; export function main(): void {}")], "`later` is accessed before its declaration, through `apply` -> an indirect call");
+    rejected(&[SourceFile::entry("main.ts", "function apply(cb: () => i32): void { print(`${cb()}`); } const cb: () => i32 = (): i32 => later; apply(cb); const later: i32 = 1; export function main(): void {}")], "`later` is accessed before its declaration, through `apply` -> an indirect call");
 }
 
 fn a_registered_callback_remains_available_at_a_later_host_call() {

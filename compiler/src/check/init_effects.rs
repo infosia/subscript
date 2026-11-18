@@ -1,7 +1,10 @@
 //! Checks initializer read routes under compiler.md §137 rules 5, 5a, and 5b.
 
 use super::*;
+
+mod values;
 use crate::check::rejection::{diagnostic, RejectionFailure, RejectionSite};
+use values::{ModuleCallSource, ModuleValueFlow, ModuleValues};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum ModuleFunction {
@@ -17,7 +20,12 @@ struct ModuleEffects {
     accesses: std::collections::BTreeSet<String>,
     calls: Vec<(ModuleFunction, String)>,
     made: Vec<ModuleFunction>,
-    indirect: bool,
+    indirect: Vec<ModuleValues>,
+    call_sources: Vec<ModuleCallSource>,
+    arguments: Vec<(ModuleValues, Vec<ModuleValues>)>,
+    escapes: Vec<ModuleValues>,
+    parameters: Vec<ModuleValues>,
+    assigned_parameters: HashSet<(ModuleFunction, usize)>,
     lambdas: HashMap<ModuleFunction, ModuleEffects>,
 }
 
@@ -28,6 +36,7 @@ struct ModuleEffectScanner<'a> {
     ambiguous_class_names: Option<&'a HashSet<&'a str>>,
     effects: ModuleEffects,
     lambda_name: String,
+    locals: HashMap<String, ModuleValues>,
     diagnosed_accesses: &'a [Pos],
 }
 
@@ -41,6 +50,7 @@ impl<'a> ModuleEffectScanner<'a> {
             effects: ModuleEffects::default(),
             lambda_name: "[lambda]".to_string(),
             diagnosed_accesses: &[],
+            locals: HashMap::new(),
         }
     }
 
@@ -60,6 +70,7 @@ impl<'a> ModuleEffectScanner<'a> {
         scanner.defaults = self.defaults;
         scanner.ambiguous_class_names = self.ambiguous_class_names;
         scanner.lambda_name = self.lambda_name.clone();
+        scanner.locals = self.locals.clone();
         scanner
     }
 
@@ -97,12 +108,20 @@ impl<'a> ModuleEffectScanner<'a> {
         self
     }
 
-    fn function(mut self, function: &hir::Function) -> ModuleEffects {
+    fn function(self, function: &hir::Function) -> ModuleEffects {
+        self.function_unit(function, ModuleFunction::Free(function.symbol.clone()))
+    }
+
+    fn function_unit(mut self, function: &hir::Function, unit: ModuleFunction) -> ModuleEffects {
+        self.parameters(unit, &function.params);
         self.stmts(&function.body);
         self.effects
     }
 
-    fn constructor(mut self, class: &hir::ClassDef) -> ModuleEffects {
+    fn constructor(mut self, class: &hir::ClassDef, id: ClassId) -> ModuleEffects {
+        if let Some(constructor) = &class.ctor {
+            self.parameters(ModuleFunction::Constructor(id), &constructor.params);
+        }
         for field in &class.fields {
             if let Some(initializer) = &field.init {
                 self.expr(initializer);
@@ -155,7 +174,11 @@ impl<'a> ModuleEffectScanner<'a> {
     }
 
     fn record_indirect_call(&mut self) {
-        self.effects.indirect = true;
+        let values = ModuleValues::unknown();
+        self.effects.indirect.push(values.clone());
+        self.effects
+            .call_sources
+            .push(ModuleCallSource::Unspecified(values));
     }
 
     fn record_call(&mut self, function: ModuleFunction, label: String) {
@@ -170,16 +193,60 @@ impl<'a> ModuleEffectScanner<'a> {
     }
 
     fn callback(&mut self, args: &[hir::Expr]) {
-        match args.get(1).map(|arg| &arg.kind) {
-            Some(hir::ExprKind::Lambda { id, .. }) => {
+        use hir::ExprKind as K;
+        let Some(argument) = args.get(1) else {
+            self.record_indirect_call();
+            return;
+        };
+        let values = self.values(argument);
+        self.effects
+            .call_sources
+            .push(ModuleCallSource::Unspecified(values.clone()));
+        match &argument.kind {
+            K::Lambda { id, .. } => {
                 self.record_call(ModuleFunction::Lambda(*id), "[lambda]".to_string())
             }
-            Some(hir::ExprKind::FuncRef(name)) => self.record_call(
+            K::FuncRef(name) => self.record_call(
                 ModuleFunction::Free(name.clone()),
                 name.full_text().to_string(),
             ),
-            Some(_) => self.record_indirect_call(),
-            None => self.record_indirect_call(),
+            K::Int(_)
+            | K::Float(_)
+            | K::Bool(_)
+            | K::Str(_)
+            | K::Null
+            | K::This
+            | K::Local(..)
+            | K::Global(..)
+            | K::LambdaMember(_)
+            | K::EnumMember { .. }
+            | K::Unary { .. }
+            | K::Binary { .. }
+            | K::AbsenceTest { .. }
+            | K::Assign { .. }
+            | K::Cast(_)
+            | K::Call { .. }
+            | K::New { .. }
+            | K::RawNew { .. }
+            | K::DescriptorLit { .. }
+            | K::Field { .. }
+            | K::Length(_)
+            | K::Index { .. }
+            | K::ArrayLit(_)
+            | K::ArraySpreadLit(_)
+            | K::Template(_)
+            | K::Yield(_)
+            | K::AsyncSuspend
+            | K::AsyncHandleAwait(_)
+            | K::AsyncCall { .. }
+            | K::AsyncHandleCreate { .. }
+            | K::AsyncHandleTransfer { .. }
+            | K::TaskGroup { .. }
+            | K::AsyncAll { .. }
+            | K::Cond { .. }
+            | K::Seq { .. }
+            | K::Zero
+            | K::Unassigned => self.effects.indirect.push(values),
         }
     }
 
@@ -238,114 +305,140 @@ impl<'a> ModuleEffectScanner<'a> {
         }
     }
 
+    fn scoped_stmts(&mut self, statements: &[hir::Stmt]) {
+        let locals = self.locals.clone();
+        self.stmts(statements);
+        self.locals = locals;
+    }
+
     fn stmt(&mut self, statement: &hir::Stmt) {
         use hir::Stmt as S;
-        if let S::Let { name, init, .. } = statement {
-            let name = std::mem::replace(&mut self.lambda_name, name.clone());
-            self.expr(init);
-            self.lambda_name = name;
-            return;
-        }
-        // compiler.md §137 rule 5b: every statement participates in the scan.
+        // compiler.md §332 rules 2 and 5: each statement names its use and lexical scope.
         match statement {
-            S::Let { .. }
-            | S::Expr(_)
-            | S::Return { .. }
-            | S::If {
-                cond: _,
-                then: _,
-                els: _,
-                pos: _,
-            }
-            | S::While {
-                cond: _,
-                body: _,
-                pos: _,
-            }
-            | S::DoWhile {
-                body: _,
-                cond: _,
-                pos: _,
-            }
-            | S::For {
-                init: _,
-                cond: _,
-                step: _,
-                body: _,
-                pos: _,
-            }
-            | S::ForOf {
-                name: _,
-                ty: _,
-                subject: _,
-                kind: _,
-                body: _,
-                pos: _,
-            }
-            | S::GeneratorForOf {
-                name: _,
-                ty: _,
-                mutable: _,
-                subject: _,
-                body: _,
-                pos: _,
-            }
-            | S::Switch {
-                disc: _,
-                cases: _,
-                pos: _,
-            }
-            | S::Break(_)
-            | S::Continue(_)
-            | S::Block(_)
-            | S::Throw { .. }
-            | S::Try {
-                body: _,
-                binding: _,
-                handler: _,
-                pos: _,
-            }
-            | S::Using {
-                bindings: _,
-                body: _,
-                finalizer: _,
-                pos: _,
+            S::Let {
+                name,
+                init,
+                mutable,
+                ..
             } => {
-                for child in statement.children() {
-                    match child {
-                        hir::HirChild::Expr(expression) => self.expr(expression),
-                        hir::HirChild::Stmt(statement) => self.stmt(statement),
-                    }
+                let label = std::mem::replace(&mut self.lambda_name, name.clone());
+                self.expr_use(init, *mutable);
+                let values = if *mutable {
+                    ModuleValues::unknown()
+                } else {
+                    self.values(init)
+                };
+                self.locals.insert(name.clone(), values);
+                self.lambda_name = label;
+            }
+            S::Expr(value) | S::Throw { value, .. } => self.expr(value),
+            S::Return { value, .. } => {
+                if let Some(value) = value {
+                    self.expr(value);
                 }
             }
-        }
-        if matches!(
-            statement,
-            S::GeneratorForOf {
-                name: _,
-                ty: _,
-                mutable: _,
-                subject: _,
-                body: _,
-                pos: _
+            S::If {
+                cond, then, els, ..
+            } => {
+                self.expr(cond);
+                self.scoped_stmts(then);
+                if let Some(els) = els {
+                    self.scoped_stmts(els);
+                }
             }
-        ) {
-            self.record_indirect_call();
-        }
-        if let S::Using {
-            bindings,
-            body: _,
-            finalizer: _,
-            pos: _,
-        } = statement
-        {
-            for binding in bindings.iter().rev() {
-                self.stmt(&binding.hook());
+            S::While { cond, body, .. } => {
+                self.expr(cond);
+                self.scoped_stmts(body);
             }
+            S::DoWhile { body, cond, .. } => {
+                self.scoped_stmts(body);
+                self.expr(cond);
+            }
+            S::For {
+                init,
+                cond,
+                step,
+                body,
+                ..
+            } => {
+                let locals = self.locals.clone();
+                if let Some(init) = init {
+                    self.stmt(init);
+                }
+                if let Some(cond) = cond {
+                    self.expr(cond);
+                }
+                self.scoped_stmts(step);
+                self.scoped_stmts(body);
+                self.locals = locals;
+            }
+            S::ForOf {
+                name,
+                subject,
+                body,
+                ..
+            }
+            | S::GeneratorForOf {
+                name,
+                subject,
+                body,
+                ..
+            } => {
+                self.expr(subject);
+                let locals = self.locals.clone();
+                self.locals.insert(name.clone(), ModuleValues::unknown());
+                self.stmts(body);
+                self.locals = locals;
+                if matches!(statement, S::GeneratorForOf { .. }) {
+                    self.record_indirect_call();
+                }
+            }
+            S::Switch { disc, cases, .. } => {
+                self.expr(disc);
+                for case in cases {
+                    if let Some(test) = &case.test {
+                        self.expr(test);
+                    }
+                    self.scoped_stmts(&case.body);
+                }
+            }
+            S::Block(body) => self.scoped_stmts(body),
+            S::Try {
+                body,
+                binding,
+                handler,
+                ..
+            } => {
+                self.scoped_stmts(body);
+                let locals = self.locals.clone();
+                if let Some((name, _)) = binding {
+                    self.locals.insert(name.clone(), ModuleValues::unknown());
+                }
+                self.stmts(handler);
+                self.locals = locals;
+            }
+            S::Using {
+                body,
+                finalizer,
+                bindings,
+                ..
+            } => {
+                let locals = self.locals.clone();
+                self.stmts(body);
+                if let Some(finalizer) = finalizer {
+                    self.scoped_stmts(finalizer);
+                }
+                for binding in bindings.iter().rev() {
+                    self.stmt(&binding.hook());
+                }
+                self.locals = locals;
+            }
+            S::Break(_) | S::Continue(_) => {}
         }
     }
 
-    fn callee(&mut self, callee: &hir::Callee, args: &[hir::Expr]) {
+    fn callee(&mut self, callee: &hir::Callee, args: &[hir::Expr]) -> bool {
+        let mut callback = false;
         use hir::Callee as C;
         match callee {
             C::Func(name) => {
@@ -354,11 +447,21 @@ impl<'a> ModuleEffectScanner<'a> {
                     name.full_text().to_owned(),
                 );
             }
-            C::Standard(_)
-            | C::Foreign(_)
-            | C::Value(_)
-            | C::NamedLambda { .. }
-            | C::LambdaSelf { .. } => self.record_indirect_call(),
+            C::Standard(_) | C::Foreign(_) => self.record_indirect_call(),
+            C::Value(value) | C::NamedLambda { value, .. } => {
+                let values = self.values(value);
+                self.effects.indirect.push(values.clone());
+                self.effects
+                    .call_sources
+                    .push(ModuleCallSource::Expression(values));
+            }
+            C::LambdaSelf { id, .. } => {
+                let values = ModuleValues::made(ModuleFunction::Lambda(*id));
+                self.effects.indirect.push(values.clone());
+                self.effects
+                    .call_sources
+                    .push(ModuleCallSource::Expression(values));
+            }
             C::Method { recv, name } => {
                 if let Some((hir::OperationSignatureTarget::BuiltinMethod(method), _)) =
                     hir::operation_signature_target(callee)
@@ -612,6 +715,7 @@ impl<'a> ModuleEffectScanner<'a> {
                     | hir::ArrFn::CopyWithin
                     | hir::ArrFn::At => false,
                 } {
+                    callback = true;
                     self.callback(args);
                 }
             }
@@ -627,6 +731,7 @@ impl<'a> ModuleEffectScanner<'a> {
                     | hir::MapFn::Delete
                     | hir::MapFn::Clear => false,
                 } {
+                    callback = true;
                     self.callback(args);
                 }
             }
@@ -647,6 +752,7 @@ impl<'a> ModuleEffectScanner<'a> {
                     | hir::SetFn::IsSupersetOf
                     | hir::SetFn::IsDisjointFrom => false,
                 } {
+                    callback = true;
                     self.callback(args);
                 }
             }
@@ -665,16 +771,27 @@ impl<'a> ModuleEffectScanner<'a> {
                 }
             }
         }
+        callback
     }
 
     fn expr(&mut self, expression: &hir::Expr) {
+        self.expr_use(expression, true);
+    }
+
+    fn expr_use(&mut self, expression: &hir::Expr, escapes: bool) {
         use hir::ExprKind as K;
+        if escapes {
+            self.effects.escapes.push(self.values(expression));
+        }
 
         match &expression.kind {
-            K::LambdaMember(_) => {}
-            K::Lambda { id, body, .. } => {
+            K::LambdaMember(id) => self.effects.made.push(ModuleFunction::Lambda(*id)),
+            K::Lambda {
+                id, params, body, ..
+            } => {
                 let unit = ModuleFunction::Lambda(*id);
                 let mut scanner = self.nested();
+                scanner.parameters(unit.clone(), params);
                 scanner.stmts(body);
                 self.effects
                     .lambdas
@@ -722,7 +839,10 @@ impl<'a> ModuleEffectScanner<'a> {
                 if let Some(unit) = unit {
                     self.call_defaults(unit, args.len());
                 }
-                self.callee(callee, args);
+                let callback = self.callee(callee, args);
+                let direct = self.direct_callee(callee);
+                self.call_uses(callee, args, direct, callback);
+                return;
             }
             K::New { class, args } => {
                 self.call_defaults(ModuleFunction::Constructor(*class), args.len());
@@ -730,7 +850,15 @@ impl<'a> ModuleEffectScanner<'a> {
                     || "constructor".to_string(),
                     |definition| self.class_member_label(definition, "constructor"),
                 );
-                self.record_call(ModuleFunction::Constructor(*class), label);
+                let unit = ModuleFunction::Constructor(*class);
+                self.record_call(unit.clone(), label);
+                // compiler.md §332 rule 2: an implicit field constructor retains each argument.
+                let declared = self
+                    .classes
+                    .get(class.0)
+                    .is_some_and(|class| class.ctor.is_some());
+                self.argument_uses(args, declared.then_some(unit), false);
+                return;
             }
             K::AsyncCall { callee, args } | K::AsyncHandleCreate { callee, args, .. } => {
                 let unit = match callee {
@@ -739,8 +867,40 @@ impl<'a> ModuleEffectScanner<'a> {
                         ModuleFunction::Method(*class, name.clone())
                     }
                 };
-                self.call_defaults(unit, args.len());
-                self.async_callee(callee)
+                self.call_defaults(unit.clone(), args.len());
+                self.async_callee(callee);
+                if let hir::AsyncCallee::Method { receiver, .. } = callee {
+                    self.expr(receiver);
+                }
+                self.argument_uses(args, Some(unit), false);
+                return;
+            }
+            K::Assign { target, .. } => self.parameter_assignment(target),
+            K::Cond { cond, then, els } => {
+                self.expr(cond);
+                self.expr_use(then, escapes);
+                self.expr_use(els, escapes);
+                return;
+            }
+            K::Binary {
+                op: hir::BinOp::Or,
+                left,
+                right,
+            } => {
+                self.expr_use(left, escapes);
+                self.expr_use(right, escapes);
+                return;
+            }
+            K::Cast(inner) => {
+                self.expr_use(inner, escapes);
+                return;
+            }
+            K::Seq { effects, value } => {
+                for effect in effects {
+                    self.expr(effect);
+                }
+                self.expr_use(value, escapes);
+                return;
             }
             K::Int(_)
             | K::Float(_)
@@ -753,8 +913,6 @@ impl<'a> ModuleEffectScanner<'a> {
             | K::Unary { .. }
             | K::Binary { .. }
             | K::AbsenceTest { .. }
-            | K::Assign { .. }
-            | K::Cast(_)
             | K::Zero
             | K::Unassigned
             | K::RawNew { .. }
@@ -769,9 +927,7 @@ impl<'a> ModuleEffectScanner<'a> {
             | K::AsyncHandleAwait(_)
             | K::TaskGroup { .. }
             | K::AsyncAll { .. }
-            | K::AsyncHandleTransfer { .. }
-            | K::Cond { .. }
-            | K::Seq { .. } => {}
+            | K::AsyncHandleTransfer { .. } => {}
         }
         for child in expression.children() {
             match child {
@@ -848,6 +1004,7 @@ impl<'a> ModuleItemScan<'a> {
 struct ModuleRouteScan {
     made: HashSet<ModuleFunction>,
     made_order: Vec<ModuleFunction>,
+    flow: ModuleValueFlow,
 }
 
 impl ModuleRouteScan {
@@ -870,41 +1027,63 @@ impl ModuleRouteScan {
                 queue_pops: 0,
             },
         };
+        self.flow.add(effects);
+        let mut indirect = Vec::new();
         let mut indirect_route = None;
-        while let Some((summary, route)) = item.queue.pop_front() {
-            #[cfg(test)]
-            {
-                item.reads.queue_pops += 1;
-            }
-            for name in &summary.accesses {
-                item.reads.accesses.entry(name.clone()).or_insert(route);
-            }
-            for unit in &summary.made {
-                if self.made.insert(unit.clone()) {
-                    self.made_order.push(unit.clone());
-                    if let Some(parent) = indirect_route {
-                        item.enqueue(unit, parent, None)?;
+        loop {
+            while let Some((summary, route)) = item.queue.pop_front() {
+                #[cfg(test)]
+                {
+                    item.reads.queue_pops += 1;
+                }
+                for name in &summary.accesses {
+                    item.reads.accesses.entry(name.clone()).or_insert(route);
+                }
+                for unit in &summary.made {
+                    if self.made.insert(unit.clone()) {
+                        self.made_order.push(unit.clone());
+                    }
+                    if let Some(summary) = summaries.get(unit) {
+                        self.flow.register(unit, summary);
+                    }
+                }
+                let mut sources = summary.indirect.clone();
+                for (unit, label) in &summary.calls {
+                    if let Some(summary) = summaries.get(unit) {
+                        self.flow.register(unit, summary);
+                        item.enqueue(unit, route, Some(label))?;
+                    } else {
+                        sources.push(ModuleValues::unknown());
+                        self.flow
+                            .call_source(ModuleCallSource::Unspecified(ModuleValues::unknown()));
+                    }
+                }
+                if !sources.is_empty() {
+                    let parent = *indirect_route.get_or_insert_with(|| {
+                        let parent = item.reads.routes.len();
+                        item.reads.routes.push(ModuleRoute {
+                            parent: Some(route),
+                            label: Some("[indirect call]".to_string()),
+                        });
+                        parent
+                    });
+                    for source in sources {
+                        indirect.push((source, parent));
                     }
                 }
             }
-            let mut indirect = summary.indirect;
-            for (unit, label) in &summary.calls {
-                if summaries.contains_key(unit) {
-                    item.enqueue(unit, route, Some(label))?;
-                } else {
-                    indirect = true;
+            self.flow.solve(summaries);
+            for (sources, parent) in &indirect {
+                let values = self.flow.values(sources);
+                // compiler.md §332 rule 4: each source is limited to M(k), in made order.
+                for unit in &self.made_order {
+                    if values.contains(unit) {
+                        item.enqueue(unit, *parent, None)?;
+                    }
                 }
             }
-            if indirect && indirect_route.is_none() {
-                let parent = item.reads.routes.len();
-                item.reads.routes.push(ModuleRoute {
-                    parent: Some(route),
-                    label: Some("[indirect call]".to_string()),
-                });
-                for unit in &self.made_order {
-                    item.enqueue(unit, parent, None)?;
-                }
-                indirect_route = Some(parent);
+            if item.queue.is_empty() {
+                break;
             }
         }
         Ok(item.reads)
@@ -1156,7 +1335,7 @@ pub(super) fn module_initializer_diagnostics(
             .with_generators(&generators)
             .with_defaults(&defaults)
             .with_class_labels(&ambiguous_class_names)
-            .constructor(class);
+            .constructor(class, class_id);
         insert_module_summary(
             ModuleFunction::Constructor(class_id),
             constructor,
@@ -1167,7 +1346,10 @@ pub(super) fn module_initializer_diagnostics(
                 .with_generators(&generators)
                 .with_defaults(&defaults)
                 .with_class_labels(&ambiguous_class_names)
-                .function(method);
+                .function_unit(
+                    method,
+                    ModuleFunction::Method(class_id, method.symbol.clone()),
+                );
             insert_module_summary(
                 ModuleFunction::Method(class_id, method.symbol.clone()),
                 direct,
@@ -1176,71 +1358,111 @@ pub(super) fn module_initializer_diagnostics(
         }
     }
 
+    let scanner = || {
+        ModuleEffectScanner::new(&checker.classes)
+            .with_generators(&generators)
+            .with_defaults(&defaults)
+            .with_class_labels(&ambiguous_class_names)
+            .with_diagnosed_accesses(&checker.diagnosed_class_accesses)
+    };
+    let mut global_effects = Vec::new();
+    for global in &checker.globals {
+        let mut scanner = scanner().with_lambda_name(&global.name);
+        scanner.expr_use(&global.init, global.mutable);
+        summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
+        global_effects.push(scanner.effects);
+    }
+    let mut statement_effects = Vec::new();
+    for statement in &checker.top_level {
+        let mut scanner = scanner();
+        scanner.stmt(statement);
+        summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
+        statement_effects.push(scanner.effects);
+    }
+
     let mut diagnostics = Vec::new();
     let mut initialized = HashSet::new();
     let mut scan = ModuleRouteScan::default();
-    let mut check_effect = |mut scanner: ModuleEffectScanner<'_>,
-                            pos: &Pos,
-                            initialized: &HashSet<String>,
-                            direct: &str| {
-        summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
-        let reads = match scan.resolve(&scanner.effects, &summaries) {
-            Ok(reads) => reads,
-            Err(message) => {
-                diagnostics.push(diagnostic(message.site, message.message, pos.clone()));
-                return;
-            }
-        };
-        let violation = reads
-            .accesses
-            .iter()
-            .filter(|(binding, _)| !initialized.contains(*binding))
-            .filter_map(|(binding, &route)| {
-                bindings.get(binding).map(|&index| (index, binding, route))
-            })
-            .min_by_key(|&(index, _, _)| index);
-        let Some((_, binding, route_index)) = violation else {
-            return;
-        };
-        let path = reads.route(route_index);
-        let route = if path.is_empty() {
-            direct.to_string()
-        } else {
-            let path = path
+    for global in &checker.globals {
+        if !global.mutable {
+            scan.flow.globals.insert(
+                global.symbol.clone(),
+                ModuleEffectScanner::new(&checker.classes)
+                    .with_generators(&generators)
+                    .values(&global.init),
+            );
+        }
+    }
+    scan.flow.preload_escapes(
+        summaries
+            .values()
+            .chain(&global_effects)
+            .chain(&statement_effects),
+    );
+    let mut check_effect =
+        |effects: &ModuleEffects, pos: &Pos, initialized: &HashSet<String>, direct: &str| {
+            let reads = match scan.resolve(effects, &summaries) {
+                Ok(reads) => reads,
+                Err(message) => {
+                    diagnostics.push(diagnostic(message.site, message.message, pos.clone()));
+                    return;
+                }
+            };
+            let violation = reads
+                .accesses
                 .iter()
-                .map(|step| {
-                    if *step == "[indirect call]" {
-                        "an indirect call".to_string()
-                    } else if *step == "[lambda]" {
-                        "a lambda".to_string()
-                    } else {
-                        format!("`{}`", label(step))
-                    }
+                .filter(|(binding, _)| !initialized.contains(*binding))
+                .filter_map(|(binding, &route)| {
+                    bindings.get(binding).map(|&index| (index, binding, route))
                 })
-                .collect::<Vec<_>>()
-                .join(" -> ");
-            format!("through {path}")
-        };
-        let diagnostic = diagnostic(
-            if path.is_empty() {
-                RejectionSite::InitializerDirectRead
+                .min_by_key(|&(index, _, _)| index);
+            let Some((_, binding, route_index)) = violation else {
+                return;
+            };
+            let path = reads.route(route_index);
+            let route = if path.is_empty() {
+                direct.to_string()
             } else {
-                RejectionSite::InitializerRouteRead
-            },
-            format!(
-                "`{}` is accessed before its declaration, {route}",
-                label(binding)
-            ),
-            pos.clone(),
-        );
-        diagnostics.push(diagnostic);
-    };
+                let path = path
+                    .iter()
+                    .map(|step| {
+                        if *step == "[indirect call]" {
+                            "an indirect call".to_string()
+                        } else if *step == "[lambda]" {
+                            "a lambda".to_string()
+                        } else {
+                            format!("`{}`", label(step))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" -> ");
+                format!("through {path}")
+            };
+            let diagnostic = diagnostic(
+                if path.is_empty() {
+                    RejectionSite::InitializerDirectRead
+                } else {
+                    RejectionSite::InitializerRouteRead
+                },
+                format!(
+                    "`{}` is accessed before its declaration, {route}",
+                    label(binding)
+                ),
+                pos.clone(),
+            );
+            diagnostics.push(diagnostic);
+        };
     // compiler.md §137 rules 5 and 5a: each file checks its source order.
     for &file in file_order {
         let Some(segment) = &file_segments[file] else {
             continue;
         };
-        for statement_index in segment.top_level.start..=segment.top_level.end {
+        let statements = statement_effects[segment.top_level.clone()]
+            .iter()
+            .map(Some)
+            .chain(std::iter::once(None));
+        for (offset, effects) in statements.enumerate() {
+            let statement_index = segment.top_level.start + offset;
             for &global_index in &segment.globals {
                 let global = &checker.globals[global_index];
                 if global.initializer_index != statement_index {
@@ -1248,15 +1470,8 @@ pub(super) fn module_initializer_diagnostics(
                 }
                 {
                     let init = &global.init;
-                    let mut scanner = ModuleEffectScanner::new(&checker.classes)
-                        .with_generators(&generators)
-                        .with_defaults(&defaults)
-                        .with_class_labels(&ambiguous_class_names)
-                        .with_diagnosed_accesses(&checker.diagnosed_class_accesses);
-                    scanner = scanner.with_lambda_name(&global.name);
-                    scanner.expr(init);
                     check_effect(
-                        scanner,
+                        &global_effects[global_index],
                         &init.pos,
                         &initialized,
                         "directly from this initializer",
@@ -1264,19 +1479,13 @@ pub(super) fn module_initializer_diagnostics(
                 }
                 initialized.insert(global.symbol.full_text().to_string());
             }
-            if statement_index < segment.top_level.end {
+            if let Some(effects) = effects {
                 let statement = &checker.top_level[statement_index];
-                let mut scanner = ModuleEffectScanner::new(&checker.classes)
-                    .with_generators(&generators)
-                    .with_defaults(&defaults)
-                    .with_class_labels(&ambiguous_class_names)
-                    .with_diagnosed_accesses(&checker.diagnosed_class_accesses);
-                scanner.stmt(statement);
                 let pos = init_order::statement_pos(statement)
                     .cloned()
                     .unwrap_or_else(|| Pos::new(&checker.prog.files[file].name, 1, 1));
                 check_effect(
-                    scanner,
+                    effects,
                     &pos,
                     &initialized,
                     "directly from this top-level statement",
@@ -1404,7 +1613,7 @@ export function main(): void { print(banner); }
             };
             let mut scanner = ModuleEffectScanner::new(definitions);
             scanner.method_call(&receiver, &hir::Symbol::from_full_text("missing"));
-            assert!(scanner.effects.indirect);
+            assert!(!scanner.effects.indirect.is_empty());
             assert!(resolved_with_value(&scanner.effects, false).is_empty());
             assert_eq!(
                 resolved_with_value(&scanner.effects, true).get("later"),
@@ -1435,31 +1644,40 @@ export function main(): void { print(banner); }
                 },
                 &[],
             );
-            assert_eq!(scanner.effects.indirect, name == "next", "{name}");
+            assert_eq!(
+                !scanner.effects.indirect.is_empty(),
+                name == "next",
+                "{name}"
+            );
         }
     }
 
     fn resolved_with_value(effects: &ModuleEffects, made: bool) -> BTreeMap<String, Vec<String>> {
-        let unit = ModuleFunction::Lambda(hir::LambdaId(0));
-        let summaries = HashMap::from([(
-            unit.clone(),
-            ModuleEffects {
-                accesses: std::collections::BTreeSet::from(["later".to_string()]),
-                ..ModuleEffects::default()
-            },
-        )]);
-        let mut scan = ModuleRouteScan::default();
+        let mut scanner = ModuleEffectScanner::new(&[]);
+        scanner.effects = effects.clone();
         if made {
-            scan.made.insert(unit.clone());
-            scan.made_order.push(unit);
+            let module = crate::check_program(&[crate::SourceFile::entry(
+                "main.ts", "class Box { v: i32 = 1; } const stored = (): i32 => later.v; const later: Box = new Box(); export function main(): void {}",
+            )]).expect("the uncalled value reads no initializer");
+            scanner.expr(
+                &module
+                    .globals
+                    .iter()
+                    .find(|g| g.name == "stored")
+                    .unwrap()
+                    .init,
+            );
         }
-        let reads = scan.resolve(effects, &summaries).expect("valid summaries");
+        let summaries = std::mem::take(&mut scanner.effects.lambdas);
+        let reads = ModuleRouteScan::default()
+            .resolve(&scanner.effects, &summaries)
+            .expect("valid summaries");
         reads
             .accesses
             .iter()
             .map(|(name, &index)| {
                 (
-                    name.clone(),
+                    source_name(name),
                     reads.route(index).into_iter().map(str::to_string).collect(),
                 )
             })
@@ -1495,7 +1713,7 @@ export function main(): void { print(banner); }
             ty: Type::Class(ClassId(99)),
             pos: Pos::new("main.ts", 1, 1),
         });
-        assert!(scanner.effects.indirect);
+        assert!(!scanner.effects.indirect.is_empty());
         assert!(resolved_with_value(&scanner.effects, false).is_empty());
         assert_eq!(
             resolved_with_value(&scanner.effects, true).get("later"),
@@ -1509,53 +1727,90 @@ export function main(): void { print(banner); }
             source.push_str(&format!("const cb{index}: () => i32 = (): i32 => {{ values.filter((v: i32): boolean => v > 0); return stored(); }};"));
         }
         source.push_str("const first: i32 = cb0(); export function main(): void {}");
-        let module = crate::check_program(&[crate::SourceFile::entry("main.ts", source)])
-            .expect("callbacks read only initialized globals");
-        let mut summaries = HashMap::new();
-        for function in &module.functions {
-            insert_module_summary(
-                ModuleFunction::Free(function.symbol.clone()),
-                ModuleEffectScanner::new(&module.classes).function(function),
-                &mut summaries,
-            );
-        }
-        let mut scan = ModuleRouteScan::default();
-        let mut pops = 0;
-        for global in &module.globals {
-            let mut scanner = ModuleEffectScanner::new(&module.classes);
-            scanner.expr(&global.init);
-            summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
-            let reads = scan
-                .resolve(&scanner.effects, &summaries)
-                .expect("valid summaries");
-            assert!(
-                reads.routes.len() <= reads.queue_pops + 1,
-                "one link per pop and at most one indirect link"
-            );
-            for (index, route) in reads.routes.iter().enumerate() {
-                assert!(
-                    route.parent.is_none_or(|parent| parent < index),
-                    "parents precede children"
+        fn visits(source: &str) -> usize {
+            let module = crate::check_program(&[crate::SourceFile::entry("main.ts", source)])
+                .expect("callbacks read only initialized globals");
+            let mut summaries = HashMap::new();
+            for function in &module.functions {
+                insert_module_summary(
+                    ModuleFunction::Free(function.symbol.clone()),
+                    ModuleEffectScanner::new(&module.classes).function(function),
+                    &mut summaries,
                 );
             }
-            pops += reads.queue_pops;
+            let mut scan = ModuleRouteScan::default();
+            for global in &module.globals {
+                if !global.mutable {
+                    scan.flow.globals.insert(
+                        global.symbol.clone(),
+                        ModuleEffectScanner::new(&module.classes).values(&global.init),
+                    );
+                }
+            }
+            let mut pops = 0;
+            for global in &module.globals {
+                let mut scanner = ModuleEffectScanner::new(&module.classes);
+                scanner.expr(&global.init);
+                summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
+                let reads = scan
+                    .resolve(&scanner.effects, &summaries)
+                    .expect("valid summaries");
+                assert!(
+                    reads.routes.len() <= reads.queue_pops + 1,
+                    "one link per pop and at most one indirect link"
+                );
+                for (index, route) in reads.routes.iter().enumerate() {
+                    assert!(
+                        route.parent.is_none_or(|parent| parent < index),
+                        "parents precede children"
+                    );
+                }
+                pops += reads.queue_pops;
+            }
+            pops
         }
         assert_eq!(
-            pops, 40,
-            "fifteen item roots, twelve outer units, twelve filter units, and leaf"
+            visits(&source),
+            18,
+            "fifteen roots and three followed units"
+        );
+        assert_eq!(
+            visits(&source.replace("cb0()", "cb0() + cb0()")),
+            18,
+            "a second call does not visit a unit twice"
+        );
+        assert_eq!(
+            visits(&source.replace("cb0()", "cb0() + cb11()")),
+            20,
+            "a different callee adds its body and its callback"
         );
     }
 
     #[test]
     fn a_made_unit_without_a_summary_returns_an_error() {
-        let unit = ModuleFunction::Lambda(hir::LambdaId(99));
-        let mut scan = ModuleRouteScan::default();
-        scan.made.insert(unit.clone());
-        scan.made_order.push(unit);
-        let effects = ModuleEffects {
-            indirect: true,
-            ..ModuleEffects::default()
+        let member = hir::Expr {
+            pending_work: None,
+            kind: hir::ExprKind::LambdaMember(hir::LambdaId(99)),
+            ty: Type::Func(Box::new(crate::types::FuncType {
+                params: vec![],
+                ret: Type::I32,
+                callback_typedef: None,
+            })),
+            pos: Pos::new("main.ts", 1, 1),
         };
+        let call = hir::Expr {
+            pending_work: None,
+            kind: hir::ExprKind::Call {
+                callee: hir::Callee::Value(Box::new(member)),
+                args: vec![],
+            },
+            ty: Type::I32,
+            pos: Pos::new("main.ts", 1, 1),
+        };
+        let mut scanner = ModuleEffectScanner::new(&[]);
+        scanner.expr(&call);
+        let mut scan = ModuleRouteScan::default();
+        let effects = scanner.effects;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             scan.resolve(&effects, &HashMap::new())
         }));
@@ -1565,6 +1820,73 @@ export function main(): void { print(banner); }
                 RejectionSite::InitializerMissingSummary,
                 "internal error: made function value has no summary".to_string()
             ))
+        );
+    }
+    #[test]
+    fn non_known_call_counts_classify_all_call_sources() {
+        fn count(extra: &str) -> usize {
+            let source = format!("function invoke(h: () => void, k: string): void {{ h(); }} const retained = (): void => {{}}; const m: Map<string, () => void> = new Map<string, () => void>(); m.set(\"value\", retained); invoke(retained, \"direct\"); {extra} export function main(): void {{}}");
+            let module = crate::check_program(&[crate::SourceFile::entry("main.ts", source)])
+                .expect("each callback reads only initialized state");
+            let unit = ModuleFunction::Free(
+                module
+                    .functions
+                    .iter()
+                    .find(|f| f.name == "invoke")
+                    .unwrap()
+                    .symbol
+                    .clone(),
+            );
+            let mut summaries = HashMap::new();
+            for function in &module.functions {
+                insert_module_summary(
+                    ModuleFunction::Free(function.symbol.clone()),
+                    ModuleEffectScanner::new(&module.classes).function(function),
+                    &mut summaries,
+                );
+            }
+            let mut roots = Vec::new();
+            let mut scan = ModuleRouteScan::default();
+            for global in &module.globals {
+                let mut scanner = ModuleEffectScanner::new(&module.classes);
+                scanner.expr_use(&global.init, global.mutable);
+                summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
+                if !global.mutable {
+                    scan.flow
+                        .globals
+                        .insert(global.symbol.clone(), scanner.values(&global.init));
+                }
+                roots.push(scanner.effects);
+            }
+            for statement in &module.top_level {
+                let mut scanner = ModuleEffectScanner::new(&module.classes);
+                scanner.stmt(statement);
+                summaries.extend(std::mem::take(&mut scanner.effects.lambdas));
+                roots.push(scanner.effects);
+            }
+            scan.flow.preload_escapes(summaries.values().chain(&roots));
+            for root in &roots {
+                scan.resolve(root, &summaries).expect("complete summaries");
+            }
+            scan.flow.solve(&summaries);
+            scan.flow.non_known_call_count(&unit)
+        }
+        assert_eq!(count(""), 0, "direct inputs are complete");
+        assert_eq!(count("m.forEach(invoke);"), 1, "one implicit caller");
+        assert_eq!(
+            count("m.forEach(invoke); m.forEach(invoke);"),
+            2,
+            "each call site counts once across the fixed point"
+        );
+        assert_eq!(
+            count("const saved: ((h: () => void, k: string) => void)[] = [invoke];"),
+            1,
+            "an escape is a non-known caller"
+        );
+        assert_eq!(
+            count("let dynamic = invoke; dynamic(retained, \"unknown\");"),
+            2,
+            "an escape and an unknown call are two sources"
         );
     }
 }

@@ -364,21 +364,20 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r544-two-different-literals-do-not-compare.ts`](../corpus/reject/r544-two-different-literals-do-not-compare.ts), line 15.
+Pinned corpus: [`corpus/reject/r548-an-indirect-call-runs-its-argument.ts`](../corpus/reject/r548-an-indirect-call-runs-its-argument.ts), line 10.
 
 Header guidance:
 
 ```text
-// tsc: rejects TS2367
-// expected-error: S100 at line 15
+// tsc: accepts
+// expected-error: S100: `LATER` is accessed before its declaration, through `run` -> an indirect call
 ```
 
 ```ts
-class K { readonly size = 4; static readonly Z = 0; }
-export function main(): void {
-  MODE === 2;
-  MODE !== 2;
-  MODE == 2;
+function run(f: () => void): void { f(); }
+const later = (): void => { print(`${LATER}`); };
+run(later);
+const LATER: i32 = 5;
 ```
 
 ## Listed diagnostic examples (§182)

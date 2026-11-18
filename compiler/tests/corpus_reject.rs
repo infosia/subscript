@@ -67,6 +67,32 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
     (
+        "r548-an-indirect-call-runs-its-argument.ts",
+        RuleCode::S100,
+        10,
+    ),
+    (
+        "r549-an-indirect-call-runs-a-forwarded-argument.ts",
+        RuleCode::S100,
+        11,
+    ),
+    (
+        "r550-an-indirect-call-runs-an-escaped-value.ts",
+        RuleCode::S100,
+        10,
+    ),
+    (
+        "r551-an-indirect-call-runs-an-immediate-lambda.ts",
+        RuleCode::S100,
+        9,
+    ),
+    ("r552-a-map-calls-a-lambda-callback.ts", RuleCode::S100, 11),
+    (
+        "r553-a-map-calls-a-declared-callback.ts",
+        RuleCode::S100,
+        13,
+    ),
+    (
         "r544-two-different-literals-do-not-compare.ts",
         RuleCode::S100,
         15,
