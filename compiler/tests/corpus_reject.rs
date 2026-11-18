@@ -72,6 +72,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
         15,
     ),
     ("r545-switch-different-literal.ts", RuleCode::S100, 12),
+    ("r546-capture-of-a-for-of-element.ts", RuleCode::S009, 12),
+    ("r547-capture-of-an-index-copy.ts", RuleCode::S009, 12),
     ("r542-dropped-slice-handle-result.ts", RuleCode::S013, 10),
     ("r543-dropped-default-handle.ts", RuleCode::S013, 8),
     ("r534-conditional-handle-binding.ts", RuleCode::S013, 8),

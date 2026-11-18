@@ -604,6 +604,7 @@ const ALLOWLIST: &[AllowGroup] = &[
         ("capture.rs", "expr", 0x4c573ebc382cad42),
         ("capture/blocks.rs", "flow_inputs", 0x80bc8ebc9b829d3a),
         ("capture.rs", "type_name", 0xdb23dc965253bee9),
+        ("capture.rs", "array_index_source", 0x9609e7d1bcd72cce),
     ] },
     AllowGroup { name: "union-members", reason: "Union decomposition preserves T identity; each member then uses apparent_type (§143 rule 1c).", sites: &[
         ("expr/call.rs", "check_indirect_call_with_arguments", 0xed9d360786d01965),

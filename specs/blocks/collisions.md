@@ -155,7 +155,10 @@ retired:r248-capture-through-indirect-call (§274), `r353`, `r354`, `r357`, `r35
 lambda that captures `this`, §157; `tsc`-clean),
 `r396-counted-capture-direct`, `r396-counted-capture-copy`,
 `r396-counted-capture-transitive`, `r396-counted-capture-loop` (§175;
-`tsc`-clean).
+`tsc`-clean), `r546-capture-of-a-for-of-element`,
+`r547-capture-of-an-index-copy` (§331; `tsc`-clean: a lambda borrows a
+captured array element, and the array can drop that element before the
+lambda runs).
 
 ### C6. Exceptions (Q9) — `Error`-family only, uncatchable traps
 

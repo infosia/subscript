@@ -5,6 +5,8 @@ use crate::{Diagnostic, Type};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 mod blocks;
+#[cfg(test)]
+pub(super) use blocks::ARRAY_ELEMENT_EXAMPLES;
 
 type Env = super::Shared<HashMap<String, usize>>;
 struct Analysis<'a> {
@@ -40,6 +42,8 @@ impl<'a> Analysis<'a> {
             name,
             block: self.block,
             counted: false,
+            initializer: None,
+            array_element: None,
         });
         env.insert(name.into(), id);
         id
@@ -65,9 +69,22 @@ impl<'a> Analysis<'a> {
     }
     fn stmt(&mut self, s: &'a Stmt, env: &mut Env) {
         match s {
-            Stmt::Let { name, init, .. } => {
+            Stmt::Let {
+                name,
+                init,
+                mutable,
+                ..
+            } => {
                 self.expr(init, env);
                 let id = self.bind(env, name, false);
+                self.locals[id].initializer = Some(init);
+                if !mutable {
+                    self.locals[id].array_element =
+                        array_index_source(init).map(|array| blocks::ArrayElement {
+                            array,
+                            for_of: false,
+                        });
+                }
                 self.equations.push((id, init));
             }
             Stmt::Return { value: Some(v), .. } => {
@@ -146,6 +163,21 @@ impl<'a> Analysis<'a> {
                 let mut scope = env.clone();
                 let parent = self.enter_block();
                 let id = self.bind(&mut scope, name, false);
+                if let Stmt::ForOf { kind, .. } = s {
+                    let array = match kind {
+                        // The dynamic-array subject is a checker-generated binding (§331 rule 2).
+                        hir::ForOfKind::ArrayValues => self
+                            .bindings
+                            .get(&(subject as *const Expr as usize))
+                            .and_then(|id| self.locals[*id].initializer),
+                        hir::ForOfKind::FixedArrayValues => Some(subject),
+                        _ => None,
+                    };
+                    self.locals[id].array_element = array.map(|array| blocks::ArrayElement {
+                        array,
+                        for_of: true,
+                    });
+                }
                 if self.carries(ty) {
                     self.equations.push((id, subject));
                 }
@@ -800,6 +832,16 @@ fn own_child(child: hir::HirChildMut<'_>, owned: &HashSet<usize>) {
                 own_child(child, owned);
             }
         }
+    }
+}
+
+// compiler.md §331 rule 2: capture analysis reads the final concrete HIR (§135 rule 1).
+fn array_index_source(expr: &Expr) -> Option<&Expr> {
+    match &expr.kind {
+        E::Index { obj, .. } if matches!(obj.ty, Type::Array(_) | Type::FixedArray(_, _)) => {
+            Some(obj)
+        }
+        _ => None,
     }
 }
 

@@ -181,19 +181,19 @@ export function main(): void {
 
 A borrowed capture stays in its defining function and each captured counted binding block; a task group requires one lexical owner.
 
-Pinned corpus: [`corpus/reject/r396-counted-capture-direct.ts`](../corpus/reject/r396-counted-capture-direct.ts), line 11.
+Pinned corpus: [`corpus/reject/r546-capture-of-a-for-of-element.ts`](../corpus/reject/r546-capture-of-a-for-of-element.ts), line 12.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: S009: captured binding `h` is released when its block exits; local `f` is declared outside that block
+// expected-error: S009: captured binding `h` borrows an element of array `hs`; the array can drop that element before the lambda runs; local `f` is declared outside that block
 ```
 
 ```ts
-export async function main(): Promise<void> {
+  const hs: Promise<i32>[] = [work(1), work(2)];
   let f: () => Promise<i32> = () => work(0);
-  { const h = work(1); f = () => h; }
+  for (const h of hs) { f = () => h; }
   print(`${await f()}`);
 }
 ```

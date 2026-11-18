@@ -76,3 +76,35 @@ the value (§116 rule 4c). `tsc` accepts both forms.
 
 - §175 rule 4: the text of a capture of an array element names the
   array. §175.4 item 2 closes.
+
+### 331.4 Phase Review
+
+Form. The capture check follows the captured binding to its source: a
+for-of subject, an index read, or the initializer of a pattern binding.
+If a field, or a binding declared outside the block, holds the array,
+the S009 text names the array and the example captures it. Otherwise
+the §175 text stays. No accept or reject decision changes.
+
+Measured, development tier, at the pin `191071de` and after:
+
+| Form | Pin text | After |
+|---|---|---|
+| `for (const h of hs) { f = () => h; }` (`r546`) | "is released when its block exits" | "borrows an element of array `hs`; the array can drop that element before the lambda runs" |
+| `{ const h = hs[1]; f = () => h; }` (`r547`) | the same | the same as `r546` |
+| `{ const [h] = hs; f = () => h; }` | the same | the same as `r546` |
+| an array declared in the block, a temporary array | the same | the same as the pin |
+
+`tsc` accepts `r546`, `r547`, and the example `f = () => hs[1]`. The CLI
+`check` output of 1,165 other corpus entries is the same at the pin and
+after.
+
+One fresh review found one MAJOR finding, realistic: a pattern binding
+printed the name of the generated local (`[[pattern#0.source]]`). It is
+fixed. Its realistic MINOR finding is fixed by rule 2a: for an array
+declared in the block, the example was also rejected.
+
+### 331.5 Open
+
+1. A copy of an element binding (`const g = hs[0]; const h = g;`) and a
+   for-of binding over `Map.values()` keep the §175 text, although an
+   array or a map holds the value.

@@ -1,6 +1,7 @@
 //! Each displayed TypeScript example reaches its rejection site (§311 rule 4).
 use super::*;
 use crate::ambient::ApiRejectionId;
+use crate::check::capture;
 use crate::divergence::DivergenceEntry;
 
 // §307 rule 5a: each new site-specific form b changes this review list.
@@ -96,11 +97,23 @@ fn entries() -> Vec<(RejectionSite, Divergence, DivergenceEntry)> {
         .collect()
 }
 
+fn array_entries() -> impl Iterator<Item = (RejectionSite, Divergence, DivergenceEntry)> {
+    capture::ARRAY_ELEMENT_EXAMPLES.into_iter().map(|entry| {
+        (
+            RejectionSite::CaptureOutlivesBlock,
+            Divergence::CaptureOutlivesBlock,
+            entry,
+        )
+    })
+}
+
 pub(super) fn programs() -> Vec<rejection_programs::Program> {
     entries()
         .into_iter()
         .filter(|(site, _, _)| site.example().is_some())
-        .flat_map(|(site, variant, entry)| {
+        .chain(array_entries())
+        .enumerate()
+        .flat_map(|(index, (site, variant, entry))| {
             [("fragment", entry.ts)]
                 .into_iter()
                 .chain(
@@ -113,7 +126,11 @@ pub(super) fn programs() -> Vec<rejection_programs::Program> {
                         files[0].source = format!("export {{}};\n{}", files[0].source);
                     }
                     rejection_programs::Program {
-                        key: format!("s311-{kind}-{site:?}.ts"),
+                        key: if site == RejectionSite::CaptureOutlivesBlock {
+                            format!("s331-{kind}-array-{index}.ts")
+                        } else {
+                            format!("s311-{kind}-{site:?}.ts")
+                        },
                         codes: BTreeSet::new(),
                         files,
                         poison: Vec::new(),
@@ -138,7 +155,8 @@ pub(super) fn all_checker_failures() -> Vec<String> {
     checker_failures(
         entries()
             .into_iter()
-            .filter(|(site, _, _)| site.example().is_some()),
+            .filter(|(site, _, _)| site.example().is_some())
+            .chain(array_entries()),
     )
 }
 
