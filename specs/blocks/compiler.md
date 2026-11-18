@@ -372,3 +372,4 @@ Every section, with its status:
 | §329 | A parameter borrows its handle | active | [`s329-a-parameter-borrows-its-handle.md`](compiler/s329-a-parameter-borrows-its-handle.md) |
 | §330 | Two different literals do not compare | active | [`s330-two-different-literals-do-not-compare.md`](compiler/s330-two-different-literals-do-not-compare.md) |
 | §331 | A capture of an array element names the array | active | [`s331-a-capture-of-an-array-element-names-the-array.md`](compiler/s331-a-capture-of-an-array-element-names-the-array.md) |
+| §332 | An indirect call runs the values that reach it | active | [`s332-an-indirect-call-runs-the-values-that-reach-it.md`](compiler/s332-an-indirect-call-runs-the-values-that-reach-it.md) |
