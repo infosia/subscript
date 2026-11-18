@@ -367,3 +367,4 @@ Every section, with its status:
 | §324 | A C array parameter is a pointer to the script array | active | [`s324-a-c-array-parameter-is-a-pointer-to-the-script-array.md`](compiler/s324-a-c-array-parameter-is-a-pointer-to-the-script-array.md) |
 | §325 | A C write that replaces a pointer is received or stops | active | [`s325-a-c-write-that-replaces-a-pointer-is-received-or-stops.md`](compiler/s325-a-c-write-that-replaces-a-pointer-is-received-or-stops.md) |
 | §326 | A fixed array of structs in a rebuilt struct is built element by element | active | [`s326-a-fixed-array-of-structs-in-a-rebuilt-struct-is-built-element-by-element.md`](compiler/s326-a-fixed-array-of-structs-in-a-rebuilt-struct-is-built-element-by-element.md) |
+| §327 | C bytes become a valid string | active | [`s327-c-bytes-become-a-valid-string.md`](compiler/s327-c-bytes-become-a-valid-string.md) |

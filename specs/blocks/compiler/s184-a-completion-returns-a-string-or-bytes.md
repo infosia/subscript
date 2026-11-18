@@ -98,7 +98,8 @@ completions of each, and a 1 MiB copy of 32–141 µs.
 2. **Other string boundaries keep invalid bytes.** A bound string-view
    parameter, a string field written through a C pointer, and
    `subscript_rt_str_from_view` copy bytes with no UTF-8 check
-   (measurement section 2). This section does not change them.
+   (measurement section 2). This section does not change them. §327
+   decodes them with replacement.
 
 ### 184.4 Sections this one amends
 
