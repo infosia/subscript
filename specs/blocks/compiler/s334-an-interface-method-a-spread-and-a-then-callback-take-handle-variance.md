@@ -68,3 +68,49 @@ function type is not a key kind), which this section does not change.
 - §235 rule 4: an interface implementation, a spread element, and a
   `then` callback parameter are places of rule 3. §235.4 items 2 and 3
   close.
+
+### 334.4 Phase Review
+
+Form. The interface implementation check, the spread element check of
+an array literal, and the `then` callback parameter check use the
+"fits" relation of §235 rule 2 (`type_fits`). A spread of function-typed
+elements records the §235 rule 5a conversion through the §305 `map`
+adapter. No lowering changes.
+
+Measured, the pin `1d481ce2` and after, development tier, ship tier,
+and `node` the same (a484):
+
+| Form | Pin | After |
+|---|---|---|
+| `m(): C` for `m(): C \| null`, called through `I` and on `K` | S100 | `result:7:7` |
+| `m(): string` for `m(): string \| null` | S100 | `text:text:text` |
+| `m(x: C \| null)` for `m(x: C)` | S100 | `parameter:7:7` |
+| `[...gs]` of `(x: C) => C` into `((x: C) => C \| null)[]` | S100 | `spread:7` |
+| `then((x: C \| null): i32 => …)` on `Promise<C>` | S100 | `then:7` |
+| `m(x: C)` for `m(x: C \| null)` (`r555`) | S100 | S100 |
+
+`tsc` accepts each form, `r555` included (method parameter
+bivariance). The CLI `check` output of 1,094 other corpus entries is the
+same at the pin and after. The LIR golden adds the a484 block only.
+
+One fresh review found one MAJOR finding, realistic: in a generic body
+`function g<U extends R>(x: U)`, a call `x.m()` has the class method
+type in an instance with `K`, so `const o = x.m(); if (o !== null)` is
+S100 although `tsc` types `o` as `C | null`. A fix needs the instance
+check to keep the constraint of a type parameter, which the form does
+not carry (the round stopped on core principle 8). The case is not a
+regression: at the pin, `K implements R` itself was rejected. It is
+§334.5 item 1. Its MINOR finding is fixed: a spread of function-typed
+elements recorded no conversion.
+
+### 334.5 Open
+
+1. In a generic body, a method call through a constraint `U extends I`
+   has the class method type in each instance, not the type of `I`. If
+   the class implements the method with a narrower type (rule 1), a
+   null test of the result is S100 (`operator !== not defined for C and
+   null`). The instance check needs the constraint of each type
+   parameter, with the declared and the concrete method signature.
+2. Contrived: a `then` callback of a nullable function value type with
+   variance inside (`((x: C) => C | null) | null` for `(x: C) => C`)
+   stays rejected, as §235 rule 2 gives.

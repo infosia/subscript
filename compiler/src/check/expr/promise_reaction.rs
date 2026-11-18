@@ -399,7 +399,12 @@ impl<'p> Checker<'p> {
                 .iter()
                 .zip(&params)
                 .all(|(actual, expected)| {
-                    self.apparent_type(actual) == self.apparent_type(expected)
+                    if role == Role::Fulfilled {
+                        // compiler.md §334 rule 3: the delivered value fits the parameter.
+                        self.type_fits(expected, actual)
+                    } else {
+                        self.apparent_type(actual) == self.apparent_type(expected)
+                    }
                 });
         if !fits {
             let required = self
@@ -440,6 +445,19 @@ impl<'p> Checker<'p> {
             if !captures.is_empty() {
                 *owns_environment = true;
             }
+        }
+        // compiler.md §334 rule 4 and §235 rule 5a: the helper calls
+        // through the delivered parameter types after the parameter check.
+        if role == Role::Fulfilled {
+            let place = Type::func(
+                params
+                    .iter()
+                    .take(signature.params.len())
+                    .cloned()
+                    .collect(),
+                signature.ret.clone(),
+            );
+            self.place_function_value(&mut checked, &place, fx);
         }
         let callback = Callback {
             ty: checked.ty.clone(),

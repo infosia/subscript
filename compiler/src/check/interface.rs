@@ -432,7 +432,14 @@ impl<'p> Checker<'p> {
                     continue;
                 }
                 let found = match self.class_member_type(id, member, &class.pos) {
-                    Some(found) if found == required || poisoned(&found) => continue,
+                    // compiler.md §334 rule 1: only method signatures take variance.
+                    Some(found)
+                        if poisoned(&found)
+                            || found == required
+                            || (!member.accessor && self.type_fits(&found, &required)) =>
+                    {
+                        continue;
+                    }
                     found => found,
                 };
                 match found {

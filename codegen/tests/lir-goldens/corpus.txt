@@ -81005,6 +81005,559 @@ fn f14 "<default a480-a-parameter-borrows-its-handle.ts:21:44>" kind=Synthesized
   b0 Some("entry"):
     %0: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(3)), parameter_types: [Data(I32)], return_type: Some(Data(I32)) })(Integer(7):I32) traps=[Trap { kind: Call, pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 44 } }] @ a480-a-parameter-borrows-its-handle.ts:21:44
     -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a480-a-parameter-borrows-its-handle.ts", line: 21, col: 44 } }
+===== a484-interface-spread-then-handle-variance =====
+module initializer=None
+class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0
+  field d0 "[[kind]]": U32 defaulted=false absence=false foreign=None @ :0:0
+  field d1 "name": Str defaulted=false absence=false foreign=None @ :0:0
+  field d2 "message": Str defaulted=false absence=false foreign=None @ :0:0
+  method m0 "constructor" -> f0
+class c1 "C" value=false descriptor=false boundary=false align=None @ a484-interface-spread-then-handle-variance.ts:7:7
+  field d3 "v": I32 defaulted=false absence=false foreign=None @ a484-interface-spread-then-handle-variance.ts:7:11
+class c2 "K" value=false descriptor=false boundary=false align=None @ a484-interface-spread-then-handle-variance.ts:9:7
+  method m1 "m" -> f1
+class c3 "T" value=false descriptor=false boundary=false align=None @ a484-interface-spread-then-handle-variance.ts:11:7
+  method m2 "m" -> f2
+class c4 "P" value=false descriptor=false boundary=false align=None @ a484-interface-spread-then-handle-variance.ts:13:7
+  method m3 "m" -> f3
+intrinsic Ambient.0 "Print"
+intrinsic Ambient.1 "Unreachable"
+intrinsic Ambient.2 "Collect"
+intrinsic Ambient.3 "UnsafeDelete"
+intrinsic ContextBytes.0 "BytesOf"
+intrinsic ContextBytes.1 "BytesInto"
+intrinsic ContextBytes.2 "FromBytes"
+intrinsic Math.0 "Abs"
+intrinsic Math.1 "Acos"
+intrinsic Math.2 "Acosh"
+intrinsic Math.3 "Asin"
+intrinsic Math.4 "Asinh"
+intrinsic Math.5 "Atan"
+intrinsic Math.6 "Atanh"
+intrinsic Math.7 "Cbrt"
+intrinsic Math.8 "Ceil"
+intrinsic Math.9 "Cos"
+intrinsic Math.10 "Cosh"
+intrinsic Math.11 "Exp"
+intrinsic Math.12 "Expm1"
+intrinsic Math.13 "Floor"
+intrinsic Math.14 "Log"
+intrinsic Math.15 "Log1p"
+intrinsic Math.16 "Log10"
+intrinsic Math.17 "Log2"
+intrinsic Math.18 "Round"
+intrinsic Math.19 "Sign"
+intrinsic Math.20 "Sin"
+intrinsic Math.21 "Sinh"
+intrinsic Math.22 "Sqrt"
+intrinsic Math.23 "Tan"
+intrinsic Math.24 "Tanh"
+intrinsic Math.25 "Trunc"
+intrinsic Math.26 "Atan2"
+intrinsic Math.27 "Hypot"
+intrinsic Math.28 "Pow"
+intrinsic Math.29 "Max"
+intrinsic Math.30 "Min"
+intrinsic Math.31 "Random"
+intrinsic Math.32 "Clz32"
+intrinsic Math.33 "Imul"
+intrinsic Math.34 "Fround"
+intrinsic Math.35 "F32ToBits"
+intrinsic Math.36 "F32FromBits"
+intrinsic Number.0 "IsNaN"
+intrinsic Number.1 "IsFinite"
+intrinsic Number.2 "IsInteger"
+intrinsic Number.3 "IsSafeInteger"
+intrinsic Number.4 "ParseInt"
+intrinsic Number.5 "ParseFloat"
+intrinsic Number.6 "ToFixed"
+intrinsic Number.7 "ToStringF32"
+intrinsic Number.8 "ToStringF64"
+intrinsic Number.9 "ToExponential"
+intrinsic Number.10 "ToPrecision"
+intrinsic Date.0 "New"
+intrinsic Date.1 "Utc"
+intrinsic Date.2 "Now"
+intrinsic Date.3 "GetUtcFullYear"
+intrinsic Date.4 "GetUtcMonth"
+intrinsic Date.5 "GetUtcDate"
+intrinsic Date.6 "GetUtcDay"
+intrinsic Date.7 "GetUtcHours"
+intrinsic Date.8 "GetUtcMinutes"
+intrinsic Date.9 "GetUtcSeconds"
+intrinsic Date.10 "GetUtcMilliseconds"
+intrinsic Date.11 "ToIso"
+intrinsic Date.12 "ToUtcString"
+intrinsic Json.0 "Begin"
+intrinsic Json.1 "BeginTracked"
+intrinsic Json.2 "Finish"
+intrinsic Json.3 "Raw"
+intrinsic Json.4 "Str"
+intrinsic Json.5 "I32"
+intrinsic Json.6 "U32"
+intrinsic Json.7 "I64"
+intrinsic Json.8 "U64"
+intrinsic Json.9 "F32"
+intrinsic Json.10 "F64"
+intrinsic Json.11 "Bool"
+intrinsic Json.12 "Date"
+intrinsic Json.13 "Null"
+intrinsic Json.14 "Visit"
+intrinsic Json.15 "Leave"
+intrinsic Json.16 "ParseBegin"
+intrinsic Json.17 "ParseEnd"
+intrinsic Json.18 "ParseRoot"
+intrinsic Json.19 "ParseIsKind"
+intrinsic Json.20 "ParseNumberFits"
+intrinsic Json.21 "ParseNumber"
+intrinsic Json.22 "ParseInteger"
+intrinsic Json.23 "ParseBool"
+intrinsic Json.24 "ParseString"
+intrinsic Json.25 "ParseArrayLen"
+intrinsic Json.26 "ParseArrayGet"
+intrinsic Json.27 "ParseObjectGet"
+intrinsic Json.28 "ParseFailure"
+intrinsic Json.29 "ParseRecord"
+intrinsic Json.30 "ParseField"
+intrinsic Json.31 "ParseIndex"
+intrinsic Json.32 "ParseRelabel"
+intrinsic Json.33 "ParseMismatch"
+intrinsic String.0 "Slice"
+intrinsic String.1 "IndexOf"
+intrinsic String.2 "LastIndexOf"
+intrinsic String.3 "Includes"
+intrinsic String.4 "StartsWith"
+intrinsic String.5 "EndsWith"
+intrinsic String.6 "CharCodeAt"
+intrinsic String.7 "Split"
+intrinsic String.8 "Trim"
+intrinsic String.9 "TrimStart"
+intrinsic String.10 "TrimEnd"
+intrinsic String.11 "Repeat"
+intrinsic String.12 "PadStart"
+intrinsic String.13 "PadEnd"
+intrinsic String.14 "ToUpperCase"
+intrinsic String.15 "ToLowerCase"
+intrinsic String.16 "Replace"
+intrinsic String.17 "ReplaceAll"
+intrinsic String.18 "Substring"
+intrinsic String.19 "Substr"
+intrinsic String.20 "CharAt"
+intrinsic String.21 "CodePointAt"
+intrinsic String.22 "Concat"
+intrinsic String.23 "At"
+intrinsic String.24 "Normalize"
+intrinsic String.25 "GraphemeLength"
+intrinsic String.26 "SliceGraphemes"
+intrinsic Regex.0 "New"
+intrinsic Regex.1 "Test"
+intrinsic Regex.2 "Source"
+intrinsic Regex.3 "Flags"
+intrinsic Regex.4 "Search"
+intrinsic Regex.5 "Replace"
+intrinsic Regex.6 "ReplaceAll"
+intrinsic Regex.7 "Split"
+intrinsic Regex.8 "MatchStart"
+intrinsic Regex.9 "MatchEnd"
+intrinsic Regex.10 "Global"
+intrinsic Regex.11 "IgnoreCase"
+intrinsic Regex.12 "Multiline"
+intrinsic Regex.13 "DotAll"
+intrinsic Regex.14 "Unicode"
+intrinsic Regex.15 "HasIndices"
+intrinsic Regex.16 "Sticky"
+intrinsic Regex.17 "ToString"
+intrinsic Array.0 "IndexOf"
+intrinsic Array.1 "LastIndexOf"
+intrinsic Array.2 "Includes"
+intrinsic Array.3 "Join"
+intrinsic Array.4 "Slice"
+intrinsic Array.5 "Fill"
+intrinsic Array.6 "Reverse"
+intrinsic Array.7 "Concat"
+intrinsic Array.8 "ForEach"
+intrinsic Array.9 "Map"
+intrinsic Array.10 "Filter"
+intrinsic Array.11 "Reduce"
+intrinsic Array.12 "Some"
+intrinsic Array.13 "Every"
+intrinsic Array.14 "FindIndex"
+intrinsic Array.15 "Sort"
+intrinsic Array.16 "ReduceRight"
+intrinsic Array.17 "Splice"
+intrinsic Array.18 "Shift"
+intrinsic Array.19 "Unshift"
+intrinsic Array.20 "CopyWithin"
+intrinsic Array.21 "At"
+intrinsic Array.22 "Find"
+intrinsic Array.23 "FindLast"
+intrinsic Array.24 "FindLastIndex"
+intrinsic Array.25 "FlatMap"
+intrinsic Map.0 "New"
+intrinsic Map.1 "Size"
+intrinsic Map.2 "Get"
+intrinsic Map.3 "GetOr"
+intrinsic Map.4 "Set"
+intrinsic Map.5 "Has"
+intrinsic Map.6 "Delete"
+intrinsic Map.7 "Clear"
+intrinsic Map.8 "ForEach"
+intrinsic Map.9 "GroupBy"
+intrinsic Set.0 "New"
+intrinsic Set.1 "Size"
+intrinsic Set.2 "Add"
+intrinsic Set.3 "Has"
+intrinsic Set.4 "Delete"
+intrinsic Set.5 "Clear"
+intrinsic Set.6 "ForEach"
+intrinsic Set.7 "Union"
+intrinsic Set.8 "Intersection"
+intrinsic Set.9 "Difference"
+intrinsic Set.10 "SymmetricDifference"
+intrinsic Set.11 "IsSubsetOf"
+intrinsic Set.12 "IsSupersetOf"
+intrinsic Set.13 "IsDisjointFrom"
+intrinsic Worker.0 "Spawn"
+intrinsic Worker.1 "Post"
+intrinsic Worker.2 "Poll"
+intrinsic Worker.3 "Close"
+intrinsic Worker.4 "Join"
+intrinsic Worker.5 "InboxWait"
+intrinsic Worker.6 "InboxPoll"
+intrinsic Worker.7 "OutboxPost"
+intrinsic Text.0 "ErrorToString"
+intrinsic Text.1 "EncodeUri"
+intrinsic Text.2 "EncodeComponent"
+intrinsic Text.3 "DecodeUri"
+intrinsic Text.4 "DecodeComponent"
+intrinsic Text.5 "UriFailure"
+intrinsic Text.6 "ComponentFailure"
+fn f0 "constructor" kind=Constructor { class: ClassId(0), method: MethodId(0) } exported=false generator=false async=false -> Void entry=b0 @ :0:0
+  param %0 "this": Data(Class(ClassId(0))) kind=Receiver storage=None @ :0:0
+  param %1 "kind": Data(U32) kind=Explicit storage=None @ :0:0
+  param %2 "name": Data(Str) kind=Explicit storage=None @ :0:0
+  param %3 "message": Data(Str) kind=Explicit storage=None @ :0:0
+  value %0: Data(Class(ClassId(0))) name=Some("this")
+  value %1: Data(U32) name=Some("kind")
+  value %2: Data(Str) name=Some("name")
+  value %3: Data(Str) name=Some("message")
+  value %4: Address(AddressType { pointee: U32, array_base: None }) name=None
+  value %5: Address(AddressType { pointee: Str, array_base: None }) name=None
+  value %6: Address(AddressType { pointee: Str, array_base: None }) name=None
+  b0 Some("entry"):
+    %4: Address(AddressType { pointee: U32, array_base: None }) = AddressOfField(Class(FieldId(0)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%4, %1) @ :0:0
+    %5: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(1)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%5, %2) @ :0:0
+    %6: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(2)))(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "", line: 0, col: 0 } }] @ :0:0
+    StoreAddress(%6, %3) @ :0:0
+    -> Return { value: None, pos: Pos { file: "", line: 0, col: 0 } }
+fn f1 "m" kind=Method { class: ClassId(2), method: MethodId(1) } exported=false generator=false async=false -> Class(ClassId(1)) entry=b0 @ a484-interface-spread-then-handle-variance.ts:9:29
+  param %0 "this": Data(Class(ClassId(2))) kind=Receiver storage=None @ a484-interface-spread-then-handle-variance.ts:9:29
+  value %0: Data(Class(ClassId(2))) name=Some("this")
+  value %1: Data(Class(ClassId(1))) name=None
+  value %2: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %1: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 9, col: 45 } }] @ a484-interface-spread-then-handle-variance.ts:9:45
+    %2: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%1) @ a484-interface-spread-then-handle-variance.ts:7:11
+    StoreAddress(%2, Integer(7):I32) @ a484-interface-spread-then-handle-variance.ts:7:11
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 9, col: 38 } }
+fn f2 "m" kind=Method { class: ClassId(3), method: MethodId(2) } exported=false generator=false async=false -> Str entry=b0 @ a484-interface-spread-then-handle-variance.ts:11:27
+  param %0 "this": Data(Class(ClassId(3))) kind=Receiver storage=None @ a484-interface-spread-then-handle-variance.ts:11:27
+  value %0: Data(Class(ClassId(3))) name=Some("this")
+  value %1: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = StringLiteral("text")() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 11, col: 48 } }] @ a484-interface-spread-then-handle-variance.ts:11:48
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 11, col: 41 } }
+fn f3 "m" kind=Method { class: ClassId(4), method: MethodId(3) } exported=false generator=false async=false -> I32 entry=b0 @ a484-interface-spread-then-handle-variance.ts:14:3
+  param %0 "this": Data(Class(ClassId(4))) kind=Receiver storage=None @ a484-interface-spread-then-handle-variance.ts:14:3
+  param %1 "x": Data(Nullable(Class(ClassId(1)))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:14:5
+  value %0: Data(Class(ClassId(4))) name=Some("this")
+  value %1: Data(Nullable(Class(ClassId(1)))) name=Some("x")
+  value %2: Data(Bool) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(Class(ClassId(4))) name=None
+  value %5: Data(Nullable(Class(ClassId(1)))) name=None
+  value %6: Data(Class(ClassId(1))) name=None
+  value %7: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(Bool) = Binary(Eq)(%1, Null:Null) @ a484-interface-spread-then-handle-variance.ts:14:32
+    -> ConditionalBranch { condition: Value(ValueId(2)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] })
+  b2 Some("cond.else"):
+    %6: Data(Class(ClassId(1))) = NarrowNonNull(Local)(%1) @ a484-interface-spread-then-handle-variance.ts:14:49
+    %7: Data(I32) = LoadField(Class(FieldId(3)))(%6) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 14, col: 49 } }] @ a484-interface-spread-then-handle-variance.ts:14:51
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(7)), Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false, false] })
+  b3(%3: Data(I32), %4: Data(Class(ClassId(4))), %5: Data(Nullable(Class(ClassId(1))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 14, col: 25 } }
+fn f4 "show" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a484-interface-spread-then-handle-variance.ts:16:10
+  param %0 "x": Data(Nullable(Class(ClassId(1)))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:16:15
+  value %0: Data(Nullable(Class(ClassId(1)))) name=Some("x")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Nullable(Class(ClassId(1)))) name=None
+  value %4: Data(Class(ClassId(1))) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Eq)(%0, Null:Null) @ a484-interface-spread-then-handle-variance.ts:16:42
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(-1) }), Value(ValueId(0))], ownership: [false, false] })
+  b2 Some("cond.else"):
+    %4: Data(Class(ClassId(1))) = NarrowNonNull(Local)(%0) @ a484-interface-spread-then-handle-variance.ts:16:60
+    %5: Data(I32) = LoadField(Class(FieldId(3)))(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 16, col: 60 } }] @ a484-interface-spread-then-handle-variance.ts:16:62
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(0))], ownership: [false, false] })
+  b3(%2: Data(I32), %3: Data(Nullable(Class(ClassId(1))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 16, col: 35 } }
+fn f5 "text" kind=Free exported=false generator=false async=false -> Str entry=b0 @ a484-interface-spread-then-handle-variance.ts:17:10
+  param %0 "x": Data(Nullable(Str)) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:17:15
+  value %0: Data(Nullable(Str)) name=Some("x")
+  value %1: Data(Bool) name=None
+  value %2: Data(Str) name=None
+  value %3: Data(Nullable(Str)) name=None
+  value %4: Data(Str) name=None
+  value %5: Data(Str) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Eq)(%0, Null:Null) @ a484-interface-spread-then-handle-variance.ts:17:50
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    %4: Data(Str) = StringLiteral("null")() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 17, col: 63 } }] @ a484-interface-spread-then-handle-variance.ts:17:63
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(4)), Value(ValueId(0))], ownership: [false, false] })
+  b2 Some("cond.else"):
+    %5: Data(Str) = NarrowNonNull(Local)(%0) @ a484-interface-spread-then-handle-variance.ts:17:72
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(0))], ownership: [false, false] })
+  b3(%2: Data(Str), %3: Data(Nullable(Str))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 17, col: 43 } }
+fn f6 "id" kind=Free exported=false generator=false async=false -> Class(ClassId(1)) entry=b0 @ a484-interface-spread-then-handle-variance.ts:18:10
+  param %0 "x": Data(Class(ClassId(1))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:18:13
+  value %0: Data(Class(ClassId(1))) name=Some("x")
+  b0 Some("entry"):
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 18, col: 24 } }
+fn f7 "mk" kind=Free exported=false generator=false async=true -> Class(ClassId(1)) entry=b0 @ a484-interface-spread-then-handle-variance.ts:22:16
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 22, col: 16 } }]
+  value %0: Data(Class(ClassId(1))) name=None
+  value %1: Address(AddressType { pointee: I32, array_base: None }) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 22, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:22:42
+    %1: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%0) @ a484-interface-spread-then-handle-variance.ts:7:11
+    StoreAddress(%1, Integer(7):I32) @ a484-interface-spread-then-handle-variance.ts:7:11
+    -> Return { value: Some(Value(ValueId(0))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 22, col: 35 } }
+fn f8 "resultCall<K>" kind=Free exported=false generator=false async=false -> Nullable(Class(ClassId(1))) entry=b0 @ a484-interface-spread-then-handle-variance.ts:25:24
+  param %0 "x": Data(Class(ClassId(2))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:19:39
+  value %0: Data(Class(ClassId(2))) name=Some("x")
+  value %1: Data(Class(ClassId(1))) name=None
+  value %2: Data(Nullable(Class(ClassId(1)))) name=None
+  b0 Some("entry"):
+    %1: Data(Class(ClassId(1))) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2)))], return_type: Some(Data(Class(ClassId(1)))) })(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 19, col: 64 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 19, col: 64 } }] @ a484-interface-spread-then-handle-variance.ts:19:64
+    %2: Data(Nullable(Class(ClassId(1)))) = Coerce(%1) @ a484-interface-spread-then-handle-variance.ts:19:57
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 19, col: 57 } }
+fn f9 "textCall<T>" kind=Free exported=false generator=false async=false -> Nullable(Str) entry=b0 @ a484-interface-spread-then-handle-variance.ts:27:22
+  param %0 "x": Data(Class(ClassId(3))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:20:35
+  value %0: Data(Class(ClassId(3))) name=Some("x")
+  value %1: Data(Str) name=None
+  value %2: Data(Nullable(Str)) name=None
+  b0 Some("entry"):
+    %1: Data(Str) = Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(3)))], return_type: Some(Data(Str)) })(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 20, col: 65 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 20, col: 65 } }] @ a484-interface-spread-then-handle-variance.ts:20:65
+    %2: Data(Nullable(Str)) = Coerce(%1) @ a484-interface-spread-then-handle-variance.ts:20:58
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 20, col: 58 } }
+fn f10 "parameterCall<P>" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ a484-interface-spread-then-handle-variance.ts:29:22
+  param %0 "x": Data(Class(ClassId(4))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:21:45
+  param %1 "c": Data(Class(ClassId(1))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:21:51
+  value %0: Data(Class(ClassId(4))) name=Some("x")
+  value %1: Data(Class(ClassId(1))) name=Some("c")
+  value %2: Data(Nullable(Class(ClassId(1)))) name=None
+  value %3: Data(I32) name=None
+  b0 Some("entry"):
+    %2: Data(Nullable(Class(ClassId(1)))) = Coerce(%1) @ a484-interface-spread-then-handle-variance.ts:14:5
+    %3: Data(I32) = Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(4))), Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(I32)) })(%0, %2) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 21, col: 71 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 21, col: 71 } }] @ a484-interface-spread-then-handle-variance.ts:21:71
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 21, col: 64 } }
+fn f11 "[[Promise.then (v) => value]]<C, i32>" kind=Free exported=false generator=false async=true -> I32 entry=b0 @ a484-interface-spread-then-handle-variance.ts:33:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }]
+  can-raise
+  param %0 "h": Data(AsyncHandle(Class(ClassId(1)))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:33:23
+  param %1 "f": Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 })) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:33:23
+  value %0: Data(AsyncHandle(Class(ClassId(1)))) name=Some("h")
+  value %1: Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 })) name=Some("f")
+  value %2: Data(Class(ClassId(1))) name=None
+  value %3: Data(I32) name=None
+  value %4: Data(AsyncHandle(Class(ClassId(1)))) name=Some("h")
+  value %5: Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 })) name=Some("f")
+  b0 Some("entry"):
+    -> Suspend { kind: AsyncHandle { handle: ValueId(0), owned: false }, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 }, successor: BlockId(1), resume_value: Some(ValueId(2)), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }] }
+  b1(%2: Data(Class(ClassId(1))), %4: Data(AsyncHandle(Class(ClassId(1)))), %5: Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 }))) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }] @ a484-interface-spread-then-handle-variance.ts:33:23
+    %3: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 })), Data(Class(ClassId(1)))], return_type: Some(Data(I32)) })(%5, %2) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 33 } }, Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 33 } }] @ a484-interface-spread-then-handle-variance.ts:33:33
+    AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 28 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 28 } }] @ a484-interface-spread-then-handle-variance.ts:33:28
+    -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 28 } }
+  b2 Some("release.landing"):
+    ExceptionPark() @ a484-interface-spread-then-handle-variance.ts:33:23
+    AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }] @ a484-interface-spread-then-handle-variance.ts:33:23
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }] @ a484-interface-spread-then-handle-variance.ts:33:23
+    -> Unreachable { pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }
+  b3 Some("release.landing"):
+    ExceptionPark() @ a484-interface-spread-then-handle-variance.ts:33:33
+    AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 33 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 33 } }] @ a484-interface-spread-then-handle-variance.ts:33:33
+    ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 33 } }] @ a484-interface-spread-then-handle-variance.ts:33:33
+    -> Unreachable { pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 33 } }
+fn f12 "main" kind=Free exported=true generator=false async=true -> Void entry=b0 @ a484-interface-spread-then-handle-variance.ts:23:23
+  creation-traps [Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 23, col: 23 } }]
+  can-raise
+  value %0: Data(Class(ClassId(2))) name=None
+  value %1: Data(Nullable(Class(ClassId(1)))) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Class(ClassId(1))) name=None
+  value %4: Data(Nullable(Class(ClassId(1)))) name=None
+  value %5: Data(I32) name=None
+  value %6: Data(Str) name=None
+  value %7: Data(Class(ClassId(3))) name=None
+  value %8: Data(Nullable(Str)) name=None
+  value %9: Data(Str) name=None
+  value %10: Data(Str) name=None
+  value %11: Data(Nullable(Str)) name=None
+  value %12: Data(Str) name=None
+  value %13: Data(Str) name=None
+  value %14: Data(Class(ClassId(4))) name=None
+  value %15: Data(Class(ClassId(1))) name=None
+  value %16: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %17: Data(I32) name=None
+  value %18: Data(Class(ClassId(1))) name=None
+  value %19: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %20: Data(Nullable(Class(ClassId(1)))) name=None
+  value %21: Data(I32) name=None
+  value %22: Data(Str) name=None
+  value %23: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })) name=None
+  value %24: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }))) name=None
+  value %25: Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })) name=None
+  value %26: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }) name=None
+  value %27: Data(I32) name=None
+  value %28: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) name=None
+  value %29: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }) name=None
+  value %30: Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })) name=None
+  value %31: Data(I32) name=None
+  value %32: Data(I32) name=None
+  value %33: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) name=None
+  value %34: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }) name=None
+  value %35: Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })) name=None
+  value %36: Data(I32) name=None
+  value %37: Data(I32) name=None
+  value %38: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) name=None
+  value %39: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) name=None
+  value %40: Data(Bool) name=None
+  value %41: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })) name=None
+  value %42: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })) name=None
+  value %43: Data(I32) name=None
+  value %44: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }) name=None
+  value %45: Data(I32) name=None
+  value %46: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) name=None
+  value %47: Address(AddressType { pointee: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }), array_base: Some(ValueId(46)) }) name=None
+  value %48: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })) name=None
+  value %49: Data(Class(ClassId(1))) name=None
+  value %50: Address(AddressType { pointee: I32, array_base: None }) name=None
+  value %51: Data(Nullable(Class(ClassId(1)))) name=None
+  value %52: Data(I32) name=None
+  value %53: Data(Str) name=None
+  value %54: Data(AsyncHandle(Class(ClassId(1)))) name=None
+  value %55: Data(Func(FuncType { params: [Nullable(Class(ClassId(1)))], ret: I32 })) name=None
+  value %56: Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 })) name=None
+  value %57: Data(AsyncHandle(I32)) name=None
+  value %58: Data(I32) name=None
+  value %59: Data(Str) name=None
+  b0 Some("entry"):
+    %0: Data(Class(ClassId(2))) = AllocateClass(ClassId(2))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 24, col: 13 } }] @ a484-interface-spread-then-handle-variance.ts:24:13
+    %1: Data(Nullable(Class(ClassId(1)))) = Call(CallTarget { kind: Function(FunctionId(8)), parameter_types: [Data(Class(ClassId(2)))], return_type: Some(Data(Nullable(Class(ClassId(1))))) })(%0) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 24 } }] @ a484-interface-spread-then-handle-variance.ts:25:24
+    %2: Data(I32) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(I32)) })(%1) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 19 } }] @ a484-interface-spread-then-handle-variance.ts:25:19
+    %3: Data(Class(ClassId(1))) = Call(CallTarget { kind: Method(MethodId(1)), parameter_types: [Data(Class(ClassId(2)))], return_type: Some(Data(Class(ClassId(1)))) })(%0) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 47 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 47 } }] @ a484-interface-spread-then-handle-variance.ts:25:47
+    %4: Data(Nullable(Class(ClassId(1)))) = Coerce(%3) @ a484-interface-spread-then-handle-variance.ts:16:15
+    %5: Data(I32) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(I32)) })(%4) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:25:42
+    %6: Data(Str) = Template([Text("result:"), Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: I32 }])(%2, %5) traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 42 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 25, col: 9 } }] @ a484-interface-spread-then-handle-variance.ts:25:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%6) @ a484-interface-spread-then-handle-variance.ts:25:3
+    %7: Data(Class(ClassId(3))) = AllocateClass(ClassId(3))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 26, col: 13 } }] @ a484-interface-spread-then-handle-variance.ts:26:13
+    %8: Data(Nullable(Str)) = Call(CallTarget { kind: Function(FunctionId(9)), parameter_types: [Data(Class(ClassId(3)))], return_type: Some(Data(Nullable(Str))) })(%7) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 22 } }] @ a484-interface-spread-then-handle-variance.ts:27:22
+    %9: Data(Str) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Nullable(Str))], return_type: Some(Data(Str)) })(%8) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 17 } }] @ a484-interface-spread-then-handle-variance.ts:27:17
+    %10: Data(Str) = Call(CallTarget { kind: Method(MethodId(2)), parameter_types: [Data(Class(ClassId(3)))], return_type: Some(Data(Str)) })(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 43 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 43 } }] @ a484-interface-spread-then-handle-variance.ts:27:43
+    %11: Data(Nullable(Str)) = Coerce(%10) @ a484-interface-spread-then-handle-variance.ts:17:15
+    %12: Data(Str) = Call(CallTarget { kind: Function(FunctionId(5)), parameter_types: [Data(Nullable(Str))], return_type: Some(Data(Str)) })(%11) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 38 } }] @ a484-interface-spread-then-handle-variance.ts:27:38
+    %13: Data(Str) = Template([Text("text:"), Operand { index: 0, format: Str }, Text(":"), Operand { index: 1, format: Str }])(%9, %12) traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 27, col: 9 } }] @ a484-interface-spread-then-handle-variance.ts:27:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%13) @ a484-interface-spread-then-handle-variance.ts:27:3
+    %14: Data(Class(ClassId(4))) = AllocateClass(ClassId(4))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 28, col: 13 } }] @ a484-interface-spread-then-handle-variance.ts:28:13
+    %15: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 39 } }] @ a484-interface-spread-then-handle-variance.ts:29:39
+    %16: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%15) @ a484-interface-spread-then-handle-variance.ts:7:11
+    StoreAddress(%16, Integer(7):I32) @ a484-interface-spread-then-handle-variance.ts:7:11
+    %17: Data(I32) = Call(CallTarget { kind: Function(FunctionId(10)), parameter_types: [Data(Class(ClassId(4))), Data(Class(ClassId(1)))], return_type: Some(Data(I32)) })(%14, %15) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 22 } }] @ a484-interface-spread-then-handle-variance.ts:29:22
+    %18: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 55 } }] @ a484-interface-spread-then-handle-variance.ts:29:55
+    %19: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%18) @ a484-interface-spread-then-handle-variance.ts:7:11
+    StoreAddress(%19, Integer(7):I32) @ a484-interface-spread-then-handle-variance.ts:7:11
+    %20: Data(Nullable(Class(ClassId(1)))) = Coerce(%18) @ a484-interface-spread-then-handle-variance.ts:14:5
+    %21: Data(I32) = Call(CallTarget { kind: Method(MethodId(3)), parameter_types: [Data(Class(ClassId(4))), Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(I32)) })(%14, %20) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 51 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 51 } }] @ a484-interface-spread-then-handle-variance.ts:29:51
+    %22: Data(Str) = Template([Text("parameter:"), Operand { index: 0, format: I32 }, Text(":"), Operand { index: 1, format: I32 }])(%17, %21) traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 22 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 51 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 29, col: 9 } }] @ a484-interface-spread-then-handle-variance.ts:29:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%22) @ a484-interface-spread-then-handle-variance.ts:29:3
+    %23: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })) = FunctionRef(FunctionId(6))() @ a484-interface-spread-then-handle-variance.ts:30:32
+    %24: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }))) = ArrayLiteral(%23) traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 30, col: 31 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 30, col: 32 } }] @ a484-interface-spread-then-handle-variance.ts:30:31
+    %25: Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })) = MakeClosure(FunctionId(13))() @ a484-interface-spread-then-handle-variance.ts:31:42
+    %26: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }) = IteratorCreate { kind: ArrayValues, bound: Fixed }(%24) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:31:42
+    %27: Data(I32) = IteratorBound(%26) @ a484-interface-spread-then-handle-variance.ts:31:42
+    %28: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) = ArrayWithCapacity(%27) traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:31:42
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(26)), Value(ValueId(25)), Constant(Constant { ty: I32, kind: Integer(0) }), Value(ValueId(27)), Value(ValueId(28))], ownership: [false, false, false, false, false] })
+  b1(%29: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }), %30: Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })), %31: Data(I32), %32: Data(I32), %33: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })))) Some("array-callback.cond"):
+    %40: Data(Bool) = IteratorHasNext(%29, %31, %32) @ a484-interface-spread-then-handle-variance.ts:31:42
+    -> ConditionalBranch { condition: Value(ValueId(40)), then_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(4), arguments: [Value(ValueId(33))], ownership: [false] } }
+  b2 Some("array-callback.body"):
+    %41: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })) = IteratorValue(%29, %31, %32) @ a484-interface-spread-then-handle-variance.ts:31:42
+    %42: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })) = Call(CallTarget { kind: StaticClosure(FunctionId(13)), parameter_types: [Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })), Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }))], return_type: Some(Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) })(%30, %41) invalidates=[ValueId(24), ValueId(28), ValueId(33)] traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:31:42
+    %43: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))), Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))], return_type: Some(Data(I32)) })(%33, %42) invalidates=[ValueId(24), ValueId(28), ValueId(33)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:31:42
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(29)), Value(ValueId(30)), Value(ValueId(31)), Value(ValueId(32)), Value(ValueId(33))], ownership: [false, false, false, false, false] })
+  b3(%34: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }), %35: Data(Func(FuncType { params: [Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })], ret: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) })), %36: Data(I32), %37: Data(I32), %38: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })))) Some("array-callback.step"):
+    %44: Iterator(IteratorType { kind: ArrayValues, element: Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) }) }) = IteratorAdvance(%34, %36, %37) @ a484-interface-spread-then-handle-variance.ts:31:42
+    %45: Data(I32) = Binary(Add)(%36, Integer(1):I32) @ a484-interface-spread-then-handle-variance.ts:31:42
+    -> Branch(BlockTarget { block: BlockId(1), arguments: [Value(ValueId(34)), Value(ValueId(35)), Value(ValueId(45)), Value(ValueId(37)), Value(ValueId(38))], ownership: [false, false, false, false, false] })
+  b4(%39: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })))) Some("array-callback.exit"):
+    %46: Data(Array(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }))) = ArraySpreadLiteral([Some(Array)])(%39) count=Uncounted traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 38 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }] @ a484-interface-spread-then-handle-variance.ts:31:38
+    %47: Address(AddressType { pointee: Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }), array_base: Some(ValueId(46)) }) = AddressOfIndex { checked: true }(%46, Integer(0):I32) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 24 } }, Trap { kind: IndexRead, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 24 } }] @ a484-interface-spread-then-handle-variance.ts:32:24
+    %48: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })) = LoadAddress(%47) @ a484-interface-spread-then-handle-variance.ts:32:24
+    %49: Data(Class(ClassId(1))) = AllocateClass(ClassId(1))() traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 30 } }] @ a484-interface-spread-then-handle-variance.ts:32:30
+    %50: Address(AddressType { pointee: I32, array_base: None }) = AddressOfField(Class(FieldId(3)))(%49) @ a484-interface-spread-then-handle-variance.ts:7:11
+    StoreAddress(%50, Integer(7):I32) @ a484-interface-spread-then-handle-variance.ts:7:11
+    %51: Data(Nullable(Class(ClassId(1)))) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })), Data(Class(ClassId(1)))], return_type: Some(Data(Nullable(Class(ClassId(1))))) })(%48, %49) invalidates=[ValueId(24), ValueId(28), ValueId(33), ValueId(39), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 24 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 24 } }] @ a484-interface-spread-then-handle-variance.ts:32:24
+    %52: Data(I32) = Call(CallTarget { kind: Function(FunctionId(4)), parameter_types: [Data(Nullable(Class(ClassId(1))))], return_type: Some(Data(I32)) })(%51) invalidates=[ValueId(24), ValueId(28), ValueId(33), ValueId(39), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 19 } }] @ a484-interface-spread-then-handle-variance.ts:32:19
+    %53: Data(Str) = Template([Text("spread:"), Operand { index: 0, format: I32 }])(%52) traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 19 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 32, col: 9 } }] @ a484-interface-spread-then-handle-variance.ts:32:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%53) invalidates=[ValueId(24), ValueId(28), ValueId(33), ValueId(39), ValueId(46)] @ a484-interface-spread-then-handle-variance.ts:32:3
+    %54: Data(AsyncHandle(Class(ClassId(1)))) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(7)), parameter_types: [], return_type: Some(Data(Class(ClassId(1)))) })() invalidates=[ValueId(24), ValueId(28), ValueId(33), ValueId(39), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }] @ a484-interface-spread-then-handle-variance.ts:33:23
+    %55: Data(Func(FuncType { params: [Nullable(Class(ClassId(1)))], ret: I32 })) = MakeClosure(FunctionId(14))() @ a484-interface-spread-then-handle-variance.ts:33:33
+    %56: Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 })) = Cast(%55) @ a484-interface-spread-then-handle-variance.ts:33:33
+    %57: Data(AsyncHandle(I32)) = AsyncHandleCreate(CallTarget { kind: Function(FunctionId(11)), parameter_types: [Data(AsyncHandle(Class(ClassId(1)))), Data(Func(FuncType { params: [Class(ClassId(1))], ret: I32 }))], return_type: Some(Data(I32)) })(%54, %56) invalidates=[ValueId(24), ValueId(28), ValueId(33), ValueId(39), ValueId(46)] traps=[Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 23 } }] @ a484-interface-spread-then-handle-variance.ts:33:23
+    -> Suspend { kind: AsyncHandle { handle: ValueId(57), owned: true }, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 17 }, successor: BlockId(5), resume_value: Some(ValueId(58)), arguments: [], ownership: [], invalidates: [ValueId(24), ValueId(28), ValueId(33), ValueId(38), ValueId(39), ValueId(46)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 17 } }, Trap { kind: Call, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 17 } }] }
+  b5(%58: Data(I32)) Some("async-handle.resume"):
+    AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 17 } }] @ a484-interface-spread-then-handle-variance.ts:33:17
+    %59: Data(Str) = Template([Text("then:"), Operand { index: 0, format: I32 }])(%58) traps=[Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 9 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 17 } }, Trap { kind: Allocation, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 9 } }] @ a484-interface-spread-then-handle-variance.ts:33:9
+    Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 0, type_argument: None, worker_entry: None }), parameter_types: [Data(Str)], return_type: None })(%59) invalidates=[ValueId(24), ValueId(28), ValueId(33), ValueId(39), ValueId(46)] @ a484-interface-spread-then-handle-variance.ts:33:3
+    -> Return { value: None, pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 23, col: 23 } }
+fn f13 "<lambda a484-interface-spread-then-handle-variance.ts:31:42>" kind=Lambda exported=false generator=false async=false -> Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) }) entry=b0 @ a484-interface-spread-then-handle-variance.ts:31:42
+  param %0 "[[spread#0]]": Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:31:42
+  value %0: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Class(ClassId(1)) })) name=Some("[[spread#0]]")
+  value %1: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })) name=None
+  b0 Some("entry"):
+    %1: Data(Func(FuncType { params: [Class(ClassId(1))], ret: Nullable(Class(ClassId(1))) })) = Cast(%0) @ a484-interface-spread-then-handle-variance.ts:31:42
+    -> Return { value: Some(Value(ValueId(1))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 31, col: 42 } }
+fn f14 "<lambda a484-interface-spread-then-handle-variance.ts:33:33>" kind=Lambda exported=false generator=false async=false -> I32 entry=b0 @ a484-interface-spread-then-handle-variance.ts:33:33
+  param %0 "x": Data(Nullable(Class(ClassId(1)))) kind=Explicit storage=None @ a484-interface-spread-then-handle-variance.ts:33:33
+  value %0: Data(Nullable(Class(ClassId(1)))) name=Some("x")
+  value %1: Data(Bool) name=None
+  value %2: Data(I32) name=None
+  value %3: Data(Nullable(Class(ClassId(1)))) name=None
+  value %4: Data(Class(ClassId(1))) name=None
+  value %5: Data(I32) name=None
+  b0 Some("entry"):
+    %1: Data(Bool) = Binary(Eq)(%0, Null:Null) @ a484-interface-spread-then-handle-variance.ts:33:55
+    -> ConditionalBranch { condition: Value(ValueId(1)), then_target: BlockTarget { block: BlockId(1), arguments: [], ownership: [] }, else_target: BlockTarget { block: BlockId(2), arguments: [], ownership: [] } }
+  b1 Some("cond.then"):
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Constant(Constant { ty: I32, kind: Integer(-1) }), Value(ValueId(0))], ownership: [false, false] })
+  b2 Some("cond.else"):
+    %4: Data(Class(ClassId(1))) = NarrowNonNull(Local)(%0) @ a484-interface-spread-then-handle-variance.ts:33:73
+    %5: Data(I32) = LoadField(Class(FieldId(3)))(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 73 } }] @ a484-interface-spread-then-handle-variance.ts:33:75
+    -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(5)), Value(ValueId(0))], ownership: [false, false] })
+  b3(%2: Data(I32), %3: Data(Nullable(Class(ClassId(1))))) Some("cond.merge"):
+    -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "a484-interface-spread-then-handle-variance.ts", line: 33, col: 55 } }
 ===== a79-for-of-generator =====
 module initializer=None
 class c0 "Error" value=false descriptor=false boundary=false align=None @ :0:0

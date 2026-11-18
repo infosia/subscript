@@ -99,7 +99,7 @@ OptionalParameter	optional-parameter,optional-parameter-witness-2,optional-param
 ParameterCapture	c-lookup-context-capture,s312-ParameterCapture.ts
 PromiseCombinatorCall	s186-then-no-callback,s186-then-null,s186-then-type-arguments
 PromiseFinallyAsyncResult	s186-finally-value,s312-PromiseFinallyAsyncResult.ts
-PromiseReactionParameter	s186-finally-optional-parameter,s186-then-named-nullable,s186-then-nullable-parameter,s186-then-number-parameter,s186-then-optional-parameter,s186-then-structural-parameter
+PromiseReactionParameter	s186-finally-optional-parameter,s186-then-number-parameter,s186-then-optional-parameter,s186-then-structural-parameter
 PromiseReactionResult	s186-catch-string,s186-then-rejection-type,s289-catch-void-place,s289-then-rejection-void
 PromiseRejectionParameter	s186-catch-parameter-type,s312-PromiseRejectionParameter.ts
 ReferenceClassInheritance	reference-class-inheritance,reference-class-inheritance-witness-2,reference-class-inheritance-witness-3,reference-class-inheritance-witness-4,reference-class-inheritance-witness-5

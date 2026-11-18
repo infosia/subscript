@@ -67,6 +67,11 @@ fn former_value_decorator_is_an_unknown_decorator() {
 /// map to S002 (no dynamic code evaluation).
 const EXPECTED: &[(&str, RuleCode, u32)] = &[
     (
+        "r555-interface-method-narrow-parameter.ts",
+        RuleCode::S100,
+        9,
+    ),
+    (
         "r554-a-nonliteral-array-still-moves-the-receiver.ts",
         RuleCode::S100,
         16,

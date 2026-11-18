@@ -10,9 +10,9 @@ pub(super) const PROMISEREACTIONRESULT: DivergenceEntry = DivergenceEntry {
 };
 
 pub(super) const PROMISEREACTIONPARAMETER: DivergenceEntry = DivergenceEntry {
-    ts: "class Foo { n: i32 = 1; }\nasync function leaf(): Promise<Foo> { return new Foo(); }\nexport async function main(): Promise<void> { const n: i32 = await leaf().then((b: Foo | null): i32 => b === null ? 0 : b.n); print(`${n}`); }",
-    subscript: "class Foo { n: i32 = 1; }\nasync function leaf(): Promise<Foo> { return new Foo(); }\nexport async function main(): Promise<void> { const n: i32 = await leaf().then((b: Foo): i32 => b.n); print(`${n}`); }",
-    why: "A callback parameter has the value type of the handle, or Error for a rejection callback. Function types have no variance and no optional parameter.",
+    ts: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const n: i64 = await leaf().then((b: i64): i64 => b); print(`${n}`); }",
+    subscript: "async function leaf(): Promise<i32> { return 1; }\nexport async function main(): Promise<void> { const n: i32 = await leaf().then((b: i32): i32 => b); print(`${n}`); }",
+    why: "A fulfillment value must fit its callback parameter (compiler.md §334 rule 3). Integer widths stay distinct; optional parameters stay rejected.",
     collision: "C24", // row 25
 };
 

@@ -9492,21 +9492,6 @@ async function g(): Promise<void> {}
 export async function main(): Promise<void> { const h = f(); h.then((v: i32): i32 => v); await h; }
 END FILE
 END PROGRAM
-PROGRAM	s186-then-nullable-parameter			0
-FILE	E	target/s154/forms/s186-then-nullable-parameter/main.ts
-class Foo { n: i32 = 1; }
-async function d(): Promise<Foo> { return new Foo(); }
-export async function main(): Promise<void> { const r: i32 = await d().then((b: Foo | null): i32 => b === null ? 0 : b.n); print(`${r}`); }
-END FILE
-END PROGRAM
-PROGRAM	s186-then-named-nullable			0
-FILE	E	target/s154/forms/s186-then-named-nullable/main.ts
-class Foo { n: i32 = 1; }
-async function d(): Promise<Foo> { return new Foo(); }
-function useMaybe(b: Foo | null): i32 { return b === null ? 0 : b.n; }
-export async function main(): Promise<void> { const r: i32 = await d().then(useMaybe); print(`${r}`); }
-END FILE
-END PROGRAM
 PROGRAM	s186-then-number-parameter			0
 FILE	E	target/s154/forms/s186-then-number-parameter/main.ts
 async function f(): Promise<i32> { return 1; }

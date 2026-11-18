@@ -466,12 +466,20 @@ impl<'p> Checker<'p> {
             // types; other elements take the value check.
             for (element, ty) in checked.iter_mut().zip(&element_types) {
                 if element.spread.is_some() {
-                    self.require_assignable(
-                        ty,
-                        expected,
-                        element.expr.pos.clone(),
-                        "the array element",
-                    );
+                    // compiler.md §334 rules 2 and 4: the copy checks the
+                    // element pair before it records the value conversion.
+                    if element.spread != Some(hir::SpreadKind::Array)
+                        || !self.type_fits(ty, expected)
+                    {
+                        self.require_assignable(
+                            ty,
+                            expected,
+                            element.expr.pos.clone(),
+                            "the array element",
+                        );
+                    } else {
+                        self.place_spread_function_element(element, ty, expected, fx);
+                    }
                 } else {
                     self.require_function_list_element(
                         &mut element.expr,

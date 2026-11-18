@@ -364,21 +364,20 @@ export function main(): void { const e = new Error("x"); print(`${e.stack}`); pr
 
 Constructs outside the decided language surface are rejected.
 
-Pinned corpus: [`corpus/reject/r554-a-nonliteral-array-still-moves-the-receiver.ts`](../corpus/reject/r554-a-nonliteral-array-still-moves-the-receiver.ts), line 16.
+Pinned corpus: [`corpus/reject/r555-interface-method-narrow-parameter.ts`](../corpus/reject/r555-interface-method-narrow-parameter.ts), line 9.
 
 Header guidance:
 
 ```text
 // tsc: accepts
-// expected-error: S100: `W.parameter` can move a dynamic array
+// expected-error: S100 at line 9, the interface requires
 ```
 
 ```ts
-const keep: W[] = [];
-const all: W[] = [new W()];
-all[0].parameter(keep);
-all[0].assigned();
-all[0].sliced();
+class C { v: i32 = 7; }
+interface I { m(x: C | null): i32; }
+class K implements I { m(x: C): i32 { return x.v; } }
+export function main(): void {}
 ```
 
 ## Listed diagnostic examples (§182)

@@ -103,48 +103,97 @@ impl Checker<'_> {
             if self.apparent_type(&own) == self.apparent_type(&selected) {
                 continue;
             }
-            let pos = element.expr.pos.clone();
-            let id = hir::LambdaId(self.next_lambda_id);
-            self.next_lambda_id += 1;
-            self.next_lambda_ordinal += 1;
-            let callback = hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Lambda {
-                    group: None,
-                    id,
-                    params: vec![hir::Param {
-                        escape_kind: hir::EscapeKind::None,
-                        default_can_raise: false,
-                        name,
-                        ty: own.clone(),
-                        default: None,
-                        foreign_provenance: None,
-                        pos: pos.clone(),
-                    }],
-                    is_async: false,
-                    owns_environment: false,
-                    ret: selected.clone(),
-                    body: vec![hir::Stmt::Return {
-                        value: Some(value),
-                        pos: pos.clone(),
-                    }],
-                    captures: Vec::new(),
-                    can_raise: false,
-                },
-                ty: Type::func(vec![own], selected.clone()),
-                pos: pos.clone(),
-            };
-            let source = std::mem::replace(&mut element.expr, self.err_expr(pos.clone()));
-            element.expr = hir::Expr {
-                pending_work: None,
-                kind: ExprKind::Call {
-                    callee: hir::Callee::Arr(hir::ArrFn::Map),
-                    args: vec![source, callback],
-                },
-                ty: Type::array(selected.clone()),
-                pos,
-            };
+            self.map_spread_function_value(element, name, own, value, &selected);
         }
         Some(selected)
+    }
+
+    /// Records the element conversion of compiler.md §334 rule 4 through
+    /// the spread adapter of compiler.md §305 rule 3.
+    pub(super) fn place_spread_function_element(
+        &mut self,
+        element: &mut hir::ArrayLitElem,
+        own: &Type,
+        expected: &Type,
+        fx: &FnCtx,
+    ) {
+        if !self.needs_function_conversion(own, expected) {
+            return;
+        }
+        let name = format!("[[spread#{}]]", self.next_lambda_id);
+        let mut frame = fx.clone();
+        frame.scopes.push(Scope::default());
+        frame.declare(
+            &name,
+            Local {
+                function_value_required: None,
+                annotated: true,
+                ty: own.clone(),
+                mutable: false,
+                async_origins: Default::default(),
+                caught: false,
+            },
+            false,
+        );
+        let mut value = hir::Expr {
+            pending_work: None,
+            kind: ExprKind::Local(name.clone(), own.clone(), false),
+            ty: own.clone(),
+            pos: element.expr.pos.clone(),
+        };
+        self.require_expr_assignable(&mut value, expected, &frame, "the array element");
+        self.map_spread_function_value(element, name, own.clone(), value, expected);
+    }
+
+    /// Copies a checked element value through the existing array-map form.
+    fn map_spread_function_value(
+        &mut self,
+        element: &mut hir::ArrayLitElem,
+        name: String,
+        own: Type,
+        value: hir::Expr,
+        selected: &Type,
+    ) {
+        let pos = element.expr.pos.clone();
+        let id = hir::LambdaId(self.next_lambda_id);
+        self.next_lambda_id += 1;
+        self.next_lambda_ordinal += 1;
+        let callback = hir::Expr {
+            pending_work: None,
+            kind: ExprKind::Lambda {
+                group: None,
+                id,
+                params: vec![hir::Param {
+                    escape_kind: hir::EscapeKind::None,
+                    default_can_raise: false,
+                    name,
+                    ty: own.clone(),
+                    default: None,
+                    foreign_provenance: None,
+                    pos: pos.clone(),
+                }],
+                is_async: false,
+                owns_environment: false,
+                ret: selected.clone(),
+                body: vec![hir::Stmt::Return {
+                    value: Some(value),
+                    pos: pos.clone(),
+                }],
+                captures: Vec::new(),
+                can_raise: false,
+            },
+            ty: Type::func(vec![own], selected.clone()),
+            pos: pos.clone(),
+        };
+        let source = std::mem::replace(&mut element.expr, self.err_expr(pos.clone()));
+        element.expr = hir::Expr {
+            pending_work: None,
+            kind: ExprKind::Call {
+                callee: hir::Callee::Arr(hir::ArrFn::Map),
+                args: vec![source, callback],
+            },
+            ty: Type::array(selected.clone()),
+            pos,
+        };
     }
 }

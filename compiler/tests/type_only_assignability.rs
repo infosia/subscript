@@ -14,6 +14,12 @@ use std::{collections::BTreeMap, fs, path::Path};
 /// of calls and the reason that no value flows to a place there.
 const ALLOWED: &[(&str, &str, usize, &str)] = &[
     (
+        "expr/aggregate.rs",
+        "check_array_spread_lit",
+        1,
+        "Only a spread element pair that fails compiler.md §334 rule 2 reaches this diagnostic check; no conversion applies.",
+    ),
+    (
         "loop_flow.rs",
         "check_for_of",
         2,
@@ -36,12 +42,6 @@ const ALLOWED: &[(&str, &str, usize, &str)] = &[
         "check_set_method",
         1,
         "The key type of a `Set` argument is a type of a collection, not a value.",
-    ),
-    (
-        "expr/aggregate.rs",
-        "check_array_spread_lit",
-        1,
-        "Contextual spreads and noncandidate lists compare collection element types. Function candidates copy through adapters (§305); other elements take the value check.",
     ),
     (
         "expr/assign.rs",
@@ -144,6 +144,24 @@ const ALLOWED_ASSIGNABLE: &[(&str, &str, usize, &str)] = &[
 /// enclosing function: the count of calls and the reason that no
 /// conversion applies there.
 const ALLOWED_FITS: &[(&str, &str, usize, &str)] = &[
+    (
+        "interface.rs",
+        "check_implemented_members",
+        1,
+        "A method declaration is compared with its interface signature; no function value flows (compiler.md §334 rule 1).",
+    ),
+    (
+        "expr/aggregate.rs",
+        "check_array_spread_lit",
+        1,
+        "The spread element check precedes its value conversion in place_spread_function_element (compiler.md §334 rules 2 and 4).",
+    ),
+    (
+        "expr/promise_reaction.rs",
+        "check_reaction_callback",
+        1,
+        "The parameter check precedes the callback value conversion to the helper signature (compiler.md §334 rules 3 and 4).",
+    ),
     (
         "type_rules.rs",
         "c_callback_rejection_cause",
@@ -332,12 +350,12 @@ fn an_unlisted_fits_call_is_reported() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/check");
     let mut found = fits_calls(&root);
     *found
-        .entry(("expr/aggregate.rs".into(), "check_array_spread_lit".into()))
+        .entry(("expr/aggregate.rs".into(), "unlisted_spread_check".into()))
         .or_insert(0) += 1;
     let problems = violations_of(&found, ALLOWED_FITS);
     assert_eq!(
         problems,
-        ["expr/aggregate.rs::check_array_spread_lit: 1 unlisted type-only call(s); use require_expr_assignable"]
+        ["expr/aggregate.rs::unlisted_spread_check: 1 unlisted type-only call(s); use require_expr_assignable"]
     );
 }
 
