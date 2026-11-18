@@ -375,3 +375,4 @@ Every section, with its status:
 | §332 | An indirect call runs the values that reach it | active | [`s332-an-indirect-call-runs-the-values-that-reach-it.md`](compiler/s332-an-indirect-call-runs-the-values-that-reach-it.md) |
 | §333 | A fresh local array does not move the receiver | active | [`s333-a-fresh-local-array-does-not-move-the-receiver.md`](compiler/s333-a-fresh-local-array-does-not-move-the-receiver.md) |
 | §334 | An interface method, a spread, and a `then` callback take handle variance | active | [`s334-an-interface-method-a-spread-and-a-then-callback-take-handle-variance.md`](compiler/s334-an-interface-method-a-spread-and-a-then-callback-take-handle-variance.md) |
+| §335 | A call through a constraint has the constraint type | active | [`s335-a-call-through-a-constraint-has-the-constraint-type.md`](compiler/s335-a-call-through-a-constraint-has-the-constraint-type.md) |
