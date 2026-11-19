@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§338. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§339. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -23,11 +23,8 @@ No item is open in this group.
     so a null test of a narrowed interface result is S100 there
     (§335.5 items 1, 2). A class instance type would need the type
     arguments of each use site. Medium to large.
-14. Small gaps: `Worker.spawn(work)` with a value result (§240.4 item
-    6); a literal-alias path and an encoding in a variable (§185.4 item
-    1); §258.4 item 2. (`new Set([1, zero()])` and
-    `const b = (a = new A())` are accepted at `892bcbc8`; §336 closed
-    `new Set<i32>([])` and the template `normalize`.)
+14. A non-capturing lambda as a `Worker.spawn` entry stays rejected
+    (§339.5 item 2). `tsc` accepts it. Small.
 15. C24 rows with no decided lowering (§154.4 items 4–13): `x!`,
     `**`, labels, string `<`/`>`, `yield*`, type-parameter defaults,
     local class or enum, generic aliases, `typeof`, and others. Each
@@ -90,6 +87,7 @@ No item is open in this group.
   `runtime/src/arrops.rs` is past 2,000 lines.
 - Tutorial: §323.4 item 4.
 - Tests: §337.5 item 1, §338.5 items 1–5.
+- Diagnostics: §339.5 item 1.
 
 ## 7. Process and tooling
 

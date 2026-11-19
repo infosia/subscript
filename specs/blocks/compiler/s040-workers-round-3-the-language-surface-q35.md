@@ -20,6 +20,9 @@ generics. Enforced, each with a corpus pin:
   pin is `tsc`-clean, recorded in its header); an `async` entry
   rejects (r107 — also expected `tsc`-clean via `void`-return
   assignability, verify and record).
+  *(Amended 2026-11-19 by §339 rule 6: the entry type is assignable
+  by the callback place rule, so an entry can take fewer parameters
+  and have a value result.)*
 - Message classes are transferable per stdlib §16.2; a string
   field rejects (r108, innermost-field diagnostics per the §32
   precedent).

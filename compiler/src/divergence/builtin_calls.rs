@@ -237,7 +237,7 @@ pub(super) const WORKER_ENTRY_LOCAL_VALUE: DivergenceEntry = DivergenceEntry {
 pub(super) const WORKER_ENTRY_GENERIC: DivergenceEntry = DivergenceEntry {
     ts: "class M { x: i32 = 1; } function entry<T>(i: Inbox<M>, o: Outbox<M>): void {}\nexport function main(): void { Worker.spawn<M,M>(entry); }",
     subscript: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {}\nexport function main(): void { Worker.spawn(entry); }",
-    why: "A worker entry must name a non-generic module-level function with the exact synchronous entry shape.",
+    why: "A worker entry must name a non-generic synchronous module-level function.",
     collision: "compiler.md §40.1",
 };
 
@@ -349,8 +349,8 @@ pub(super) const MAP_GROUP_BY_VOID_KEY: DivergenceEntry = DivergenceEntry {
 pub(super) const WORKER_ENTRY_SIGNATURE: DivergenceEntry = DivergenceEntry {
     ts: "class M { x: i32 = 1; } function entry(i: Inbox<M>): void {}\nexport function main(): void { Worker.spawn(entry); }",
     subscript: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {}\nexport function main(): void { Worker.spawn(entry); }",
-    why: "A worker entry must have exactly two endpoint parameters, return void, and have no default parameter.",
-    collision: "compiler.md §40.1",
+    why: "An omitted endpoint supplies no message class for inference. Give both message types explicitly.",
+    collision: "compiler.md §339 rule 6",
 };
 
 pub(super) const CLASS_INHERITED_OBJECT_MEMBER: DivergenceEntry = DivergenceEntry {

@@ -27,9 +27,13 @@ impl Checker<'_> {
             return self.err_expr(pos);
         }
         let path = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
-        let path = self.apparent_expr(path);
-        // tsc accepts a string-literal union alias for `path` (rule 5a).
-        let site = match &path.ty {
+        let mut path = self.apparent_expr(path);
+        // compiler.md §339 rule 4: the host receives the member string.
+        self.convert_string_operand(
+            &mut path,
+            super::string_operand::StringOperand::Place(&Type::Str),
+        );
+        let site = match self.apparent_type(&path.ty) {
             Type::Str | Type::Error => None,
             Type::StringAlias(_) => Some(RejectionSite::FileModuleStringAlias),
             _ => Some(RejectionSite::FileModuleArguments),
@@ -78,8 +82,11 @@ impl Checker<'_> {
             Op::ReadBytes
         } else {
             let encoding = &*call.args[1].expr;
+            let literal = self.literal_operand(encoding, fx);
             match encoding {
-                ast::Expr::Lit(ast::Lit::Str(s)) if s.value == *"utf8" => {}
+                _ if literal.as_ref().and_then(|value| value.as_string()) == Some("utf8") => {
+                    self.check_expr(encoding, Some(&Type::Str), fx);
+                }
                 ast::Expr::Lit(_) | ast::Expr::Object(_) => {
                     self.file_error(
                         RejectionSite::FileModuleArguments,
@@ -89,8 +96,8 @@ impl Checker<'_> {
                     return self.err_expr(pos);
                 }
                 _ => {
-                    // A string expression that is not the literal: tsc
-                    // accepts one whose type is the literal "utf8".
+                    // compiler.md §339 rule 5: tsc rejects a widened string encoding,
+                    // so this diagnostic carries no divergence block.
                     let value = self.check_expr(encoding, Some(&Type::Str), fx);
                     let value = self.apparent_expr(value);
                     let site = if value.ty == Type::Str {

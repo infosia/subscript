@@ -50,7 +50,6 @@ FieldDefiniteAssertionUnassigned	context-affine-instance-field,field-definite-as
 FileModuleImportForm	s185-bare,s185-default,s185-namespace
 FileModuleNumberArray	s185-f64-data,s185-i32-data
 FileModuleReexport	s185-reexport,s312-FileModuleReexport.ts
-FileModuleStringAlias	s185-alias-data,s185-alias-path
 FixedArrayByteLimit	c-fixed-layout-pattern,c-fixed-too-large,fixed-array-byte-limit
 FixedArrayLengthZero	s254-annotation.ts,s254-result.ts
 FixedArrayLiteralLength	a-s001,a-s058

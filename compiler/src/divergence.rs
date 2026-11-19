@@ -23,11 +23,9 @@
 pub enum Divergence {
     /// A build that does not enable the standard file module rejects its import.
     FileModuleDisabled,
-    /// A file read encoding is the literal `"utf8"`, not a `string` value.
-    FileModuleEncoding,
     /// File write data is a `u8[]` value, not an array of another number type.
     FileModuleNumberArray,
-    /// A file path or text is a `string` value, not a string-literal union alias.
+    /// File text data requires a `string` value, not a string-literal union alias.
     FileModuleStringAlias,
     /// The standard file module is imported with named specifiers only.
     FileModuleImportForm,
@@ -488,9 +486,9 @@ pub enum Divergence {
     WorkerSpawnSpread,
     /// A worker entry must directly name a module-level function; a local function value has no entry identity.
     WorkerEntryLocalValue,
-    /// A worker entry must name a non-generic module-level function with the exact synchronous entry shape.
+    /// A worker entry must name a non-generic synchronous module-level function.
     WorkerEntryGeneric,
-    /// A worker entry must have exactly two endpoint parameters, return void, and have no default parameter.
+    /// A worker entry must fit its synchronous callback place and supply both message classes.
     WorkerEntrySignature,
     /// A worker entry uses the builtin Inbox and Outbox identities; same-shaped source classes are different endpoint types.
     WorkerEntryStructuralEndpoints,
@@ -1069,7 +1067,6 @@ impl Divergence {
     /// Every divergence topic, each one time.
     pub const ALL: &'static [Divergence] = &[
         Divergence::FileModuleDisabled,
-        Divergence::FileModuleEncoding,
         Divergence::FileModuleNumberArray,
         Divergence::FileModuleStringAlias,
         Divergence::FileModuleImportForm,

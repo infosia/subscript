@@ -69,7 +69,7 @@ rejection_classes! {
     Self::CCallbackRequiresNoEnvironment => (RuleCode::S100, Diverges(Divergence::CCallbackRequiresNoEnvironment)),
     Self::AliasArrayToStringArray => (RuleCode::S100, Diverges(Divergence::AliasArrayToStringArray)),
     Self::FileModuleDisabled => (RuleCode::S100, Diverges(Divergence::FileModuleDisabled)),
-    Self::FileModuleEncoding => (RuleCode::S100, Diverges(Divergence::FileModuleEncoding)),
+    Self::FileModuleEncoding => (RuleCode::S100, TscRejects),
     Self::FileModuleNumberArray => (RuleCode::S100, Diverges(Divergence::FileModuleNumberArray)),
     Self::FileModuleStringAlias => (RuleCode::S100, Diverges(Divergence::FileModuleStringAlias)),
     Self::FileModuleImportForm => (RuleCode::S100, Diverges(Divergence::FileModuleImportForm)),
@@ -1561,6 +1561,9 @@ rejection_classes! {
     Self::WorkerEntryGeneric => (RuleCode::S100, Diverges(Divergence::WorkerEntryGeneric)),
     Self::WorkerEntryAsync => (RuleCode::S100, Diverges(Divergence::WorkerEntryShape)),
     Self::WorkerEntryShape => (RuleCode::S100, Diverges(Divergence::WorkerEntrySignature)),
+    Self::WorkerEntryGenerator => (RuleCode::S100, Diverges(Divergence::WorkerEntrySignature)),
+    Self::WorkerEntryAsyncResult => (RuleCode::S100, Diverges(Divergence::WorkerEntrySignature)),
+    Self::WorkerEntryDefaultPrefix => (RuleCode::S100, Diverges(Divergence::WorkerEntrySignature)),
     Self::WorkerEntryStructuralEndpoints => (
         RuleCode::S100,
         Diverges(Divergence::WorkerEntryStructuralEndpoints),

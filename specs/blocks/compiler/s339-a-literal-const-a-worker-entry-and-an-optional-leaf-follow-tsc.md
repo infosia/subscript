@@ -112,3 +112,60 @@ Also measured at `eaaecee4`:
 3. The development tier, the ship tier, and (where the entry allows
    it) the interpreter give the same output. The CLI `check` output of
    each other corpus entry is the same at the pin and after.
+
+### 339.3 Sections this one amends
+
+- §185 rule 5a; §185.4 item 1 closes. `collisions.md` C25 item 4.
+- §40.1 (the worker entry shape); §240.4 item 6 closes.
+- §258.4 item 2: the optional-chain leaf closes.
+
+### 339.4 Phase Review
+
+Form. The checker reads the literal of an unannotated `const` through
+its initializer, also through an import and a chain of `const`s, only
+where the context is a string-literal union alias or the `readFile`
+encoding (`compiler/src/check/expr/entry.rs`,
+`compiler/src/check/file_module.rs`). The path converts with the
+operation of `const s: string = n`. A worker entry that is not of the
+exact shape gets an adapter in each tier
+(`codegen/src/lower/func.rs`, `codegen/src/cemit/emitter.rs`): it
+calls the declared endpoint prefix and releases a counted result if no
+trap is pending. An entry with trailing default parameters gets a
+synthesized function. An optional chain at a statement leaf lowers to
+the guarded call of `c?.m();`.
+
+Measured, the pin `eaaecee4` and after. Each new entry is rejected at
+the pin by `check`, the development run, and the ship build. After,
+the development tier, the ship tier, the interpreter where the header
+allows it, and `node` for `a488` and `a491` give the golden:
+
+| Entry | Pin | After |
+|---|---|---|
+| `a488-literal-const-context` (two modules) | 13 type mismatch errors | 13 lines |
+| `a489-file-literal-path` | 4 "accepted forms" errors | `alpha`, `beta` |
+| `a490-worker-function-place` | 4 entry shape errors | `11`, `22`, `one`, `none`, `44` |
+| `a491-optional-statement-leaf` | 3 S012 errors | 6 lines |
+
+The CLI `check` output of 1,102 other corpus entries is the same at
+the pin and after. `codegen/tests/worker_entry_release.rs` fails in
+the development tier and in the ship tier when the adapter release is
+removed: the released generator reports an unobserved failed handle.
+
+One fresh review found no CRITICAL or MAJOR finding. It found six
+MINOR findings. Four are fixed: the release test above; the entry
+diagnostic states the rule 6 shape, and a generator, an async result,
+a default parameter, and a missing message class each have their own
+reason; a comment of the encoding branch; and a run of the default
+parameter path in `a490`. The finding on §185 and §40.1 text is fixed
+by §339.3. One is open (§339.5 item 1).
+
+### 339.5 Open
+
+1. Contrived. An entry whose only parameter is an `Outbox<M>`, with
+   `Worker.spawn<M, M>(entry)`, gives "type arguments must exactly
+   match its entry's Inbox/Outbox message classes". The type arguments
+   match, and the cause is the parameter kind. `tsc` also rejects the
+   program, so only the message is wrong.
+2. A lambda entry stays rejected (r106, §40.1). A non-capturing lambda
+   has no environment, so the reason of §40.1 does not apply to it.
+   `tsc` accepts it. It is not selected.

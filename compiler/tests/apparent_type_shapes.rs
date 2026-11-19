@@ -704,7 +704,6 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("class_shape.rs", "resolve_class_method", 0x5debbbffdf4b6cb8),
             ("class_shape.rs", "validate_class_index_accessors", 0xbab0ce8cdbcb4a),
             ("expr/method.rs", "check_map_group_by", 0xe321a8c6ea280c71),
-            ("expr/namespace.rs", "check_worker_spawn", 0x5debbbffdf4b6cb8),
             ("host_entries.rs", "populate", 0x19f942a8ec1b1313),
             ("pipeline.rs", "visit_expr", 0xbfa87e28830c1a2f),
             ("stmt.rs", "check_return", 0xcc9ffd8cdbdfaf84),

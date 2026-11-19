@@ -868,9 +868,12 @@ differs in four ways:
 3. `readFile(path, "utf8")` of bytes that are not UTF-8 is an `Error`
    here; `node` replaces each invalid sequence with U+FFFD.
 4. Another member, another argument form (an options object, another
-   encoding), and a default or namespace import are rejected here.
+   encoding), and a default or namespace import are rejected here. A
+   path of a string-literal union alias type, and an encoding that
+   `tsc` types as the literal `"utf8"`, are accepted (`compiler.md`
+   §339 rules 1, 2, 4).
 
-Accept: `a355`, `a356`. Reject: `r399`, `r400`, `r401`.
+Accept: `a355`, `a356`, `a489`. Reject: `r399`, `r400`, `r401`.
 
 ### C26. `subscript:text` is a module that `node` cannot load
 

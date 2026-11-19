@@ -23,11 +23,6 @@ FILE	E	main.ts
 import {writeFile} from "node:fs/promises"; export async function main(): Promise<void> { const data: f64[] = [1.5]; await writeFile("data.bin", data); }
 END FILE
 END PROGRAM
-PROGRAM	s185-alias-path			0	enable-module=node:fs/promises
-FILE	E	main.ts
-import {readFile} from "node:fs/promises"; type Name = "a.txt" | "b.txt"; export async function main(): Promise<void> { const name: Name = "a.txt"; await readFile(name, "utf8"); }
-END FILE
-END PROGRAM
 PROGRAM	s185-alias-data			0	enable-module=node:fs/promises
 FILE	E	main.ts
 import {writeFile} from "node:fs/promises"; type Text = "x" | "y"; export async function main(): Promise<void> { const text: Text = "x"; await writeFile("text.txt", text); }
@@ -9329,9 +9324,9 @@ FILE	E	main.ts
 import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { await readFile("text.txt", {encoding:"utf8"}); }
 END FILE
 END PROGRAM
-PROGRAM	s185-encoding			0	enable-module=node:fs/promises
+PROGRAM	s185-encoding	TS2345		0	enable-module=node:fs/promises
 FILE	E	main.ts
-import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { const encoding = "utf8"; await readFile("text.txt", encoding); }
+import {readFile} from "node:fs/promises"; export async function main(): Promise<void> { let encoding = "utf8"; await readFile("text.txt", encoding); }
 END FILE
 END PROGRAM
 PROGRAM	s185-literal	TS2345		0	enable-module=node:fs/promises
@@ -10285,5 +10280,20 @@ END PROGRAM
 PROGRAM	s330-case	TS2678		0
 FILE	E	main.ts
 const MODE = 1; export function main(): void { switch (MODE) { case 2: break; } }
+END FILE
+END PROGRAM
+PROGRAM	worker-entry-generator			0
+FILE	E	main.ts
+class M { x: i32 = 1; } function* entry(i: Inbox<M>, o: Outbox<M>): Generator<i32> { yield 1; } export function main(): void { Worker.spawn<M,M>(entry); }
+END FILE
+END PROGRAM
+PROGRAM	worker-entry-async-result			0
+FILE	E	main.ts
+class M { x: i32 = 1; } async function job(): Promise<void> {} function entry(i: Inbox<M>, o: Outbox<M>): Promise<void> { return job(); } export function main(): void { Worker.spawn<M,M>(entry); }
+END FILE
+END PROGRAM
+PROGRAM	worker-entry-default-prefix			0
+FILE	E	main.ts
+class M { x: i32 = 1; } function inbox(): Inbox<M> { throw new Error("default"); } function entry(i: Inbox<M> = inbox()): void {} export function main(): void { Worker.spawn<M,M>(entry); }
 END FILE
 END PROGRAM

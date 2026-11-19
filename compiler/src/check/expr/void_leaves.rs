@@ -63,6 +63,12 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx,
     ) -> hir::Expr {
         let inner = self.enter_void_leaf_place(e, place);
+        // compiler.md §339 rule 7: an optional call at a statement leaf is a statement.
+        if place == VoidLeafPlace::Statement {
+            if let ast::Expr::OptChain(chain) = inner {
+                return self.check_optional_chain_leaf(chain, fx);
+            }
+        }
         let checked = self.check_expr_keeping_void_as(inner, ctx, kind, fx);
         self.void_leaf_place = None;
         checked

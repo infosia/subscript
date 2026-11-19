@@ -138,6 +138,7 @@ contract gained rule 2a, the places of rule 2 beside a spread and in
    *(Closed 2026-11-11 by §248.)*
 6. `Worker.spawn(work)` with a value result keeps the exact-shape
    diagnostic of Q35. `tsc` accepts it.
+   *(Closed 2026-11-19 by §339.)*
 7. A generic call with no type argument infers its type argument from
    the reference before any place check: `const viaId: CB = id(named);`
    and `const b: Box<CB> = new Box(named);` are rejected. `tsc` accepts

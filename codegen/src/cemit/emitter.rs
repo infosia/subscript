@@ -1536,21 +1536,57 @@ impl<'m> Emitter<'m> {
             let function = self.function(entry.function)?;
             if function.is_async
                 || function.is_generator
-                || function.return_type != Type::Void
-                || explicit_parameters(function).count() != 2
+                || explicit_parameters(function).count() > 2
             {
                 return Err(internal(format!(
                     "worker entry `{}` lost its checked shape",
                     function.source_name
                 )));
             }
+            let count = explicit_parameters(function).count();
+            let return_type = function.return_type.clone();
+            let pos = function.pos.clone();
+            let arguments = ["ctx", "inbox", "outbox"][..count + 1].join(", ");
+            let call = format!("sub_f{}({arguments})", entry.function.0);
             let signature = format!("static void subscript_worker_entry{index}(subscript_rt_context* ctx, subscript_rt_worker_inbox* inbox, subscript_rt_worker_outbox* outbox)");
             let _ = writeln!(self.helper_prototypes, "{signature};");
-            let _ = writeln!(
-                self.helpers,
-                "{signature} {{ sub_f{}(ctx, inbox, outbox); }}",
-                entry.function.0
-            );
+            // compiler.md §339 rule 6: a counted result loses its discarded owner.
+            let body = if return_type.counted_type().is_some() {
+                let ty = self.ctype(&return_type)?;
+                let bytes = crate::counted::description(&self.layouts, &return_type)?;
+                let words = bytes
+                    .chunks_exact(8)
+                    .map(|word| {
+                        let mut bytes = [0; 8];
+                        bytes.copy_from_slice(word);
+                        format!("{}ULL", u64::from_ne_bytes(bytes))
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let pos = self.pos_id(&pos);
+                let release = self.runtime_call(
+                    "void",
+                    "subscript_rt_counted_value",
+                    &[
+                        "void*".into(),
+                        "const void*".into(),
+                        "const void*".into(),
+                        "uint32_t".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        "&result".into(),
+                        format!("(const uint64_t[]){{{words}}}"),
+                        "1u".into(),
+                        format!("{pos}u"),
+                    ],
+                );
+                format!("{ty} result = {call}; if (*(const uint32_t*)ctx == 0u) {{ {release}; }}")
+            } else {
+                format!("{call};")
+            };
+            let _ = writeln!(self.helpers, "{signature} {{ {body} }}");
         }
         Ok(())
     }

@@ -1683,6 +1683,14 @@ pub(crate) fn define_worker_entry<M: Module>(
 ) -> Result<(), String> {
     let id = ml.func_id(&FnKey::WorkerEntry(index))?;
     let target = ml.func_id(&FnKey::LirFunction(entry.function))?;
+    let function = ml
+        .lir
+        .functions
+        .get(entry.function.0 as usize)
+        .ok_or_else(|| internal("worker entry has no LIR function"))?
+        .clone();
+    let parameter_count = explicit_parameters(&function).count();
+    let result_repr = ml.layouts.repr(&function.return_type)?;
     let mut context = ml.module.make_context();
     context.func.signature = ml.signature_of(id);
     let mut builder_context = FunctionBuilderContext::new();
@@ -1691,9 +1699,64 @@ pub(crate) fn define_worker_entry<M: Module>(
         let block = builder.create_block();
         builder.append_block_params_for_function_params(block);
         builder.switch_to_block(block);
-        let arguments = builder.block_params(block).to_vec();
+        let incoming = builder.block_params(block).to_vec();
+        let mut arguments = vec![incoming[0]];
+        // compiler.md §339 rule 6: use the declared prefix and discard the result.
+        let aggregate = if let Repr::Agg { size, align } = result_repr {
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                size.max(1),
+                align_shift(align.max(1)),
+            ));
+            let address = builder.ins().stack_addr(types::I64, slot, 0);
+            arguments.push(address);
+            Some(address)
+        } else {
+            None
+        };
+        arguments.extend(incoming.iter().skip(1).take(parameter_count));
         let target = ml.module.declare_func_in_func(target, builder.func);
-        builder.ins().call(target, &arguments);
+        let call = builder.ins().call(target, &arguments);
+        if function.return_type.counted_type().is_some() {
+            let results = builder.inst_results(call).to_vec();
+            let address = if let Some(address) = aggregate {
+                address
+            } else {
+                let value = *results
+                    .first()
+                    .ok_or_else(|| internal("counted result has no value"))?;
+                let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                    StackSlotKind::ExplicitSlot,
+                    8,
+                    3,
+                ));
+                let address = builder.ins().stack_addr(types::I64, slot, 0);
+                builder.ins().store(flags(), value, address, 0);
+                address
+            };
+            let done = builder.create_block();
+            let release = builder.create_block();
+            let trap = builder.ins().load(types::I32, flags(), incoming[0], 0);
+            let clear = builder.ins().icmp_imm(IntCC::Equal, trap, 0);
+            builder.ins().brif(clear, release, &[], done, &[]);
+            builder.switch_to_block(release);
+            let bytes = crate::counted::description(&ml.layouts, &function.return_type)?;
+            let data = ml.literal_data(&bytes)?;
+            let data = ml.module.declare_data_in_func(data, builder.func);
+            let description = builder.ins().symbol_value(types::I64, data);
+            let operation = builder.ins().iconst(types::I32, 1);
+            let pos = ml.positions.add(&function.pos);
+            let pos = builder.ins().iconst(types::I32, i64::from(pos));
+            let release = ml
+                .module
+                .declare_func_in_func(ml.rt.counted_value, builder.func);
+            builder.ins().call(
+                release,
+                &[incoming[0], address, description, operation, pos],
+            );
+            builder.ins().jump(done, &[]);
+            builder.switch_to_block(done);
+        }
         builder.ins().return_(&[]);
         builder.seal_all_blocks();
         builder.finalize();

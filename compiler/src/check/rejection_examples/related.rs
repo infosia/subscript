@@ -60,6 +60,33 @@ pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
             };
             Some(&ENTRY)
         }
+        RejectionSite::WorkerEntryGenerator => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "class M { x: i32 = 1; } function* entry(i: Inbox<M>, o: Outbox<M>): Generator<i32> { yield 1; } export function main(): void { Worker.spawn<M,M>(entry); }",
+                subscript: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {} export function main(): void { Worker.spawn<M,M>(entry); }",
+                why: "Calling a generator creates a suspended frame instead of executing the worker body. Use a synchronous function that runs the work.",
+                ..Divergence::WorkerEntrySignature.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::WorkerEntryAsyncResult => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): Promise<void> { throw new Error(\"pending\"); } export function main(): void { Worker.spawn<M,M>(entry); }",
+                subscript: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {} export function main(): void { Worker.spawn<M,M>(entry); }",
+                why: "An async handle result needs an await. A worker discards its entry result, so the result must hold no async handle.",
+                ..Divergence::WorkerEntrySignature.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::WorkerEntryDefaultPrefix => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "class M { x: i32 = 1; static inbox(): Inbox<M> { throw new Error(\"default\"); } } function entry(i: Inbox<M> = M.inbox()): void {} export function main(): void { Worker.spawn<M,M>(entry); }",
+                subscript: "class M { x: i32 = 1; } function entry(i: Inbox<M>, o: Outbox<M>): void {} export function main(): void { Worker.spawn<M,M>(entry); }",
+                why: "An entry with default parameters cannot adapt to additional callback parameters. Declare both endpoint parameters.",
+                ..Divergence::WorkerEntrySignature.entry()
+            };
+            Some(&ENTRY)
+        }
         _ => None,
     }
 }

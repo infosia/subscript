@@ -678,24 +678,42 @@ impl<'p> Checker<'p> {
         chain: &ast::OptChainExpr,
         fx: &mut FnCtx,
     ) -> Vec<hir::Stmt> {
+        let leaf = self.check_optional_chain_leaf(chain, fx);
+        self.void_leaf_statements(leaf)
+    }
+
+    /// compiler.md §339 rule 7: null tests guard a discarded call leaf.
+    pub(super) fn check_optional_chain_leaf(
+        &mut self,
+        chain: &ast::OptChainExpr,
+        fx: &mut FnCtx,
+    ) -> hir::Expr {
         let pos = self.pos(chain.span);
         let plan = self.check_optional_plan(chain, fx);
-        let mut out = Vec::new();
-        if self.apparent_type(&(plan.value.ty)) == Type::Error {
-            out.push(hir::Stmt::Expr(self.err_expr(pos)));
-            return out;
+        if self.apparent_type(&plan.value.ty) == Type::Error {
+            return self.err_expr(pos);
         }
         if !plan.ends_in_call {
             let name = self.type_name(&plan.value.ty);
             self.reject_subset(RejectionSite::OptionalMemberValueWithoutFallback, format!(
                     "an optional chain has type `{name} | undefined` in TypeScript; give it a fallback with `??` or use it as a statement"
                 ), pos.clone());
-            out.push(hir::Stmt::Expr(self.err_expr(pos)));
-            return out;
+            return self.err_expr(pos);
         }
-
-        out.extend(Self::optional_chain_statements(plan, &pos));
-        out
+        let mut leaf = plan.value;
+        for test in plan.tests.into_iter().rev() {
+            leaf = hir::Expr {
+                pending_work: None,
+                kind: ExprKind::Binary {
+                    op: BinOp::And,
+                    left: Box::new(test),
+                    right: Box::new(leaf),
+                },
+                ty: Type::Void,
+                pos: pos.clone(),
+            };
+        }
+        leaf
     }
 
     /// The value of `plan` under each null test of the chain.

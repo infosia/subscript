@@ -107,3 +107,5 @@ evaluation, the short circuit, an `await` leaf, and a `yield` leaf.
    generic context, `const f = async (n: i32) => n > 0 && g(n);`, and
    `[b ? g(1) : g(2)];`.
    *(Measured at `11d0c3fd`: `(b && g(1)) || g(2);`, `[b ? g(1) : g(2)];`, and `async (n) => n > 0 && g(n)` are accepted. The other forms are not measured.)*
+   *(Measured at `eaaecee4`: `gr((n) => n > 0 && g(n))` is accepted.
+   `b ? c?.m() : g(1);` closed 2026-11-19 by §339 rule 7.)*

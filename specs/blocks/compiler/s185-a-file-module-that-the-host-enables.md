@@ -83,6 +83,9 @@ v24.18.0):
    and a `string` value for `encoding`. Each such argument is rejected
    with a divergence block that shows the accepted form (§154); an
    argument that `tsc` rejects too has no block.
+   *(Amended 2026-11-19 by §339 rules 1, 2, 4, 5: a literal-alias path
+   and an encoding that `tsc` types as `"utf8"` are accepted; a
+   `string` encoding has no block, because `tsc` rejects it.)*
 6. **Path.** The host interprets the path: the runtime does not
    normalize it, resolve it, or choose a directory. The path is the
    script string's UTF-8 bytes with their length; a host that cannot
@@ -137,6 +140,7 @@ v24.18.0):
    string. An encoding argument held in a `string` variable shows the
    divergence block, and `tsc` gives TS2345 for it, because the
    checker has no literal string type.
+   *(Closed 2026-11-19 by §339.)*
 2. **No `node` run of the module.** `a355` is `js-comparable: no`
    (C25): its error lines differ from `node`, and the gate's `node`
    runner gives no scratch directory. The read and write path is not

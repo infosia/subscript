@@ -232,8 +232,7 @@ fn fragment_sites_checker_failures(
         // A fragment past the enable check runs in a build that enables the module.
         enabled_modules: if matches!(
             variant,
-            Divergence::FileModuleEncoding
-                | Divergence::FileModuleNumberArray
+            Divergence::FileModuleNumberArray
                 | Divergence::FileModuleStringAlias
                 | Divergence::FileModuleImportForm
                 | Divergence::FileModuleFunctionValue

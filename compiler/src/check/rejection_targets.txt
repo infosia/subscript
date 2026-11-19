@@ -522,8 +522,8 @@ WorkerEntryNotNamedFunction	a-s192	S100	`Worker.spawn` entry must be a directly 
 WorkerEntryLocalValue	a-s193	S100	`Worker.spawn` entry must name a module-level function directly, not a local function value
 WorkerEntryGeneric	a-s194	S100	`Worker.spawn` entry must name a non-generic module-level function directly
 WorkerEntryAsync	a-s195	S100	`Worker.spawn` entry must be synchronous; async worker entries are rejected
-WorkerEntryShape	a-s196	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
-WorkerEntryStructuralEndpoints	a-s197	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
+WorkerEntryShape	a-s196	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result
+WorkerEntryStructuralEndpoints	a-s197	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result
 WorkerSpawnTypeArgumentCount	a-s198	S100	`Worker.spawn` takes exactly two explicit type arguments
 WorkerExplicitMessageIdentity	a-s199	S100	`Worker.spawn` type arguments must exactly match its entry's Inbox/Outbox message classes
 RegexConstructorTypeArguments	a-s200	S100	`RegExp` is not generic
@@ -735,8 +735,8 @@ GenericSynchronousMethodValue	generic-synchronous-method-value	S100	method `f` m
 GeneratorFunctionValue	generator-function-value	S100	generators may only be called, not passed as values
 ByteArgumentTypeMismatch	byte-argument-type-mismatch	S100	type mismatch: `Context.bytesOf` expects exactly `FixedArray<i32, 1>`, got `i32`
 WorkerSpawnArgumentCount	worker-spawn-argument-count	S100	`Worker.spawn` expects one directly named entry function, got 0 argument(s)
-WorkerEntryParameterCount	worker-entry-parameter-count	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
-WorkerEntryEndpointMismatch	worker-entry-endpoint-mismatch	S100	`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`
+WorkerEntryParameterCount	worker-entry-parameter-count	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result
+WorkerEntryEndpointMismatch	worker-entry-endpoint-mismatch	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result
 ArrayCallbackArgumentCount	array-callback-argument-count	S100	`map` expects 1 argument (the callback), got 0
 MapCallbackArgumentCount	map-callback-argument-count	S100	`Map.forEach` expects exactly 1 callback, got 0
 SetCallbackArgumentCount	set-callback-argument-count	S100	`Set.forEach` expects exactly 1 callback, got 0
@@ -1487,7 +1487,6 @@ FileModuleArguments	s185-bool-data	S100	accepted forms: readFile(path: string, e
 FileModuleArguments	s185-number-path	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleNumberArray	s185-i32-data	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleNumberArray	s185-f64-data	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
-FileModuleStringAlias	s185-alias-path	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleStringAlias	s185-alias-data	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleReexport	s185-reexport	S100	accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
 FileModuleFunctionValue	s185-function-value	S100	`readFile` from node:fs/promises can only be called; accepted forms: readFile(path: string, encoding: "utf8"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>
@@ -1592,3 +1591,6 @@ FunctionDefaultsAdapterNeedsConstName	s320-selected-local.ts	S100	function value
 FunctionDefaultsCallbackNeedsConstName	s320-callback.ts	S100	`sort` callback `l` needs an adapter for this place, but its defaults are not known at check time; write a lambda that calls the function
 DisjointLiteralEquality	s330-equality	S100	comparison of different literals 1 and 2
 DisjointLiteralCase	s330-case	S100	case literal 2 differs from subject literal 1
+WorkerEntryGenerator	worker-entry-generator	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result
+WorkerEntryAsyncResult	worker-entry-async-result	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result
+WorkerEntryDefaultPrefix	worker-entry-default-prefix	S100	`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result

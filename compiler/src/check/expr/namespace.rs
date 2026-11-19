@@ -795,31 +795,28 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if sig.is_generator
-            || sig.ret != Type::Void
-            || sig.params.len() != 2
-            || sig.params.iter().any(|parameter| parameter.has_default)
+        let shape_message = "`Worker.spawn` requires a directly named synchronous module-level function assignable to `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`; it calls the declared endpoint prefix and discards the result";
+        let rejected_shape = if sig.params.len() > 2
+            && sig.params[2..]
+                .iter()
+                .any(|parameter| !parameter.has_default)
         {
-            self.reject_subset(if sig.params.len() <= 2 { RejectionSite::WorkerEntryShape } else { RejectionSite::WorkerEntryParameterCount }, "`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`", self.pos(ident.span));
+            Some(RejectionSite::WorkerEntryParameterCount)
+        } else if sig.is_generator {
+            Some(RejectionSite::WorkerEntryGenerator)
+        } else if sig.params.len() < 2 && sig.params.iter().any(|parameter| parameter.has_default) {
+            Some(RejectionSite::WorkerEntryDefaultPrefix)
+        } else if self.apparent_type(&sig.ret).holds_async_handle() {
+            Some(RejectionSite::WorkerEntryAsyncResult)
+        } else {
+            None
+        };
+        if let Some(site) = rejected_shape {
+            self.reject_subset(site, shape_message, self.pos(ident.span));
             return self.err_expr(pos);
         }
-        let (input, output) = match (
-            &self.apparent_type(sig.params[0].ty()),
-            &self.apparent_type(sig.params[1].ty()),
-        ) {
-            (Type::Inbox(input), Type::Outbox(output)) => ((**input).clone(), (**output).clone()),
-            _ => {
-                self.reject_subset(if matches!((&self.apparent_type(sig.params[0].ty()), &self.apparent_type(sig.params[1].ty())), (Type::Class(_), Type::Class(_))) { RejectionSite::WorkerEntryStructuralEndpoints } else { RejectionSite::WorkerEntryEndpointMismatch }, "`Worker.spawn` entry must have the exact synchronous shape `(inbox: Inbox<In>, outbox: Outbox<Out>) => void`", self.pos(ident.span));
-                return self.err_expr(pos);
-            }
-        };
-        let (Type::Class(input_id), Type::Class(output_id)) =
-            (&self.apparent_type(&input), &self.apparent_type(&output))
-        else {
-            return self.err_expr(pos);
-        };
-
-        if let Some(type_args) = &c.type_args {
+        // compiler.md §339 rule 6: explicit message arguments supply omitted endpoints.
+        let explicit = if let Some(type_args) = &c.type_args {
             if type_args.params.len() != 2 {
                 self.reject_subset(
                     RejectionSite::WorkerSpawnTypeArgumentCount,
@@ -828,13 +825,72 @@ impl<'p> Checker<'p> {
                 );
                 return self.err_expr(pos);
             }
-            let explicit_input = self.resolve_type(&type_args.params[0]);
-            let explicit_output = self.resolve_type(&type_args.params[1]);
-            if explicit_input != input || explicit_output != output {
-                self.reject_subset(RejectionSite::WorkerExplicitMessageIdentity, "`Worker.spawn` type arguments must exactly match its entry's Inbox/Outbox message classes", pos.clone());
+            Some((
+                self.resolve_type(&type_args.params[0]),
+                self.resolve_type(&type_args.params[1]),
+            ))
+        } else {
+            None
+        };
+        let inferred_input = sig
+            .params
+            .first()
+            .and_then(|p| match self.apparent_type(p.ty()) {
+                Type::Inbox(input) => Some(*input),
+                _ => None,
+            });
+        let inferred_output = sig
+            .params
+            .get(1)
+            .and_then(|p| match self.apparent_type(p.ty()) {
+                Type::Outbox(output) => Some(*output),
+                _ => None,
+            });
+        let (input, output) = if let Some(explicit) = explicit {
+            explicit
+        } else if let (Some(input), Some(output)) =
+            (inferred_input.clone(), inferred_output.clone())
+        {
+            (input, output)
+        } else {
+            self.reject_subset(
+                RejectionSite::WorkerEntryShape,
+                shape_message,
+                self.pos(ident.span),
+            );
+            return self.err_expr(pos);
+        };
+        for (index, parameter) in sig.params.iter().take(2).enumerate() {
+            let expected = if index == 0 {
+                Type::inbox(input.clone())
+            } else {
+                Type::outbox(output.clone())
+            };
+            if self.apparent_type(parameter.ty()) != expected {
+                let site = if matches!(
+                    self.apparent_type(parameter.ty()),
+                    Type::Inbox(_) | Type::Outbox(_)
+                ) {
+                    RejectionSite::WorkerExplicitMessageIdentity
+                } else if matches!(self.apparent_type(parameter.ty()), Type::Class(_)) {
+                    RejectionSite::WorkerEntryStructuralEndpoints
+                } else {
+                    RejectionSite::WorkerEntryEndpointMismatch
+                };
+                let message = if site == RejectionSite::WorkerExplicitMessageIdentity {
+                    "`Worker.spawn` type arguments must exactly match its entry's Inbox/Outbox message classes"
+                } else {
+                    shape_message
+                };
+                self.reject_subset(site, message, self.pos(ident.span));
                 return self.err_expr(pos);
             }
         }
+        let (Type::Class(input_id), Type::Class(output_id)) =
+            (&self.apparent_type(&input), &self.apparent_type(&output))
+        else {
+            return self.err_expr(pos);
+        };
 
         let mut valid = self.validate_message_class(*input_id);
         if input_id != output_id {
@@ -843,8 +899,51 @@ impl<'p> Checker<'p> {
         if !valid {
             return self.err_expr(pos);
         }
+        let worker_function = if sig.params.len() > 2 {
+            let mut value = hir::Expr {
+                pending_work: None,
+                kind: hir::ExprKind::FuncRef(hir::Symbol::from_full_text(function.clone())),
+                ty: Type::func(
+                    sig.params.iter().map(|p| p.ty().clone()).collect(),
+                    sig.ret.clone(),
+                ),
+                pos: self.pos(ident.span),
+            };
+            let place = Type::func(
+                vec![Type::inbox(input.clone()), Type::outbox(output.clone())],
+                Type::Void,
+            );
+            self.require_expr_assignable(&mut value, &place, fx, "the worker entry");
+            let hir::ExprKind::Lambda {
+                id,
+                params,
+                ret,
+                body,
+                ..
+            } = value.kind
+            else {
+                return self.err_expr(pos);
+            };
+            let symbol = hir::Symbol::from_full_text(format!("[[worker-default#{}]]", id.0));
+            self.functions.push(hir::Function {
+                symbol: symbol.clone(),
+                synthesized_helper: true,
+                name: symbol.full_text().to_owned(),
+                exported: false,
+                is_generator: false,
+                is_async: false,
+                params,
+                ret,
+                body,
+                can_raise: false,
+                pos: self.pos(ident.span),
+            });
+            symbol
+        } else {
+            hir::Symbol::from_full_text(function)
+        };
         let worker_entry = hir::WorkerEntry {
-            function: hir::Symbol::from_full_text(function),
+            function: worker_function,
             input: *input_id,
             output: *output_id,
         };

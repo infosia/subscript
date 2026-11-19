@@ -634,6 +634,29 @@ impl<'p> Checker<'p> {
                 self.err_expr(p)
             }
         };
+        // compiler.md §339 rules 1–3: a literal place reads a const's literal.
+        if self.apparent_type(&checked.ty) == Type::Str
+            && ctx.is_some_and(|ty| matches!(self.apparent_type(ty), Type::StringAlias(_)))
+            && matches!(
+                super::unparen_expr(e),
+                ast::Expr::Ident(_) | ast::Expr::Tpl(_)
+            )
+        {
+            if let Some(text) = self
+                .literal_operand(e, fx)
+                .and_then(|value| value.as_string().map(str::to_owned))
+            {
+                checked = self.check_lit(
+                    &ast::Lit::Str(ast::Str {
+                        span: e.span(),
+                        value: text.into(),
+                        raw: None,
+                    }),
+                    ctx,
+                    checked.pos.clone(),
+                );
+            }
+        }
         self.end_shared_narrowing(&checked, fx);
         if !allow_embedded_header_receiver {
             self.reject_embedded_header_copy(&mut checked, ctx);

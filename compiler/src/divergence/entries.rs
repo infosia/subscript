@@ -28,12 +28,6 @@ impl Divergence {
                 why: "The host enables file access and supplies the I/O, so a build names each standard module that it enables.",
                 collision: "C25",
             },
-            Divergence::FileModuleEncoding => DivergenceEntry {
-                ts: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const encoding = \"utf8\"; await readFile(\"text.txt\", encoding); }",
-                subscript: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { await readFile(\"text.txt\", \"utf8\"); }",
-                why: "The checker has no literal string type, so only the literal \"utf8\" argument selects the text read.",
-                collision: "C25",
-            },
             Divergence::FileModuleNumberArray => DivergenceEntry {
                 ts: "import {writeFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const data: i32[] = [1, 2]; await writeFile(\"data.bin\", data); }",
                 subscript: "import {writeFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const data: u8[] = [1, 2]; await writeFile(\"data.bin\", data); }",
@@ -41,9 +35,9 @@ impl Divergence {
                 collision: "C25",
             },
             Divergence::FileModuleStringAlias => DivergenceEntry {
-                ts: "import {readFile} from \"node:fs/promises\"; type Name = \"a.txt\" | \"b.txt\"; export async function main(): Promise<void> { const name: Name = \"a.txt\"; await readFile(name, \"utf8\"); }",
-                subscript: "import {readFile} from \"node:fs/promises\"; export async function main(): Promise<void> { const name: string = \"a.txt\"; await readFile(name, \"utf8\"); }",
-                why: "A string-literal union alias value is an integer tag at run time, so it has no string for the host.",
+                ts: "import {writeFile} from \"node:fs/promises\"; type Text = \"a\" | \"b\"; export async function main(): Promise<void> { const text: Text = \"a\"; await writeFile(\"text.txt\", text); }",
+                subscript: "import {writeFile} from \"node:fs/promises\"; type Text = \"a\" | \"b\"; export async function main(): Promise<void> { const text: Text = \"a\"; const data: string = text; await writeFile(\"text.txt\", data); }",
+                why: "The text-data form requires a string value. Convert the alias at a string place first.",
                 collision: "C25",
             },
             Divergence::FileModuleImportForm => DivergenceEntry {
