@@ -381,3 +381,4 @@ Every section, with its status:
 | §338 | A check can fail and a test can fire | active | [`s338-a-check-can-fail-and-a-test-can-fire.md`](compiler/s338-a-check-can-fail-and-a-test-can-fire.md) |
 | §339 | A literal const, a worker entry, and an optional leaf follow `tsc` | active | [`s339-a-literal-const-a-worker-entry-and-an-optional-leaf-follow-tsc.md`](compiler/s339-a-literal-const-a-worker-entry-and-an-optional-leaf-follow-tsc.md) |
 | §340 | A file entry runs under `node`, and a gate failure names its cause | active | [`s340-a-file-entry-runs-under-node-and-a-gate-failure-names-its-cause.md`](compiler/s340-a-file-entry-runs-under-node-and-a-gate-failure-names-its-cause.md) |
+| §341 | The front end parses with `oxc` | active | [`s341-the-front-end-parses-with-oxc.md`](compiler/s341-the-front-end-parses-with-oxc.md) |
