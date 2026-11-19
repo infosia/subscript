@@ -99,3 +99,58 @@ this section finds a defect. Then the round stops and reports it.
 - §168.3 item 1, §169.3 items 3, 4, 10, §172.3 item 2, §174.3 item 3,
   §176.4 item 3, §268.4 item 2, §270.4 item 1, and §323.4 item 3
   close.
+
+### 338.4 Phase Review
+
+Form. Each rule has a test that fails on its defect; the coding agent
+showed each failure once by a change of the subject, then reverted it.
+
+| Rule | Test | Subject change that fails it |
+|---|---|---|
+| 1 | `aggregate_trap_stays_pending_until_clearance` reads the aggregate frame after clearance | clearance keeps the aggregate frame |
+| 2 | `generated_host_call_reads_the_active_task_in_both_native_tiers`; a `READY` head that traps in `async_task_snapshots_match_three_tiers` | `ACTIVE` reported as 2; a trapped `READY` frame reported as `STOPPED` |
+| 3 | `wait_ring_and_parked_control`: three waiting frames, the control parks the last | `awaited_task_id` off by one |
+| 4 | `rejected_reload_preserves_task_records_and_trap_positions` | a rejected reload resets the position table |
+| 5 | the suspension total check (`codegen/src/lower/func/frame_root_tests.rs`) | see below |
+| 6 | the §174 trap test reads kind `UncaughtException` at 10:40 | the interpreter reports `Internal` |
+| 7 | `dropping_unstarted_generators_releases_each_counted_parameter_kind` | a start description with a missing count, and with an extra count |
+| 8 | `retained_write_error_reaches_the_parent` (`ulimit -f` as the failing writer) | the entry ignores the write error |
+| 9 | `device_release_does_not_end_a_completed_request_again`, `subscription_helper_clears_its_slot_before_device_release` | a helper does not clear its slot |
+| 10 | a487: a method of a `@ValueType` field of a temporary collects | at `0e37b789` the development tier and the ship tier print `9`; now `1` |
+
+Rule 5. The check derives from the LIR each assignment point of a value
+that a suspension needs, and requires a native write there, in each
+tier. The native operations at one point keep their order. Each exit
+(each return and the unwind exit) has its own test tag in the JIT and
+its own region in C. The source tags are `cfg(test)` only; no
+generated code changes. The check reads 678 coroutines and 1,160
+suspension points. Its cost, debug, best of three: 13.88 s at the pin,
+8.38 s after. Each part has a negative test in each tier through the
+full check.
+
+Four reviews ran. The first found that the JIT moved each write of a
+block-parameter field to the block entry, so a missing edge write
+passed. The second found that a union of the writes of all paths kept a
+field written after one write, so a missing back-edge write or a
+missing write at a second assignment passed, and that the JIT finish
+clear had one tag for all exits. The third found that a clear after the
+write at the same point passed. Rule 5 changed after the second and
+the third. The fourth found no CRITICAL or MAJOR finding. Its realistic
+MINOR finding is fixed: two C negative tests had no passing control.
+
+### 338.5 Open
+
+1. Contrived: a write on one arm of a branch inside one point covers
+   the other arm (the JIT absent-branch zero of a function value, and
+   the C `tN_then`/`tN_else` arms of one edge). Two edges from one
+   block to one target share one point.
+2. Contrived: the C reader takes only `memset` and `= NULL` as a clear;
+   the emitter zero forms `0` and `(SubFn){0}` read as writes. A partial
+   clear of a multi-word field is not seen.
+3. The kinds that need environment storage (`MakeClosure` with
+   captures, `Copy`, `Cast`) are a copy of the emitter call sites. A new
+   kind that both emitters forget passes.
+4. A store through `AddressOfLocal` into a frame local is not an
+   assignment point. The golden gate sees a wrong address.
+5. Contrived: the C `coroutine_done:` region is exempt from the finish
+   check; the test tags alias above about 65,000 blocks.

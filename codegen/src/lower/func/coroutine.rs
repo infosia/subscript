@@ -773,9 +773,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
 impl<M: Module> Body<'_, '_, '_, '_, M> {
     pub(super) fn clear_finished_frame(&mut self) -> Result<(), String> {
         if let Some(frame) = self.frame {
-            #[cfg(test)]
-            self.builder
-                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(u32::MAX - 1));
             let address = self.address_offset(
                 frame,
                 i64::from(if self.function.is_generator {

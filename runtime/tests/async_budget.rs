@@ -190,6 +190,7 @@ fn report_has_c_layout_without_padding() {
     assert_eq!(std::mem::offset_of!(AsyncStepReport, budget_exhausted), 24);
 }
 
+// compiler.md §338 rule 1: debug best of three: <0.01 s; 0 C builds.
 #[test]
 fn aggregate_trap_stays_pending_until_clearance() {
     let mut ctx = Context::new();
@@ -227,7 +228,12 @@ fn aggregate_trap_stays_pending_until_clearance() {
         (0, 1, 0)
     );
     ctx.collect();
+    assert!(ctx.is_live(all as usize));
     ctx.clear_trap();
+    assert!(
+        !ctx.is_live(all as usize),
+        "clearance frees the aggregate frame"
+    );
     assert_eq!(unsafe { ctx.async_step() }, 0);
     assert!(!ctx.trapped());
 }

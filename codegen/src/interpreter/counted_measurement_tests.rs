@@ -775,3 +775,94 @@ async function build():Promise<void>{ {const s=new Sched();s.queue.push(spawner(
     );
     outcome_with_output_in_three_tiers("spilled-receiver-cycle-release", &format!("{prelude} export async function main():Promise<void>{{await build();Context.collect();print(\"after collect\");}}"), 1, true, Some(b"unstarted\nend\n"));
 }
+
+// compiler.md §338 rule 7: debug best of three: 1.85 s; 5 C builds.
+// Each counted kind needs a separate task to expose a missing or extra frame count.
+#[test]
+fn dropping_unstarted_generators_releases_each_counted_parameter_kind() {
+    for (kind, ty, argument, declarations) in [
+        ("handle", "Promise<void>", "h", ""),
+        (
+            "generator",
+            "Generator<Promise<void>>",
+            "inner(h)",
+            "function* inner(h:Promise<void>):Generator<Promise<void>>{yield h;}",
+        ),
+        ("array", "Promise<void>[]", "[h]", ""),
+        ("fixed-array", "FixedArray<Promise<void>,1>", "[h]", ""),
+        (
+            "iterator-result",
+            "T",
+            "inner(h).next()",
+            "function* inner(h:Promise<void>):Generator<Promise<void>>{yield h;}",
+        ),
+    ] {
+        let generics = if kind == "iterator-result" { "<T>" } else { "" };
+        let source = format!(
+            r#"
+async function work():Promise<void>{{return;}}
+{declarations}
+function* take{generics}(value:{ty}):Generator<i32>{{yield 1;}}
+async function probe():Promise<void>{{
+  const h=work();await h;
+  {{const unstarted=take({argument});}}
+  await h;print("alive");
+}}
+export async function main():Promise<void>{{await probe();}}
+"#
+        );
+        outcome_with_output_in_three_tiers(kind, &source, 0, false, Some(b"alive\n"));
+        // Read the interpreter's exposed argument owner after the unstarted frame drops.
+        let annotation = if kind == "fixed-array" {
+            ":FixedArray<Promise<void>,1>"
+        } else {
+            ""
+        };
+        let observed = format!("async function work():Promise<void>{{return;}} {declarations} let h=work(); let argument{annotation}={argument}; function* take<T>(value:T):Generator<i32>{{yield 1;}} export function main():void{{const unstarted=take(argument);}}");
+        let module = crate::lir::lower_module(
+            &check_program(&[SourceFile::new("start-count.ts", observed)]).unwrap(),
+        )
+        .unwrap();
+        let mut interpreter = Interpreter::new(&module).unwrap();
+        interpreter
+            .call_function(module.initializer.unwrap(), vec![])
+            .unwrap();
+        let global = module
+            .globals
+            .iter()
+            .find(|global| global.source_name == "argument")
+            .unwrap();
+        let argument = interpreter.globals[global.id.0 as usize].borrow().clone();
+        let before = argument_owner_count(&mut interpreter, &global.ty, &argument);
+        interpreter
+            .call_function(module.entry.unwrap(), vec![])
+            .unwrap();
+        let after = argument_owner_count(&mut interpreter, &global.ty, &argument);
+        assert_eq!(after, before, "{kind}: argument count after drop");
+        assert!(after > 0, "{kind}: the global keeps the argument");
+    }
+}
+
+fn argument_owner_count(interpreter: &mut Interpreter<'_>, ty: &Type, value: &Value) -> u32 {
+    match (ty, value) {
+        (Type::AsyncHandle(_) | Type::Generator(_), Value::Coroutine(handle)) => {
+            handle.borrow().owners
+        }
+        (Type::Array(_), Value::Handle(array)) => {
+            assert!(interpreter.context.is_live(*array as usize));
+            // SAFETY: the live counted-array header stores its holder count at offset 32 (§171).
+            unsafe { array.add(32).cast::<u32>().read_unaligned() }
+        }
+        (Type::FixedArray(element, 1), Value::Blob(bytes)) => {
+            let child = interpreter.unpack(element, bytes).unwrap();
+            argument_owner_count(interpreter, element, &child)
+        }
+        (Type::IterResult(element), Value::Blob(bytes)) => {
+            assert_eq!(bytes[0], 0);
+            let offset = interpreter.type_layout(element).unwrap().align;
+            let child = interpreter.unpack(element, &bytes[offset..]).unwrap();
+            argument_owner_count(interpreter, element, &child)
+        }
+        _ => panic!("unexpected argument shape: {ty:?} {value:?}"),
+    }
+}

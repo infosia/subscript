@@ -15,6 +15,7 @@ const PROGRAMS: &[&str] = &[
     "export async function main(): Promise<void> { const xs: i32[] = [7]; print(`${xs[0]}`); await Context.suspend(); }\nexport function reset(): void {}",
     "async function child(): Promise<void> { const xs: i32[] = [7]; print(`${xs[1]}`); await Context.suspend(); }\nexport async function main(): Promise<void> { await child(); }\nexport function reset(): void {}",
     "async function child(): Promise<void> { const xs: i32[] = [7]; print(`${xs[0]}`); await Context.suspend(); }\nexport async function main(): Promise<void> { await child(); }\nexport function reset(): void {}",
+    "// ready-head\nexport async function main(): Promise<void> { await Context.suspend(); const xs: i32[] = [7]; print(`${xs[1]}`); }\nexport function reset(): void {}",
 ];
 fn record(
     id: u64,
@@ -73,7 +74,7 @@ fn interpreter_snapshot(interpreter: &Interpreter<'_>) -> String {
         })
         .collect()
 }
-// compiler.md §337 rule 3: debug best of three: 2.96 s; 9 C builds.
+// compiler.md §338 rule 2: debug best of three: 3.26 s; 10 C builds.
 // Uses the corpus gate's C11 -O2 build.
 #[test]
 fn async_task_snapshots_match_three_tiers() {
@@ -87,7 +88,8 @@ fn async_task_snapshots_match_three_tiers() {
         let module = crate::lir::lower_module(&hir).unwrap();
         let emitted = emit_c(&hir).unwrap();
         let mut jit = ReloadSession::new(&files).unwrap();
-        let prefix = source.contains("const xs: i32[]");
+        let ready_trap = source.contains("// ready-head");
+        let prefix = source.contains("const xs: i32[]") && !ready_trap;
         let trapping = prefix && source.contains("xs[1]");
         assert_eq!(jit.call_export("main").is_err(), trapping);
         let initial = jit.async_tasks();
@@ -104,7 +106,10 @@ fn async_task_snapshots_match_three_tiers() {
         assert_eq!(initial[0].function_pos, position("main"));
         assert_eq!(initial[0].create_pos, no_script_site());
         assert_eq!(initial[0].reserved, 0);
-        if prefix {
+        if ready_trap {
+            assert_eq!(initial[0].state, 2);
+            assert_eq!(initial[0].await_pos, position("await Context.suspend()"));
+        } else if prefix {
             assert_eq!(
                 initial[0].state,
                 if trapping {
@@ -182,8 +187,18 @@ fn async_task_snapshots_match_three_tiers() {
             if jit.async_pending() == 0 {
                 break;
             }
-            jit.async_step_budget(1).unwrap();
-            interpreter.async_step_budget(1).unwrap();
+            let native_error = jit.async_step_budget(1).is_err();
+            let interpreted_error = interpreter.async_step_budget(1).is_err();
+            assert_eq!(native_error, interpreted_error);
+            assert_eq!(native_error, ready_trap);
+            if native_error {
+                assert_eq!(jit.async_tasks()[0].state, 1);
+                let trapped = jit_snapshot(&jit);
+                assert_eq!(trapped, interpreter_snapshot(&interpreter));
+                snapshots.push_str(&trapped);
+                snapshots.push_str("--\n");
+                break;
+            }
         }
         if source.contains("await ring[next]") {
             let ts = jit.async_tasks();
@@ -194,7 +209,7 @@ fn async_task_snapshots_match_three_tiers() {
                     .collect::<Vec<_>>(),
                 vec![(1, 2, 3), (2, 3, 3), (3, 4, 3), (4, 2, 3)]
             );
-        } else if trapping {
+        } else if trapping || ready_trap {
             assert_eq!(
                 jit.async_unfinished(),
                 if source.contains("await child()") {
@@ -208,9 +223,14 @@ fn async_task_snapshots_match_three_tiers() {
             interpreter.clear_trap();
             jit.async_step_budget(1).unwrap();
             interpreter.async_step_budget(1).unwrap();
-            assert_eq!(jit_snapshot(&jit), stopped);
-            assert_eq!(interpreter_snapshot(&interpreter), stopped);
-            snapshots.push_str(&stopped);
+            let cleared = jit_snapshot(&jit);
+            if ready_trap {
+                assert_eq!(jit.async_tasks()[0].state, 6);
+            } else {
+                assert_eq!(cleared, stopped);
+            }
+            assert_eq!(interpreter_snapshot(&interpreter), cleared);
+            snapshots.push_str(&cleared);
             snapshots.push_str("--\n");
         } else {
             assert_eq!(jit.async_unfinished(), 0);
@@ -250,7 +270,7 @@ int main(void) {
  subscript_rt_ctx_enter_script(ctx);subscript_init(ctx);subscript_export_main(ctx);subscript_rt_ctx_exit_script(ctx);
  for (;;) {
   subscript_rt_ctx_visit_async_tasks(ctx,visit,NULL);fprintf(stderr,"--\n");
-  if (!subscript_rt_ctx_async_pending(ctx)) break;
+  if (!subscript_rt_ctx_async_pending(ctx) || subscript_rt_ctx_trap_kind(ctx)) break;
   subscript_rt_ctx_async_step_budget(ctx,1);
  }
  if (subscript_rt_ctx_trap_kind(ctx)) {

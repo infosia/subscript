@@ -24,6 +24,10 @@ struct RequestInfo {
 }
 
 extern "C" {
+    fn subRequestResetHelperCounts();
+    fn subRequestSlotHelperCount() -> u32;
+    fn subRequestSubscriptionHelperCount() -> u32;
+    fn subRequestUnsubscribe(device: *mut c_void);
     fn subDeviceCreate(chain: *mut c_void) -> *mut c_void;
     fn subDeviceRelease(device: *mut c_void);
     fn subRequestStart(device: *mut c_void, payload: u32, immediate: i32, info: RequestInfo)
@@ -74,12 +78,14 @@ fn device_release_ends_pending_request_and_subscription() {
     assert_eq!(CALLS.with(Cell::get), 0);
 }
 
+// compiler.md §338 rule 9: debug best of three: <0.01 s; 0 C builds (fixture reused).
 #[test]
 fn device_release_does_not_end_a_completed_request_again() {
     let mut ctx = Context::new();
     CALLS.with(|calls| calls.set(0));
     // SAFETY: the device and all callback data remain live until release.
     unsafe {
+        subRequestResetHelperCounts();
         let device = subDeviceCreate(null_mut());
         assert!(!device.is_null());
         subRequestStart(device, 3, 0, request(&mut ctx));
@@ -87,7 +93,10 @@ fn device_release_does_not_end_a_completed_request_again() {
         assert_eq!(CALLS.with(Cell::get), 1);
         assert_eq!(subRequestReleaseCount(device), 1);
         assert_eq!(ctx.live_registration_count(), 0);
+        assert_eq!(subRequestSlotHelperCount(), 1);
         subDeviceRelease(device);
+        assert_eq!(subRequestSlotHelperCount(), 1);
+        assert_eq!(subRequestSubscriptionHelperCount(), 0);
     }
     assert_eq!(ctx.live_registration_count(), 0);
     assert_eq!(CALLS.with(Cell::get), 1);
@@ -136,5 +145,24 @@ fn callback_releases_last_device_reference() {
         assert_eq!(CALLS.with(Cell::get), 1);
         assert!(DEVICE.with(Cell::get).is_null());
         assert_eq!(ctx.live_registration_count(), 0);
+    }
+}
+
+// compiler.md §338 rule 9: debug best of three: <0.01 s; 0 C builds (fixture reused).
+#[test]
+fn subscription_helper_clears_its_slot_before_device_release() {
+    let mut ctx = Context::new();
+    // SAFETY: the Context outlives the device and both registration releases.
+    unsafe {
+        subRequestResetHelperCounts();
+        let device = subDeviceCreate(null_mut());
+        assert_eq!(subRequestSubscribe(device, request(&mut ctx)), 1);
+        subRequestUnsubscribe(device);
+        subRequestPump(device);
+        assert_eq!(ctx.live_registration_count(), 0);
+        assert_eq!(subRequestSubscriptionHelperCount(), 1);
+        subDeviceRelease(device);
+        assert_eq!(subRequestSubscriptionHelperCount(), 1);
+        assert_eq!(subRequestSlotHelperCount(), 0);
     }
 }

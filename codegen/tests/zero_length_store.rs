@@ -32,7 +32,7 @@ export async function main(): Promise<void> { await use(); }
     assert!(session.async_tasks().is_empty());
 }
 
-// compiler.md §337 rule 3: debug best of three: 0.45 s; 2 C builds.
+// compiler.md §338 rule 6: debug best of three: 0.50 s; 2 C builds.
 #[test]
 fn clear_traps_before_the_next_statement_like_a_discarded_pop() {
     let corpus = include_str!("../../corpus/trap/t102-zero-length-store.ts");
@@ -53,7 +53,24 @@ fn clear_traps_before_the_next_statement_like_a_discarded_pop() {
         let files = [SourceFile::new("release-trap.ts", source)];
         let lir =
             lower_module(&check_program(&files).expect("trap fixture")).expect("verified trap");
-        assert!(interpret(&lir).is_err());
+        let mut error = interpret(&lir).expect_err("interpreter release traps");
+        while let subscript_codegen::interpreter::InterpretError::Execution { output, source } =
+            error
+        {
+            assert!(output.is_empty());
+            error = *source;
+        }
+        let subscript_codegen::interpreter::InterpretError::Trap {
+            runtime_kind, pos, ..
+        } = error
+        else {
+            panic!("expected interpreter uncaught exception: {error:?}");
+        };
+        assert_eq!(
+            runtime_kind,
+            Some(subscript_runtime::TrapKind::UncaughtException)
+        );
+        assert_eq!((pos.line, pos.col), (10, 40));
         for result in [run_jit(&files), run_c_aot(&files)] {
             let subscript_codegen::RunError::Trap(trap) = result.expect_err("release traps") else {
                 panic!("expected uncaught exception");

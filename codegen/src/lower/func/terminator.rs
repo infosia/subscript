@@ -122,7 +122,15 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let arguments = self.branch_arguments(&default.arguments)?;
                 self.builder.ins().jump(destination, &arguments);
             }
-            l::Terminator::Return { value, pos } => self.emit_return(value.as_ref(), pos)?,
+            l::Terminator::Return { value, pos } => {
+                // compiler.md §338 rule 5: each return owns a distinct finish-clear tag.
+                #[cfg(test)]
+                self.builder
+                    .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
+                        (block.0 + 1) * 65536 + 65534,
+                    ));
+                self.emit_return(value.as_ref(), pos)?;
+            }
             l::Terminator::Unreachable { .. } => {
                 let unwind = self.unwind_block();
                 self.builder.ins().jump(unwind, &[]);

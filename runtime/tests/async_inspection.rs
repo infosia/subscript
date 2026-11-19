@@ -146,39 +146,36 @@ fn aggregate_waiting_and_complete_control() {
         assert_eq!(unsafe { ctx.async_count(all) }, 1);
     }
 }
+// compiler.md §338 rule 3: debug best of three: <0.01 s; 0 C builds.
 #[test]
-fn wait_ring_and_ready_control() {
-    for complete in [false, true] {
+fn wait_ring_and_parked_control() {
+    for parked in [false, true] {
         let mut ctx = Context::new();
         let fs = [
             frame(&mut ctx, resume),
             frame(&mut ctx, resume),
             frame(&mut ctx, resume),
         ];
-        if complete {
-            for f in fs {
-                unsafe {
-                    ctx.async_complete(f, std::ptr::null(), 0);
+        for i in 0..3 {
+            unsafe {
+                if parked && i == 2 {
+                    ctx.async_park(fs[i], 23);
+                } else {
+                    ctx.async_await(fs[i], fs[(i + 1) % 3], 21 + i as u32);
                 }
             }
         }
-        for i in 0..3 {
-            unsafe {
-                ctx.async_await(fs[i], fs[(i + 1) % 3], 21 + i as u32);
-            }
-        }
         let ts = tasks(&ctx);
-        if complete {
-            assert_eq!(ctx.async_pending(), 3);
-            assert!(ts.iter().all(|t| t.state == 5 && t.awaited_task_id == 0));
-        } else {
-            assert_eq!(ctx.async_pending(), 0);
-            assert_eq!(ctx.async_unfinished(), 3);
-            assert_eq!(
-                ts.iter().map(|t| t.awaited_task_id).collect::<Vec<_>>(),
-                vec![2, 3, 1]
-            );
-        }
+        assert_eq!(ctx.async_unfinished(), 3);
+        assert_eq!(ctx.async_pending(), usize::from(parked));
+        assert_eq!(
+            ts.iter().map(|t| t.awaited_task_id).collect::<Vec<_>>(),
+            if parked { vec![2, 3, 0] } else { vec![2, 3, 1] }
+        );
+        assert_eq!(
+            ts.iter().map(|t| t.state).collect::<Vec<_>>(),
+            if parked { vec![3, 3, 2] } else { vec![3, 3, 3] }
+        );
     }
 }
 #[test]

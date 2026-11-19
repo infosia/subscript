@@ -505,9 +505,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             return Ok(());
         };
         self.builder.switch_to_block(block);
+        // compiler.md §338 rule 5: the unwind exit has a tag distinct from every LIR return.
         #[cfg(test)]
         self.builder
-            .set_srcloc(cranelift_codegen::ir::SourceLoc::new(u32::MAX));
+            .set_srcloc(cranelift_codegen::ir::SourceLoc::new(0xfffd0001));
         self.pop_shadow()?;
         if self.coroutine.is_some() {
             self.clear_finished_frame()?;
@@ -569,6 +570,12 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         for source in &self.function.blocks {
             self.builder
                 .switch_to_block(self.blocks[source.id.0 as usize]);
+            // compiler.md §338 rule 5: block-parameter stores carry their receiving block's tag.
+            #[cfg(test)]
+            self.builder
+                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
+                    (source.id.0 + 1) * 65536,
+                ));
             let parameters = self
                 .builder
                 .block_params(self.blocks[source.id.0 as usize])
@@ -588,11 +595,6 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             for (parameter, value) in incoming {
                 self.set_value(parameter, value)?;
             }
-            #[cfg(test)]
-            self.builder
-                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
-                    (source.id.0 + 1) * 65536,
-                ));
             let entry_clears = self.root_storage.clear_at_block_entry[source.id.0 as usize].clone();
             self.clear_root_slots(&entry_clears)?;
             for (instruction_index, instruction) in source.instructions.iter().enumerate() {
@@ -1446,6 +1448,12 @@ pub(crate) fn define_coroutine<M: Module>(
                 .ins()
                 .brif(fresh, initialize, &[], dispatch, &[]);
             body.builder.switch_to_block(initialize);
+            // compiler.md §338 rule 5: initial environment writes belong to the function entry.
+            #[cfg(test)]
+            body.builder
+                .set_srcloc(cranelift_codegen::ir::SourceLoc::new(
+                    (function.entry.0 + 1) * 65536,
+                ));
             for (parameter, slot) in function.parameters.iter().zip(&plan.parameter_slots) {
                 let mut value = body.load_value_type(&slot.ty, frame, slot.offset as i32)?;
                 if let RV::Aggregate(source) = value {
@@ -1463,6 +1471,9 @@ pub(crate) fn define_coroutine<M: Module>(
             let start = body.blocks[function.entry.0 as usize];
             body.builder.ins().jump(start, &[]);
             body.builder.switch_to_block(dispatch);
+            #[cfg(test)]
+            body.builder
+                .set_srcloc(cranelift_codegen::ir::SourceLoc::default());
             let mut next = dispatch;
             for source in &function.blocks {
                 let Some(suspend) = plan.suspends.get(&source.id) else {

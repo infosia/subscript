@@ -1439,10 +1439,21 @@ static void subRequestReleaseRegistration(SubDevice device, void *registration) 
     }
 }
 
+/* compiler.md §338 rule 9: count helper calls with a registration. */
+static _Thread_local uint32_t sub_request_slot_releases;
+static _Thread_local uint32_t sub_request_subscription_releases;
+void subRequestResetHelperCounts(void) {
+    sub_request_slot_releases = 0;
+    sub_request_subscription_releases = 0;
+}
+uint32_t subRequestSlotHelperCount(void) { return sub_request_slot_releases; }
+uint32_t subRequestSubscriptionHelperCount(void) { return sub_request_subscription_releases; }
+
 /* Ends the subscription registration and clears its slot, so no second
  * release follows. */
 static void subRequestRelease(SubDevice device, void **slot, SubLogCallback *callback) {
     void *registration = *slot;
+    if (registration != NULL) { sub_request_subscription_releases += 1; }
     *slot = NULL;
     *callback = NULL;
     subRequestReleaseRegistration(device, registration);
@@ -1451,6 +1462,7 @@ static void subRequestRelease(SubDevice device, void **slot, SubLogCallback *cal
 /* Ends the registration one one-shot slot holds and frees the slot. */
 static void subRequestReleaseSlot(SubDevice device, SubRequestOneShot *slot) {
     void *registration = slot->registration;
+    if (registration != NULL) { sub_request_slot_releases += 1; }
     slot->registration = NULL;
     slot->cb = NULL;
     slot->payload = 0;

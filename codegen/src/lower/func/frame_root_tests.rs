@@ -42,6 +42,11 @@ macro_rules! require_eq {
 
 type Point = (u32, usize);
 
+mod ordered_operations;
+use ordered_operations::{
+    jit_operations, ordered_clears, ByteOperation, FieldOperations, Operation,
+};
+
 #[derive(Clone, Debug)]
 struct Field {
     name: String,
@@ -63,13 +68,33 @@ fn c_function(source: &str, id: l::FunctionId) -> Result<&str, String> {
         .finding("C function end")
 }
 
-fn c_clears(source: &str, fields: &[Field]) -> Result<BTreeMap<Point, BTreeSet<String>>, String> {
-    let mut point = (u32::MAX, 0);
-    let mut clears = BTreeMap::<_, BTreeSet<_>>::new();
+#[derive(Default)]
+struct CFieldFacts {
+    operations: FieldOperations,
+    raw_clears: BTreeMap<Point, BTreeSet<String>>,
+    clears: BTreeMap<Point, BTreeSet<String>>,
+    writes: BTreeMap<Point, BTreeSet<String>>,
+}
+
+// compiler.md §338 rule 5: one text pass supplies dispatch and resume-successor views.
+fn c_field_facts(
+    source: &str,
+    fields: &[Field],
+    entry: Option<l::BlockId>,
+    resumes: &BTreeMap<u32, l::BlockId>,
+) -> Result<CFieldFacts, String> {
+    let known = fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut raw = (u32::MAX, 0);
+    let mut located = entry.map_or(raw, |block| (block.0, 0));
+    let mut facts = CFieldFacts::default();
     for line in source.lines() {
-        if let Some(marker) = line.trim().strip_prefix("// root-point ") {
+        let line = line.trim();
+        if let Some(marker) = line.strip_prefix("// root-point ") {
             let mut parts = marker.split_whitespace();
-            point = (
+            raw = (
                 parts
                     .next()
                     .finding("block")?
@@ -81,27 +106,87 @@ fn c_clears(source: &str, fields: &[Field]) -> Result<BTreeMap<Point, BTreeSet<S
                     .parse()
                     .finding("point number")?,
             );
+            located = raw;
+        } else if let Some(id) = line
+            .strip_prefix("resume_b")
+            .and_then(|label| label.strip_suffix(':'))
+        {
+            if let Some(successor) = id.parse::<u32>().ok().and_then(|id| resumes.get(&id)) {
+                located = (successor.0, 0);
+            }
         }
-        for field in fields {
-            if (line.trim().starts_with("memset(")
-                && line.contains(&format!("memset(&frame->{}, 0,", field.name)))
-                || line.trim() == format!("frame->{} = NULL;", field.name)
-            {
-                clears.entry(point).or_default().insert(field.name.clone());
-            } else if line.contains(&format!("&frame->{}", field.name))
-                && (line.contains("memcpy(") || line.contains("->c"))
-                || line.contains(&format!("frame->{} =", field.name))
-            {
-                clears.entry(point).or_default().remove(&field.name);
+        let capture = line.contains("->c");
+        let copy = line.contains("memcpy(");
+        let memset = line.contains("memset(");
+        let mut references = BTreeMap::<&str, (bool, bool, bool, bool)>::new();
+        let mut remaining = line;
+        while let Some((prefix, rest)) = remaining.split_once("frame->") {
+            let length = rest
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            let name = &rest[..length];
+            if known.contains(name) {
+                let flags = references.entry(name).or_default();
+                flags.0 |= rest[length..].starts_with(" =");
+                flags.1 |= prefix.ends_with('&');
+                flags.3 |= prefix.is_empty() && rest[length..].starts_with(" = ")
+                    || prefix.ends_with("memcpy(&")
+                    || prefix.ends_with("memset(&")
+                    || prefix.ends_with('&')
+                        && rest[length..].starts_with(")->c")
+                        && line.contains(" = ");
+                flags.2 |= line.starts_with("memset(")
+                    && prefix.ends_with("memset(&")
+                    && rest[length..].starts_with(", 0,");
+            }
+            remaining = &rest[length..];
+        }
+        for (name, (assigned, addressed, zeroed, destination)) in references {
+            let clear = zeroed
+                || (assigned
+                    && line
+                        .strip_prefix("frame->")
+                        .and_then(|rest| rest.strip_prefix(name))
+                        == Some(" = NULL;"));
+            let replace = assigned || addressed && (copy || capture);
+            for (point, clears) in [(raw, &mut facts.raw_clears), (located, &mut facts.clears)] {
+                if clear {
+                    clears.entry(point).or_default().insert(name.to_string());
+                } else if replace {
+                    clears.entry(point).or_default().remove(name);
+                }
+            }
+            if assigned || addressed && (copy || memset || capture) {
+                if destination {
+                    facts.operations.entry(raw).or_default().push((
+                        name.to_string(),
+                        if clear {
+                            Operation::Zero
+                        } else {
+                            Operation::Write
+                        },
+                    ));
+                }
+                facts
+                    .writes
+                    .entry(located)
+                    .or_default()
+                    .insert(name.to_string());
             }
         }
     }
-    Ok(clears)
+    Ok(facts)
 }
 
-/// Read actual zero stores, including the byte width of each stored constant.
-fn jit_zero_bytes(text: &str) -> Result<BTreeMap<Point, BTreeSet<u32>>, String> {
-    jit_bytes_with_frame(text, "v1", 0, false)
+fn c_writes(source: &str, fields: &[Field]) -> Result<BTreeMap<Point, BTreeSet<String>>, String> {
+    Ok(c_field_facts(source, fields, None, &BTreeMap::new())?.writes)
+}
+
+#[derive(Default)]
+struct JitByteFacts {
+    operations: BTreeMap<Point, Vec<ByteOperation>>,
+    zero: BTreeMap<Point, BTreeSet<u32>>,
+    positive: BTreeMap<Point, BTreeSet<u32>>,
 }
 
 fn jit_bytes_with_frame(
@@ -110,9 +195,38 @@ fn jit_bytes_with_frame(
     initial_size: u32,
     nonzero: bool,
 ) -> Result<BTreeMap<Point, BTreeSet<u32>>, String> {
+    let facts = jit_byte_facts(text, frame, initial_size)?;
+    Ok(if nonzero { facts.positive } else { facts.zero })
+}
+
+fn jit_byte_facts(text: &str, frame: &str, initial_size: u32) -> Result<JitByteFacts, String> {
     let mut addresses = BTreeMap::<String, i64>::from([(frame.into(), 0)]);
     let mut zeros = BTreeMap::<String, u32>::new();
     let mut constants = BTreeMap::<String, u32>::new();
+    let mut widths = BTreeMap::<String, u32>::new();
+    let mut returns = BTreeMap::<String, u32>::new();
+    for line in text.lines() {
+        if let Some((name, expression)) = line.trim().split_once(" = ") {
+            if name.starts_with("sig") {
+                if let Some(width) = expression
+                    .split_once(" -> ")
+                    .and_then(|(_, ty)| clif_width(ty))
+                {
+                    returns.insert(name.into(), width);
+                }
+            } else if name.starts_with("fn") {
+                if let Some(width) = expression
+                    .split_whitespace()
+                    .last()
+                    .and_then(|signature| returns.get(signature))
+                    .copied()
+                {
+                    returns.insert(name.into(), width);
+                }
+            }
+        }
+    }
+
     let memset = text
         .lines()
         .filter_map(|line| {
@@ -121,12 +235,32 @@ fn jit_bytes_with_frame(
                 .map(|(name, _)| name.to_string())
         })
         .collect::<BTreeSet<_>>();
-    let mut bytes = BTreeMap::<_, BTreeSet<_>>::new();
-    bytes
+    let memcpy = text
+        .lines()
+        .filter_map(|line| {
+            line.trim()
+                .split_once(" = %Memcpy ")
+                .map(|(name, _)| name.to_string())
+        })
+        .collect::<BTreeSet<_>>();
+    let mut facts = JitByteFacts::default();
+    facts
+        .zero
         .entry((u32::MAX, 0))
         .or_default()
-        .extend(0..if nonzero { 0 } else { initial_size });
+        .extend(0..initial_size);
     for line in text.lines() {
+        if line.trim().starts_with("block") {
+            if let Some((_, parameters)) = line.split_once('(') {
+                for parameter in parameters.trim_end_matches("):").split(", ") {
+                    if let Some((value, ty)) = parameter.split_once(": ") {
+                        if let Some(width) = clif_width(ty) {
+                            widths.insert(value.into(), width);
+                        }
+                    }
+                }
+            }
+        }
         let (point, instruction) = if let Some(line) = line.trim().strip_prefix('@') {
             let (tag, instruction) = line
                 .split_once(char::is_whitespace)
@@ -141,6 +275,34 @@ fn jit_bytes_with_frame(
         };
         let code = instruction.split("  ;").next().finding("instruction")?;
         if let Some((value, expression)) = code.split_once(" = ") {
+            let operation = expression.split_whitespace().next().unwrap_or("");
+            let width = if operation.starts_with("icmp") || operation.starts_with("fcmp") {
+                Some(1)
+            } else if operation == "f32const" {
+                Some(4)
+            } else if operation == "f64const" {
+                Some(8)
+            } else if operation == "call" {
+                expression
+                    .strip_prefix("call ")
+                    .and_then(|call| call.split_once('('))
+                    .and_then(|(callee, _)| returns.get(callee))
+                    .copied()
+            } else {
+                operation
+                    .split_once('.')
+                    .and_then(|(_, ty)| clif_width(ty))
+                    .or_else(|| {
+                        expression
+                            .split_whitespace()
+                            .nth(1)
+                            .and_then(|operand| widths.get(operand.trim_end_matches(',')))
+                            .copied()
+                    })
+            };
+            if let Some(width) = width {
+                widths.insert(value.into(), width);
+            }
             if let Some(expression) = expression
                 .strip_prefix("iadd_imm.i64 ")
                 .or_else(|| expression.strip_prefix("iadd_imm "))
@@ -176,6 +338,37 @@ fn jit_bytes_with_frame(
             }
             if let Some(call) = expression.strip_prefix("call ") {
                 if let Some((callee, arguments)) = call.split_once('(') {
+                    if memcpy.contains(callee) {
+                        let arguments = arguments
+                            .trim_end_matches(')')
+                            .split(", ")
+                            .collect::<Vec<_>>();
+                        if let [destination, _, size] = arguments.as_slice() {
+                            if let (Some(offset), Some(size)) =
+                                (addresses.get(*destination), constants.get(*size))
+                            {
+                                let offset = u32::try_from(*offset).finding("memcpy offset")?;
+                                facts
+                                    .operations
+                                    .entry(point)
+                                    .or_default()
+                                    .push(ByteOperation {
+                                        offset,
+                                        size: *size,
+                                        operation: Operation::Write,
+                                    });
+                                facts
+                                    .positive
+                                    .entry(point)
+                                    .or_default()
+                                    .extend(offset..offset + size);
+                                let zeros = facts.zero.entry(point).or_default();
+                                for byte in offset..offset + size {
+                                    zeros.remove(&byte);
+                                }
+                            }
+                        }
+                    }
                     if memset.contains(callee) {
                         let arguments = arguments
                             .trim_end_matches(')')
@@ -187,14 +380,18 @@ fn jit_bytes_with_frame(
                                     (addresses.get(*destination), constants.get(*size))
                                 {
                                     let offset = u32::try_from(*offset).finding("memset offset")?;
-                                    let written = bytes.entry(point).or_default();
-                                    if nonzero {
-                                        for byte in offset..offset + size {
-                                            written.remove(&byte);
-                                        }
-                                    } else {
-                                        written.extend(offset..offset + size);
-                                    }
+                                    facts.operations.entry(point).or_default().push(
+                                        ByteOperation {
+                                            offset,
+                                            size: *size,
+                                            operation: Operation::Zero,
+                                        },
+                                    );
+                                    facts
+                                        .zero
+                                        .entry(point)
+                                        .or_default()
+                                        .extend(offset..offset + size);
                                 }
                             }
                         }
@@ -217,25 +414,61 @@ fn jit_bytes_with_frame(
             };
             let value = prefix.split_whitespace().last().finding("store value")?;
             let zero_size = zeros.get(value).copied();
-            let size = zero_size.unwrap_or(8);
+            let size = prefix
+                .split_whitespace()
+                .next()
+                .and_then(|operation| operation.split_once('.'))
+                .and_then(|(_, ty)| clif_width(ty))
+                .or_else(|| widths.get(value).copied())
+                .or(zero_size)
+                .unwrap_or(8);
             let (base, extra) = match address.split_once('+') {
                 Some((base, offset)) => (base, offset.parse::<i64>().finding("store offset")?),
                 None => (address, 0),
             };
             if let Some(offset) = addresses.get(base).copied() {
                 let offset = u32::try_from(offset + extra).finding("frame offset")?;
-                let written = bytes.entry(point).or_default();
-                for byte in offset..offset + size {
-                    if zero_size.is_some() != nonzero {
-                        written.insert(byte);
-                    } else {
-                        written.remove(&byte);
+                facts
+                    .operations
+                    .entry(point)
+                    .or_default()
+                    .push(ByteOperation {
+                        offset,
+                        size,
+                        operation: if zero_size.is_some() {
+                            Operation::Zero
+                        } else {
+                            Operation::Write
+                        },
+                    });
+                let zeros = facts.zero.entry(point).or_default();
+                if zero_size.is_some() {
+                    zeros.extend(offset..offset + size);
+                } else {
+                    facts
+                        .positive
+                        .entry(point)
+                        .or_default()
+                        .extend(offset..offset + size);
+                    for byte in offset..offset + size {
+                        zeros.remove(&byte);
                     }
                 }
             }
         }
     }
-    Ok(bytes)
+    Ok(facts)
+}
+
+fn clif_width(ty: &str) -> Option<u32> {
+    let bits = ty
+        .strip_prefix('i')
+        .or_else(|| ty.strip_prefix('f'))?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()?
+        .parse::<u32>()
+        .ok()?;
+    Some((bits / 8).max(1))
 }
 
 /// Derive storage from LIR types and operations, without the native field plan.
@@ -243,6 +476,7 @@ type LirFields = (
     BTreeSet<String>,
     BTreeSet<String>,
     BTreeMap<l::BlockId, BTreeSet<String>>,
+    root_storage::Interference,
 );
 
 fn lir_fields(
@@ -330,7 +564,7 @@ fn lir_fields(
         else {
             continue;
         };
-        let mut fields = lifetime.clone();
+        let mut fields = BTreeSet::new();
         for (parameter, argument) in function.blocks[successor.0 as usize]
             .parameters
             .iter()
@@ -362,7 +596,7 @@ fn lir_fields(
         }
         suspended.insert(block.id, fields);
     }
-    Ok((all, lifetime, suspended))
+    Ok((all, lifetime, suspended, live))
 }
 
 fn c_field_names(definition: &str) -> BTreeSet<String> {
@@ -386,34 +620,6 @@ fn c_field_names(definition: &str) -> BTreeSet<String> {
             .then(|| name.to_string())
         })
         .collect()
-}
-
-fn c_writes(source: &str, fields: &[Field]) -> Result<BTreeMap<Point, BTreeSet<String>>, String> {
-    let mut point = (u32::MAX, 0);
-    let mut writes = BTreeMap::<Point, BTreeSet<String>>::new();
-    for line in source.lines() {
-        if let Some(marker) = line.trim().strip_prefix("// root-point ") {
-            let mut parts = marker.split_whitespace();
-            point = (
-                parts
-                    .next()
-                    .finding("block")?
-                    .parse()
-                    .finding("block number")?,
-                parts
-                    .next()
-                    .finding("point")?
-                    .parse()
-                    .finding("point number")?,
-            );
-        }
-        for field in fields {
-            if line.contains(&format!("frame->{} =", field.name)) {
-                writes.entry(point).or_default().insert(field.name.clone());
-            }
-        }
-    }
-    Ok(writes)
 }
 
 fn field_bytes(
@@ -441,12 +647,13 @@ fn field_bytes(
 fn suspension_fields(
     function: &l::Function,
     lifetime: &BTreeSet<String>,
+    initial: &BTreeSet<String>,
     writes: &BTreeMap<Point, BTreeSet<String>>,
     clears: &BTreeMap<Point, BTreeSet<String>>,
     spills: &BTreeMap<l::BlockId, Vec<Field>>,
 ) -> BTreeMap<l::BlockId, BTreeSet<String>> {
     let mut incoming = vec![BTreeSet::new(); function.blocks.len()];
-    incoming[function.entry.0 as usize] = lifetime.clone();
+    incoming[function.entry.0 as usize] = initial.clone();
     let mut visited = vec![false; function.blocks.len()];
     let mut pending = vec![function.entry];
     let mut suspended = BTreeMap::new();
@@ -623,8 +830,40 @@ fn check_entry(
     id: &str,
     counts: &mut (usize, usize),
 ) -> Result<(), String> {
+    check_entry_with_c(sources, id, counts, &|_, _| Ok(()))
+}
+
+fn check_entry_with_c(
+    sources: &[subscript_compiler::SourceFile],
+    id: &str,
+    counts: &mut (usize, usize),
+    corrupt: &dyn Fn(&l::Module, &mut String) -> Result<(), String>,
+) -> Result<(), String> {
+    check_entry_with_forms(sources, id, counts, corrupt, &|_, _| Ok(()))
+}
+
+type NativeTexts = BTreeMap<String, String>;
+type NativeMutation<'a> = dyn Fn(&l::Module, &mut NativeTexts) -> Result<(), String> + 'a;
+
+fn check_entry_with_forms(
+    sources: &[subscript_compiler::SourceFile],
+    id: &str,
+    counts: &mut (usize, usize),
+    corrupt: &dyn Fn(&l::Module, &mut String) -> Result<(), String>,
+    corrupt_jit: &NativeMutation<'_>,
+) -> Result<(), String> {
     let hir = corpus::check_program(sources).finding("corpus HIR")?;
     let lir = crate::lir::lower_module(&hir).finding("corpus LIR")?;
+    check_module_with_forms(&lir, id, counts, corrupt, corrupt_jit)
+}
+
+fn check_module_with_forms(
+    lir: &l::Module,
+    id: &str,
+    counts: &mut (usize, usize),
+    corrupt: &dyn Fn(&l::Module, &mut String) -> Result<(), String>,
+    corrupt_jit: &NativeMutation<'_>,
+) -> Result<(), String> {
     if !lir
         .functions
         .iter()
@@ -632,8 +871,9 @@ fn check_entry(
     {
         return Ok(());
     }
-    let layouts = Layouts::build_lir(&lir).finding("layouts")?;
-    let c = crate::cemit::emit_lir_c(&lir, false).finding("C emission")?;
+    let layouts = Layouts::build_lir(lir).finding("layouts")?;
+    let mut c = crate::cemit::emit_lir_c(lir, false).finding("C emission")?;
+    corrupt(lir, &mut c.source)?;
     let isa = cranelift_native::builder()
         .finding("host ISA")?
         .finish(crate::lower::dev_flags().finding("flags")?)
@@ -646,24 +886,27 @@ fn check_entry(
         let _ = take_defined_function_texts();
         crate::lower::lower_lir_module_with(
             &mut native,
-            &lir,
+            lir,
             crate::lower::LowerOptions {
                 reload: true,
                 ..Default::default()
             },
         )
         .finding("native emission")?;
-        let texts = take_defined_function_texts();
+        let mut texts = take_defined_function_texts()
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        corrupt_jit(lir, &mut texts)?;
+        let environment_size = closure_environment_layout(lir, &layouts)
+            .finding("environments")?
+            .map(|(size, _)| size);
         for function in lir
             .functions
             .iter()
             .filter(|function| function.is_async || function.is_generator)
         {
-            let plan = plan_coroutine(&layouts, &lir, function).finding("JIT frame")?;
-            let environment_size = closure_environment_layout(&lir, &layouts)
-                .finding("environments")?
-                .map(|(size, _)| size);
-            let (expected_all, expected_lifetime, expected_suspensions) =
+            let plan = plan_coroutine(&layouts, lir, function).finding("JIT frame")?;
+            let (expected_all, expected_lifetime, expected_suspensions, crossing) =
                 lir_fields(function, &layouts, environment_size.is_some())?;
             let (jit_all, lifetime, spills) =
                 jit_fields(function, &plan, &layouts, environment_size)?;
@@ -688,16 +931,12 @@ fn check_entry(
             equal_fields(&expected_lifetime, &native_lifetime)
                 .map_err(|error| format!("{id} lifetime: {error}"))?;
             let c_body = c_function(&c.source, function.id)?;
-            let clif = &texts
-                .iter()
-                .find(|(name, _)| name == &format!("LIR coroutine resume {}", function.id.0))
-                .finding("resume IR")?
-                .1;
-            let creator = &texts
-                .iter()
-                .find(|(name, _)| name == &format!("LIR coroutine creator {}", function.id.0))
-                .finding("creator IR")?
-                .1;
+            let clif = texts
+                .get(&format!("LIR coroutine resume {}", function.id.0))
+                .finding("resume IR")?;
+            let creator = texts
+                .get(&format!("LIR coroutine creator {}", function.id.0))
+                .finding("creator IR")?;
             let frame = creator
                 .lines()
                 .find_map(|line| {
@@ -706,7 +945,8 @@ fn check_entry(
                         .and_then(|line| line.split_whitespace().next())
                 })
                 .finding("creator frame")?;
-            let created = jit_bytes_with_frame(creator, frame, plan.size, false)?;
+            let creator_facts = jit_byte_facts(creator, frame, plan.size)?;
+            let created = &creator_facts.zero;
             let c_creator = c.source.split_once(&format!("static uint8_t sub_f{}_resume(void* ctx, void* raw_frame, void* coroutine_out) {{", function.id.0))
                 .finding("C resume definition")?.0.rsplit_once("    memset(frame, 0, sizeof *frame);")
                 .finding("C factory initialization")?.1;
@@ -733,30 +973,30 @@ fn check_entry(
                     parameter.value.0
                 );
             }
-            let jit_bytes = jit_zero_bytes(clif)?;
-            let jit_writes = jit_bytes_with_frame(clif, "v1", 0, true)?;
-            require!(
-                plan.size == payload_offset(function)
-                    || jit_bytes
-                        .get(&(65534, 65534))
-                        .is_some_and(|bytes| (payload_offset(function)..plan.size)
-                            .all(|byte| bytes.contains(&byte))),
-                "{id}: finished JIT payload clear"
-            );
-            require!(
-                c_body.contains(if function.is_generator {
-                    "memset((unsigned char*)frame + 40"
-                } else {
-                    "memset((unsigned char*)frame + sizeof frame->state"
-                }),
-                "{id}: finished C payload clear"
-            );
+            let jit_facts = jit_byte_facts(clif, "v1", 0)?;
+            let jit_bytes = &jit_facts.zero;
+            let jit_writes = &jit_facts.positive;
+            jit_finish_clears(function, clif, jit_bytes, plan.size)
+                .map_err(|error| format!("{id}: {error}"))?;
+            c_finish_clears(c_body, function.is_generator)
+                .map_err(|error| format!("{id}: {error}"))?;
             let all_fields = lifetime
                 .iter()
                 .chain(spills.values().flatten())
                 .cloned()
                 .collect::<Vec<_>>();
-            let c_zero = c_clears(c_body, &all_fields)?;
+            let resumes = function
+                .blocks
+                .iter()
+                .filter_map(|block| match block.terminator {
+                    l::Terminator::Suspend { successor, .. } => Some((block.id.0, successor)),
+                    _ => None,
+                })
+                .collect();
+            let c_facts = c_field_facts(c_body, &all_fields, Some(function.entry), &resumes)?;
+            let c_zero = &c_facts.raw_clears;
+            let jit_zero_fields = field_bytes(jit_bytes, &all_fields);
+            let assignments = lifetime_assignments(function, &expected_lifetime);
             // Dispatch must retire every spill and child field, while it preserves all lifetime fields.
             for field in &lifetime {
                 require!(
@@ -767,114 +1007,199 @@ fn check_entry(
                     field.name
                 );
                 require!(
-                    !jit_bytes
+                    !jit_zero_fields
                         .get(&(u32::MAX, 0))
-                        .is_some_and(|bytes| (field.offset..field.offset + field.size)
-                            .all(|byte| bytes.contains(&byte))),
+                        .is_some_and(|names| names.contains(&field.name)),
                     "{id}: initial JIT lifetime clear {}\n{clif}",
                     field.name
                 );
             }
-            // An interval clear at any earlier LIR point must also fail the suspension contract.
-            for block in &function.blocks {
-                let last_point = block.instructions.len()
-                    + usize::from(matches!(block.terminator, l::Terminator::Suspend { .. }));
-                for point_index in 0..=last_point {
-                    let point = (block.id.0, point_index);
-                    for field in &lifetime {
-                        let assigned = if let Some(id) = field
-                            .name
-                            .strip_prefix("env_v")
-                            .or_else(|| field.name.strip_prefix("stable_v"))
-                        {
-                            let id = l::ValueId(id.parse().finding("field value ID")?);
-                            function
-                                .blocks
-                                .iter()
-                                .any(|block| block.parameters.contains(&id))
-                                || point_index
-                                    .checked_sub(1)
-                                    .and_then(|index| block.instructions.get(index))
-                                    .is_some_and(|instruction| instruction.result == Some(id))
-                        } else {
-                            // A local assignment can replace its value, including a null value.
-                            if let Some(local) = field.name.strip_prefix('l') {
-                                let local = l::LocalId(local.parse().finding("local field ID")?);
-                                point_index
-                                    .checked_sub(1)
-                                    .and_then(|index| block.instructions.get(index))
-                                    .is_some_and(|instruction| {
-                                        matches!(instruction.kind,
-                                        l::InstructionKind::StoreLocal(target) if target == local)
-                                    })
-                            } else {
-                                false
-                            }
-                        };
-                        if assigned {
-                            continue;
-                        }
-                        require!(
-                            !c_zero
-                                .get(&point)
-                                .is_some_and(|names| names.contains(&field.name)),
-                            "{id}: C lifetime clear {} at {point:?}",
-                            field.name
-                        );
-                        require!(
-                            !jit_bytes
-                                .get(&point)
-                                .is_some_and(|bytes| (field.offset..field.offset + field.size)
-                                    .all(|byte| bytes.contains(&byte))),
-                            "{id}: JIT lifetime clear {} at {point:?}",
-                            field.name
-                        );
-                    }
-                }
-            }
+            let jit_ordered = jit_operations(function, &jit_facts.operations, &lifetime);
+            ordered_clears(
+                function,
+                &expected_lifetime,
+                &assignments,
+                &c_facts.operations,
+                &jit_ordered,
+            )
+            .map_err(|error| format!("{id}: {error}"))?;
             for field in spills.values().flatten() {
-                let c_clear = if field.name.ends_with("_child") {
-                    format!("frame->{} = NULL;", field.name)
-                } else {
-                    format!("memset(&frame->{}, 0,", field.name)
-                };
                 require!(
-                    c_body.contains(&c_clear),
+                    c_zero
+                        .get(&(u32::MAX, 0))
+                        .is_some_and(|names| names.contains(&field.name)),
                     "{id}: C spill retirement {}",
                     field.name
                 );
                 require!(
-                    jit_bytes
+                    jit_zero_fields
                         .get(&(u32::MAX, 0))
-                        .is_some_and(|bytes| (field.offset..field.offset + field.size)
-                            .all(|byte| bytes.contains(&byte))),
+                        .is_some_and(|names| names.contains(&field.name)),
                     "{id}: JIT spill retirement {}",
                     field.name
                 );
             }
+            // compiler.md §338 rule 5: only native creator writes enter the native flow.
+            let c_initial = c_writes(c_creator, &lifetime)?
+                .into_values()
+                .flatten()
+                .collect();
+            let jit_initial = field_bytes(&creator_facts.positive, &lifetime)
+                .into_values()
+                .flatten()
+                .collect();
             let c_suspensions = suspension_fields(
                 function,
                 &native_lifetime,
-                &c_writes(c_body, &all_fields)?,
-                &c_zero,
+                &c_initial,
+                &c_facts.writes,
+                &c_facts.clears,
                 &spills,
             );
+            let native_writes = jit_frame_writes(
+                function,
+                &native_lifetime,
+                &all_fields,
+                jit_writes,
+                jit_bytes,
+            )?;
             let jit_suspensions = suspension_fields(
                 function,
                 &native_lifetime,
-                &field_bytes(&jit_writes, &all_fields),
-                &field_bytes(&jit_bytes, &all_fields),
+                &jit_initial,
+                &native_writes,
+                &jit_zero_fields,
                 &spills,
             );
+            let initial = function
+                .parameters
+                .iter()
+                .flat_map(|parameter| {
+                    let p = format!("p{}", parameter.value.0);
+                    let env = format!("env_v{}", parameter.value.0);
+                    [p, env]
+                        .into_iter()
+                        .filter(|name| expected_lifetime.contains(name))
+                })
+                .collect();
+            let definitions = function
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .filter_map(|instruction| instruction.result.map(|result| (result, instruction)))
+                .collect::<BTreeMap<_, _>>();
+            let mut stored_lifetime = BTreeSet::new();
+            for name in &expected_lifetime {
+                if let Some(value) = name.strip_prefix("env_v") {
+                    let value = l::ValueId(value.parse().finding("environment value")?);
+                    if let Some(instruction) = definitions.get(&value) {
+                        let needs_storage = match &instruction.kind {
+                            l::InstructionKind::MakeClosure(target) => {
+                                let target = &lir.functions[target.0 as usize];
+                                target
+                                    .parameters
+                                    .iter()
+                                    .any(|p| p.kind == l::ParameterKind::Capture)
+                                    && !target
+                                        .parameters
+                                        .iter()
+                                        .any(|p| p.kind == l::ParameterKind::OwnedEnvironment)
+                            }
+                            l::InstructionKind::Copy | l::InstructionKind::Cast => true,
+                            _ => false,
+                        };
+                        if !needs_storage {
+                            continue;
+                        }
+                    }
+                }
+                stored_lifetime.insert(name.clone());
+            }
+            let writes = assignments
+                .iter()
+                .map(|(point, names)| {
+                    (
+                        *point,
+                        names.intersection(&stored_lifetime).cloned().collect(),
+                    )
+                })
+                .collect();
+            let needed = suspension_fields(
+                function,
+                &expected_lifetime,
+                &initial,
+                &writes,
+                &BTreeMap::new(),
+                &spills,
+            );
+            let mut required_lifetime = BTreeSet::new();
+            for (block, fields) in &needed {
+                for name in fields {
+                    let value = name
+                        .strip_prefix("env_v")
+                        .or_else(|| name.strip_prefix("stable_v"))
+                        .and_then(|id| id.parse::<u32>().ok())
+                        .map(l::ValueId);
+                    if value.is_none_or(|value| {
+                        function.parameters.iter().any(|p| p.value == value)
+                            || crossing.live_before(
+                                value,
+                                *block,
+                                function.blocks[block.0 as usize].instructions.len() + 1,
+                            )
+                    }) {
+                        required_lifetime.insert(name.clone());
+                    }
+                }
+            }
+            assignment_writes(
+                function,
+                &required_lifetime,
+                &writes,
+                &c_facts.writes,
+                false,
+            )
+            .map_err(|error| format!("{id}: {error}"))?;
+            assignment_writes(function, &required_lifetime, &writes, &native_writes, true)
+                .map_err(|error| format!("{id}: {error}"))?;
             for (block, expected) in &expected_suspensions {
                 let c_set = c_suspensions.get(block).finding("reachable C suspension")?;
                 let jit_set = jit_suspensions
                     .get(block)
                     .finding("reachable JIT suspension")?;
-                equal_fields(expected, c_set)
-                    .map_err(|error| format!("{id} b{} C: {error}", block.0))?;
-                equal_fields(expected, jit_set)
-                    .map_err(|error| format!("{id} b{} JIT: {error}", block.0))?;
+                let mut required = expected.clone();
+                for name in needed.get(block).into_iter().flatten() {
+                    let value = name
+                        .strip_prefix("env_v")
+                        .or_else(|| name.strip_prefix("stable_v"))
+                        .and_then(|id| id.parse::<u32>().ok())
+                        .map(l::ValueId);
+                    if value.is_none_or(|value| {
+                        function.parameters.iter().any(|p| p.value == value)
+                            || crossing.live_before(
+                                value,
+                                *block,
+                                function.blocks[block.0 as usize].instructions.len() + 1,
+                            )
+                    }) {
+                        required.insert(name.clone());
+                    }
+                }
+                let relevant = |actual: &BTreeSet<String>| {
+                    actual
+                        .iter()
+                        .filter(|name| required.contains(*name) || !native_lifetime.contains(*name))
+                        .cloned()
+                        .collect::<BTreeSet<_>>()
+                };
+                let c_set = relevant(c_set);
+                let jit_set = relevant(jit_set);
+                equal_fields(&required, &c_set).map_err(|error| {
+                    format!("{id} {} b{} C: {error}", function.source_name, block.0)
+                })?;
+                equal_fields(&required, &jit_set).map_err(|error| {
+                    format!("{id} {} b{} JIT: {error}", function.source_name, block.0)
+                })?;
                 require_eq!(c_set, jit_set, "{id}: suspension field sets");
                 counts.1 += 1;
             }
@@ -957,6 +1282,12 @@ fn assert_reports(reports: &[EntryReport]) {
     assert!(findings.is_empty(), "{}", findings.join("\n"));
 }
 
+// compiler.md §338 rule 5: debug best of three: 8.38 s; 0 C builds.
+// One native lowering per entry compares independent LIR, C, and JIT facts.
+// Each assignment needs a native write; each native return needs its own finish check.
+// Ordered operations distinguish initialization before a write from a clear after it.
+// Width-aware JIT reads prove actual writes; edge and point flows reject missing writes and premature clears.
+// One C pass supplies raw and resume views; one JIT pass records zero and positive bytes.
 #[test]
 fn every_corpus_coroutine_field_matches_live_values_at_suspension() {
     // §279: the test thread loads corpus sources and interop mirrors before the pool starts.
@@ -1033,6 +1364,7 @@ fn check_pool_failure(panics: bool) {
     assert!(panic_text(failure.as_ref()).contains(&format!("control-1: {expected}")));
 }
 
+// compiler.md §338 rule 5: debug best of three: <0.01 s; 0 C builds.
 #[test]
 fn hand_built_native_storage_rejects_extra_and_missing_roots() {
     let files = [subscript_compiler::SourceFile::new("storage.ts", 
@@ -1047,7 +1379,7 @@ fn hand_built_native_storage_rejects_extra_and_missing_roots() {
         .find(|function| function.source_name == "work")
         .expect("work function");
     let layouts = Layouts::build_lir(&lir).expect("fixture layouts");
-    let (_, expected, _) = lir_fields(function, &layouts, false).expect("fixture fields");
+    let (_, expected, _, _) = lir_fields(function, &layouts, false).expect("fixture fields");
     assert_eq!(expected, BTreeSet::from(["p0".to_string()]));
     for definition in ["void* p0;\nvoid* stray;", ""] {
         assert!(equal_fields(&expected, &c_field_names(definition)).is_err());
@@ -1089,6 +1421,9 @@ fn hand_built_native_storage_rejects_extra_and_missing_roots() {
             .collect::<BTreeSet<_>>();
         assert_eq!(equal_fields(&expected, &actual).is_ok(), valid);
     }
+    let narrow =
+        jit_bytes_with_frame("v2 = iconst.i32 7\n@10001 store v2, v1+16", "v1", 0, true).unwrap();
+    assert_eq!(narrow[&(0, 1)], (16..20).collect());
 }
 
 fn payload_offset(function: &l::Function) -> u32 {
@@ -1098,4 +1433,276 @@ fn payload_offset(function: &l::Function) -> u32 {
     } else {
         COROUTINE_PAYLOAD_OFFSET
     }
+}
+
+// compiler.md §338 rule 5: derive assignment points independently from native operations.
+fn lifetime_assignments(
+    function: &l::Function,
+    lifetime: &BTreeSet<String>,
+) -> BTreeMap<Point, BTreeSet<String>> {
+    let mut assignments = BTreeMap::<Point, BTreeSet<String>>::new();
+    let mut value = |id: l::ValueId, point| {
+        for prefix in ["env_v", "stable_v"] {
+            if let Some(name) = lifetime.get(&format!("{prefix}{}", id.0)) {
+                assignments.entry(point).or_default().insert(name.clone());
+            }
+        }
+    };
+    for parameter in &function.parameters {
+        value(parameter.value, (function.entry.0, 0));
+    }
+    for block in &function.blocks {
+        for parameter in &block.parameters {
+            value(*parameter, (block.id.0, 0));
+        }
+        for (index, instruction) in block.instructions.iter().enumerate() {
+            if let Some(result) = instruction.result {
+                value(result, (block.id.0, index + 1));
+            }
+        }
+        if !matches!(block.terminator, l::Terminator::Suspend { .. }) {
+            for target in block.terminator.targets() {
+                for (parameter, _) in function.blocks[target.block.0 as usize]
+                    .parameters
+                    .iter()
+                    .zip(&target.arguments)
+                {
+                    value(*parameter, (block.id.0, block.instructions.len() + 1));
+                }
+            }
+        }
+    }
+    for block in &function.blocks {
+        for (index, instruction) in block.instructions.iter().enumerate() {
+            if let l::InstructionKind::StoreLocal(local) = instruction.kind {
+                if let Some(name) = lifetime.get(&format!("l{}", local.0)) {
+                    assignments
+                        .entry((block.id.0, index + 1))
+                        .or_default()
+                        .insert(name.clone());
+                }
+            }
+        }
+    }
+    assignments
+}
+
+fn lifetime_assignment(
+    function: &l::Function,
+    name: &str,
+    block: &l::BasicBlock,
+    point: usize,
+) -> Result<bool, String> {
+    Ok(
+        lifetime_assignments(function, &BTreeSet::from([name.to_string()]))
+            .get(&(block.id.0, point))
+            .is_some_and(|names| names.contains(name)),
+    )
+}
+
+// compiler.md §338 rule 5: each completed exit must clear its payload on that path.
+fn c_finish_clears(source: &str, generator: bool) -> Result<(), String> {
+    let marker = if generator {
+        "memset((unsigned char*)frame + 40"
+    } else {
+        "memset((unsigned char*)frame + sizeof frame->state"
+    };
+    let mut cleared = false;
+    let mut already_done = false;
+    for (index, line) in source.lines().enumerate() {
+        let line = line.trim();
+        if line.ends_with(':') {
+            cleared = false;
+            already_done = line == "coroutine_done:";
+        }
+        if line.contains(marker) {
+            cleared = true;
+        }
+        if line == "return 1;" {
+            require!(
+                cleared || already_done,
+                "C finish exit without payload clear at line {}",
+                index + 1
+            );
+            cleared = false;
+        }
+    }
+    Ok(())
+}
+
+fn jit_frame_writes(
+    function: &l::Function,
+    lifetime: &BTreeSet<String>,
+    fields: &[Field],
+    positive: &BTreeMap<Point, BTreeSet<u32>>,
+    zero: &BTreeMap<Point, BTreeSet<u32>>,
+) -> Result<BTreeMap<Point, BTreeSet<String>>, String> {
+    let mut initialized = positive.clone();
+    for (point, bytes) in zero {
+        initialized.entry(*point).or_default().extend(bytes);
+    }
+    let writes = field_bytes(&initialized, fields);
+    // compiler.md §338 rule 5: each incoming edge supplies a fresh parameter value.
+    // A shared receiving-block store covers every edge; a predecessor store covers only that edge.
+    for source in &function.blocks {
+        if matches!(source.terminator, l::Terminator::Suspend { .. }) {
+            continue;
+        }
+        for target in source.terminator.targets() {
+            for parameter in &function.blocks[target.block.0 as usize].parameters {
+                let name = format!("env_v{}", parameter.0);
+                if !lifetime.contains(&name) {
+                    continue;
+                }
+                let entry = (target.block.0, 0);
+                let edge = (source.id.0, source.instructions.len() + 1);
+                require!(
+                    writes
+                        .get(&entry)
+                        .is_some_and(|fields| fields.contains(&name))
+                        || writes
+                            .get(&edge)
+                            .is_some_and(|fields| fields.contains(&name)),
+                    "JIT edge b{} -> b{} missing write {name}",
+                    source.id.0,
+                    target.block.0
+                );
+            }
+        }
+    }
+    Ok(writes)
+}
+
+mod negative_tests;
+
+// compiler.md §338 rule 5: each LIR assignment requires its own native write.
+fn assignment_writes(
+    function: &l::Function,
+    required: &BTreeSet<String>,
+    assignments: &BTreeMap<Point, BTreeSet<String>>,
+    writes: &BTreeMap<Point, BTreeSet<String>>,
+    jit: bool,
+) -> Result<(), String> {
+    let parameters = function
+        .blocks
+        .iter()
+        .flat_map(|target| {
+            target
+                .parameters
+                .iter()
+                .map(move |p| (format!("env_v{}", p.0), (target.id.0, 0)))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (point, names) in assignments {
+        for name in names.intersection(required) {
+            // C assigns block parameters on incoming edges, rather than at block entry.
+            if !jit && point.1 == 0 && parameters.get(name) == Some(point) {
+                continue;
+            }
+            let at_point = writes
+                .get(point)
+                .is_some_and(|fields| fields.contains(name));
+            let receiving = jit
+                && parameters.get(name).is_some_and(|entry| {
+                    (point == entry
+                        || point.1 == function.blocks[point.0 as usize].instructions.len() + 1
+                            && function.blocks[point.0 as usize]
+                                .terminator
+                                .targets()
+                                .iter()
+                                .any(|edge| edge.block.0 == entry.0))
+                        && writes
+                            .get(entry)
+                            .is_some_and(|fields| fields.contains(name))
+                });
+            let incoming = jit && parameters.get(name) == Some(point) && {
+                let edges = function
+                    .blocks
+                    .iter()
+                    .filter(|source| {
+                        source
+                            .terminator
+                            .successors()
+                            .iter()
+                            .any(|target| target.0 == point.0)
+                    })
+                    .collect::<Vec<_>>();
+                !edges.is_empty()
+                    && edges.iter().all(|source| {
+                        !matches!(source.terminator, l::Terminator::Suspend { .. })
+                            && writes
+                                .get(&(source.id.0, source.instructions.len() + 1))
+                                .is_some_and(|fields| fields.contains(name))
+                    })
+            };
+            require!(
+                at_point || receiving || incoming,
+                "{} assignment b{}:{} missing write {name}",
+                if jit { "JIT" } else { "C" },
+                point.0,
+                point.1
+            );
+        }
+    }
+    Ok(())
+}
+
+// compiler.md §338 rule 5: return and unwind exits have distinct test-only source tags.
+fn jit_finish_clears(
+    function: &l::Function,
+    text: &str,
+    zero: &BTreeMap<Point, BTreeSet<u32>>,
+    size: u32,
+) -> Result<(), String> {
+    let expected = function
+        .blocks
+        .iter()
+        .filter(|block| matches!(block.terminator, l::Terminator::Return { .. }))
+        .map(|block| (block.id.0, 65534))
+        .collect::<BTreeSet<_>>();
+    let mut exits = BTreeSet::new();
+    let mut done = 0;
+    for line in text.lines() {
+        let line = line.trim();
+        let (point, code) = if let Some(tagged) = line.strip_prefix('@') {
+            let (tag, code) = tagged
+                .split_once(char::is_whitespace)
+                .finding("return tag")?;
+            let tag = u32::from_str_radix(tag, 16).finding("return tag number")?;
+            (Some((tag / 65536 - 1, (tag % 65536) as usize)), code.trim())
+        } else {
+            (None, line)
+        };
+        if !code.starts_with("return ") {
+            continue;
+        }
+        match point {
+            None => done += 1,
+            Some(point) if expected.contains(&point) || point == (65532, 1) => {
+                exits.insert(point);
+            }
+            Some((block, point))
+                if function.blocks.get(block as usize).is_some_and(|block| {
+                    matches!(block.terminator, l::Terminator::Suspend { .. })
+                        && point == block.instructions.len() + 1
+                }) => {}
+            Some(point) => return Err(format!("JIT unrecognized return at {point:?}")),
+        }
+    }
+    require_eq!(
+        done,
+        1,
+        "JIT already-done dispatch must be the only untagged return"
+    );
+    require!(expected.is_subset(&exits), "JIT missing tagged return exit");
+    for exit in exits {
+        require!(
+            size == payload_offset(function)
+                || zero.get(&exit).is_some_and(
+                    |bytes| (payload_offset(function)..size).all(|byte| bytes.contains(&byte))
+                ),
+            "JIT finish exit {exit:?} without payload clear"
+        );
+    }
+    Ok(())
 }
