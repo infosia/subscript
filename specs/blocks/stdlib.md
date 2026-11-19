@@ -1816,7 +1816,7 @@ Accepted:
 
 - **`new RegExp(pattern: string, flags?: string)`** and the **literal
   form** `/pat/flags`. The literal costs one match arm — the compiler
-  wraps `swc`, which already resolves the `/` ambiguity — and it lets
+  wraps `oxc` (§341; `swc` before), which already resolves the `/` ambiguity — and it lets
   the pattern be **validated at check time**, which is invariant 6. It
   removes §15.4's *compile* hazard for literals: a malformed or
   over-nested literal is a checker rejection rather than a runtime

@@ -4,8 +4,8 @@ use super::rejection::RejectionSite;
 use super::type_rules::cast_value;
 use super::{Checker, FnCtx};
 use crate::{hir, Type};
+use oxc_ast::ast::{self as ast, BinaryOperator as BinaryOp};
 use std::collections::HashSet;
-use swc_ecma_ast::{self as ast, BinaryOp};
 
 pub(super) enum StringOperand<'a> {
     Place(&'a Type),
@@ -25,7 +25,7 @@ pub(super) enum StringOperand<'a> {
     ArrayElement(&'a hir::Expr),
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Every site reads this decision before constructing the §259 conversion.
     pub(super) fn convert_string_operand(
         &mut self,
@@ -40,7 +40,7 @@ impl Checker<'_> {
         // the existing operator/case diagnostic instead of widening the alias.
         let literal_other = match usage {
             StringOperand::Binary {
-                op: BinaryOp::EqEqEq | BinaryOp::NotEqEq,
+                op: BinaryOp::StrictEquality | BinaryOp::StrictInequality,
                 ref other,
                 literal: Some(text),
                 compound: false,
@@ -62,11 +62,12 @@ impl Checker<'_> {
             let original_field =
                 matches!(other.kind, hir::ExprKind::Field { .. }).then(|| other.clone());
             *other = self.check_lit(
-                &ast::Lit::Str(ast::Str {
-                    span: Default::default(),
-                    value: text.into(),
-                    raw: None,
-                }),
+                &ast::Expression::new_string_literal(
+                    oxc_span::Span::default(),
+                    text,
+                    None,
+                    &oxc_ast::builder::AstBuilder::new(self.prog.allocator),
+                ),
                 Some(&value.ty),
                 other.pos.clone(),
             );
@@ -107,9 +108,13 @@ impl Checker<'_> {
                 let literal = matches!(&other.kind, hir::ExprKind::Str(_));
                 let other = self.apparent_type(&other.ty);
                 match op {
-                    BinaryOp::Add if compound => !left && other == Type::Str,
-                    BinaryOp::Add => other == Type::Str || other == Type::StringAlias(alias),
-                    BinaryOp::EqEqEq | BinaryOp::NotEqEq if !compound && !literal => string(&other),
+                    BinaryOp::Addition if compound => !left && other == Type::Str,
+                    BinaryOp::Addition => other == Type::Str || other == Type::StringAlias(alias),
+                    BinaryOp::StrictEquality | BinaryOp::StrictInequality
+                        if !compound && !literal =>
+                    {
+                        string(&other)
+                    }
                     _ => false,
                 }
             }
@@ -147,9 +152,9 @@ impl Checker<'_> {
 
     pub(super) fn checked_string_literal_operand(
         &self,
-        source: &ast::Expr,
+        source: &ast::Expression,
         checked: &hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<String> {
         self.checked_literal_operand(source, checked, fx)
             .and_then(|literal| literal.as_string().map(str::to_owned))
@@ -157,7 +162,7 @@ impl Checker<'_> {
 
     pub(super) fn check_switch_case_test(
         &mut self,
-        t: &ast::Expr,
+        t: &ast::Expression,
         subject: (
             &hir::Expr,
             Option<&super::literal_operand::LiteralOperand>,
@@ -166,7 +171,7 @@ impl Checker<'_> {
         alias_switch: Option<&(String, Vec<String>)>,
         alias_members_seen: &mut HashSet<usize>,
         alias_labels_valid: &mut bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let (disc, subject_literal, prior_test) = subject;
         let mut subject_value = disc.clone();
@@ -189,7 +194,7 @@ impl Checker<'_> {
         self.convert_string_operand(
             disc,
             StringOperand::Binary {
-                op: BinaryOp::EqEqEq,
+                op: BinaryOp::StrictEquality,
                 other: &mut checked,
                 literal: label_literal.as_deref(),
                 compound: false,
@@ -277,7 +282,7 @@ impl Checker<'_> {
                 self.convert_string_operand(
                     &mut subject,
                     StringOperand::Binary {
-                        op: BinaryOp::EqEqEq,
+                        op: BinaryOp::StrictEquality,
                         other: &mut other,
                         literal: None,
                         compound: false,
@@ -337,7 +342,7 @@ impl Checker<'_> {
                 self.convert_string_operand(
                     &mut test,
                     StringOperand::Binary {
-                        op: BinaryOp::EqEqEq,
+                        op: BinaryOp::StrictEquality,
                         other: &mut subject,
                         literal: Some(text),
                         compound: false,

@@ -11,8 +11,8 @@ use crate::check::rejection::RejectionSite;
 use crate::diag::Pos;
 use crate::hir::{self, Callee, ExprKind, StrFn};
 use crate::types::Type;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 /// The module specifier.
 pub(crate) const SPECIFIER: &str = "subscript:text";
@@ -27,7 +27,7 @@ fn export(name: &str) -> Option<StrFn> {
         .find(|f| !f.is_method() && f.name() == name)
 }
 
-fn param(ty: Type, has_default: bool) -> ParamSig {
+fn param(ty: Type, has_default: bool) -> ParamSig<'static> {
     ParamSig {
         annotated: false,
         name: String::new(),
@@ -37,30 +37,31 @@ fn param(ty: Type, has_default: bool) -> ParamSig {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Binds the specifiers of one `subscript:text` import. A named
     /// import of an export binds the operation; every other form is
     /// rejected.
     pub(super) fn text_module_import(
         &mut self,
-        import: &ast::ImportDecl,
+        import: &ast::ImportDeclaration,
         additions: &mut Vec<(String, ScopeItem, Pos, bool)>,
     ) {
-        if import.specifiers.is_empty() {
+        if import
+            .specifiers
+            .as_ref()
+            .is_none_or(|specifiers| specifiers.is_empty())
+        {
             self.reject_subset(
                 RejectionSite::TextModuleImportForm,
                 FORMS,
-                self.pos(import.src.span),
+                self.pos(import.source.span),
             );
         }
-        for spec in &import.specifiers {
+        for spec in import.specifiers.iter().flatten() {
             match spec {
-                ast::ImportSpecifier::Named(named) => {
-                    let local = named.local.sym.to_string();
-                    let imported = named
-                        .imported
-                        .as_ref()
-                        .map_or_else(|| local.clone(), |name| name.atom().to_string());
+                ast::ImportDeclarationSpecifier::ImportSpecifier(named) => {
+                    let local = named.local.name.to_string();
+                    let imported = named.imported.name().to_string();
                     let item = if let Some(operation) = export(&imported) {
                         ScopeItem::StandardText(operation)
                     } else {
@@ -78,15 +79,15 @@ impl Checker<'_> {
                         super::signatures::type_only_import(import, named),
                     ));
                 }
-                ast::ImportSpecifier::Default(ast::ImportDefaultSpecifier { local, .. })
-                | ast::ImportSpecifier::Namespace(ast::ImportStarAsSpecifier { local, .. }) => {
+                other => {
+                    let local = other.local();
                     self.reject_subset(
                         RejectionSite::TextModuleImportForm,
                         FORMS,
                         self.pos(spec.span()),
                     );
                     additions.push((
-                        local.sym.to_string(),
+                        local.name.to_string(),
                         ScopeItem::Poisoned,
                         self.pos(local.span),
                         false,
@@ -102,8 +103,8 @@ impl Checker<'_> {
     pub(super) fn check_text_call(
         &mut self,
         operation: StrFn,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let optional_end = operation == StrFn::SliceGraphemes;
@@ -114,7 +115,7 @@ impl Checker<'_> {
         let mut args = self.check_args(
             RejectionSite::TextModuleArguments,
             &params,
-            &call.args,
+            &call.arguments,
             fx,
             &pos,
             operation.name(),

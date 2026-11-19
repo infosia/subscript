@@ -3,8 +3,8 @@
 
 use crate::check::narrowing_fact::FactSet;
 use crate::check::rejection::RejectionSite;
+use oxc_ast::ast;
 use std::collections::HashSet;
-use swc_ecma_ast as ast;
 
 use crate::check::{Checker, FnCtx};
 use crate::diag::Pos;
@@ -84,10 +84,10 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_cond(
         &mut self,
-        c: &ast::CondExpr,
+        c: &ast::ConditionalExpression,
         (ctx, kind): (Option<&Type>, super::entry::ContextKind),
         list_candidate: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let leaves = self.callback_leaf_place.take();
@@ -120,11 +120,11 @@ impl<'p> Checker<'p> {
         let initial_notes = fx.ended_shared_narrowing.clone();
 
         // Check the nonliteral arm first so either literal arm can take its context.
-        let reverse = ctx.is_none() && literalish(&c.cons) && !literalish(&c.alt);
+        let reverse = ctx.is_none() && literalish(&c.consequent) && !literalish(&c.alternate);
         let (first_ast, second_ast, first_extra, second_extra) = if reverse {
-            (&c.alt, &c.cons, else_extra, then_extra)
+            (&c.alternate, &c.consequent, else_extra, then_extra)
         } else {
-            (&c.cons, &c.alt, then_extra, else_extra)
+            (&c.consequent, &c.alternate, then_extra, else_extra)
         };
         fx.narrowed = base
             .iter()

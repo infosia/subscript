@@ -9,7 +9,7 @@ pub(super) struct MethodInstance {
     pub(super) result: Type,
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Reads actual method arguments before runtime instance caching (compiler.md §335 rule 1).
     pub(super) fn method_result_arguments(
         &self,
@@ -25,7 +25,7 @@ impl Checker<'_> {
         };
         let Some(parameters) = methods
             .get(name)
-            .and_then(|method| method.function.type_params.as_deref())
+            .and_then(|method| method.function.type_parameters.as_deref())
         else {
             return Vec::new();
         };
@@ -33,7 +33,7 @@ impl Checker<'_> {
             .params
             .iter()
             .zip(arguments)
-            .map(|(parameter, argument)| (parameter.name.span.lo.0, argument.clone()))
+            .map(|(parameter, argument)| (parameter.name.span.start, argument.clone()))
             .collect()
     }
 
@@ -55,9 +55,9 @@ impl Checker<'_> {
     pub(super) fn member_signature(
         &self,
         class: ClassId,
-        mut signature: FnSig,
-        fx: &FnCtx,
-    ) -> FnSig {
+        mut signature: FnSig<'p>,
+        fx: &FnCtx<'p>,
+    ) -> FnSig<'p> {
         let member = Type::Func(Box::new(crate::types::FuncType {
             callback_typedef: None,
             params: signature
@@ -85,20 +85,20 @@ impl Checker<'_> {
         function: &ast::Function,
         pos: &Pos,
     ) -> Option<Type> {
-        let parameters = function.type_params.as_deref()?;
+        let parameters = function.type_parameters.as_deref()?;
         function.return_type.as_ref()?;
         let saved = self.subst.clone();
         for parameter in &parameters.params {
-            if let Some(instance) = saved.get(parameter.name.sym.as_ref()) {
+            if let Some(instance) = saved.get(parameter.name.name.as_ref()) {
                 let constraint = match instance {
                     Type::ConstrainedInstance(instance) => instance.constraint.clone(),
                     _ => None,
                 };
                 self.subst.insert(
-                    parameter.name.sym.to_string(),
+                    parameter.name.name.to_string(),
                     Type::ConstrainedInstance(Box::new(crate::types::ConstrainedInstance {
-                        identity: parameter.name.span.lo.0,
-                        name: parameter.name.sym.to_string(),
+                        identity: parameter.name.span.start,
+                        name: parameter.name.name.to_string(),
                         constraint,
                         instance: instance.instance_type(),
                     })),
@@ -124,7 +124,7 @@ impl Checker<'_> {
         let Some(parameters) = self
             .generic_fns
             .get(key)
-            .and_then(|template| template.function.type_params.as_deref())
+            .and_then(|template| template.function.type_parameters.as_deref())
         else {
             return signature.ret.clone();
         };
@@ -132,7 +132,7 @@ impl Checker<'_> {
             .params
             .iter()
             .zip(arguments)
-            .map(|(parameter, argument)| (parameter.name.span.lo.0, argument.clone()))
+            .map(|(parameter, argument)| (parameter.name.span.start, argument.clone()))
             .collect();
         let result = signature
             .result_template
@@ -150,9 +150,9 @@ impl Checker<'_> {
     pub(super) fn check_constrained_method_call(
         &mut self,
         receiver: &hir::Expr,
-        property: &ast::IdentName,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        property: &ast::IdentifierName,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
         awaited: bool,
     ) -> Option<hir::Expr> {
@@ -165,7 +165,7 @@ impl Checker<'_> {
         let Type::Class(class) = self.apparent_type(&receiver.ty) else {
             return None;
         };
-        let name = property.sym.as_ref();
+        let name = property.name.as_ref();
         let member = self.interface_member(&interface, name)?;
         if member.accessor {
             return None;
@@ -191,7 +191,7 @@ impl Checker<'_> {
         let mut args = self.check_args(
             RejectionSite::InstanceMethodArgumentCount,
             &params,
-            &call.args,
+            &call.arguments,
             fx,
             pos,
             name,

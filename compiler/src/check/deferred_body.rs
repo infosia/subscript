@@ -2,8 +2,8 @@
 use super::*;
 
 #[derive(Clone)]
-pub(super) struct PendingFunctionBody {
-    source: ast::Function,
+pub(super) struct PendingFunctionBody<'p> {
+    source: Rc<ast::Function<'p>>,
     name: String,
     class: Option<ClassId>,
     is_static: bool,
@@ -13,7 +13,7 @@ pub(super) struct PendingFunctionBody {
     chain: Vec<instance_chain::InstanceRequest>,
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     pub(super) fn defer_function_body(
         &mut self,
         source: &ast::Function,
@@ -23,7 +23,7 @@ impl Checker<'_> {
         pos: &Pos,
     ) {
         self.pending_function_bodies.push(PendingFunctionBody {
-            source: source.clone(),
+            source: Rc::new(source.clone_in(self.prog.allocator)),
             name: name.to_string(),
             class,
             is_static,

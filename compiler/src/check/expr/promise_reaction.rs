@@ -3,7 +3,7 @@
 //! Each call creates the handle of a compiler-supplied async helper
 //! (`helper.rs`). The receiver and the callbacks are its arguments.
 
-use swc_common::Spanned;
+use oxc_span::GetSpan;
 
 use super::*;
 use crate::check::{rejection::RejectionSite, FnCtx};
@@ -76,9 +76,9 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn check_promise_reaction(
         &mut self,
         recv: hir::Expr,
-        property: &ast::IdentName,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        property: &ast::IdentifierName,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let Type::AsyncHandle(value) = self.apparent_type(&recv.ty) else {
@@ -88,7 +88,7 @@ impl<'p> Checker<'p> {
         if self.apparent_type(&value) == Type::Error {
             return self.err_expr(pos);
         }
-        let method = property.sym.as_ref();
+        let method = property.name.as_ref();
         let method_pos = self.pos(property.span);
         let receiver_origins = self.expr_async_origins(&recv, fx);
         fx.handle_async_origins(&receiver_origins);
@@ -137,11 +137,11 @@ impl<'p> Checker<'p> {
         &mut self,
         value: &Type,
         method: &str,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         method_pos: &Pos,
     ) -> Option<(Reaction, Vec<hir::Expr>)> {
-        if call.type_args.is_some() {
+        if call.type_arguments.is_some() {
             self.reject_combinator(
                 method,
                 format!("`.{method}(...)` takes no type arguments; the callback result gives the value type"),
@@ -149,7 +149,10 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        if let Some(spread) = call.args.iter().find_map(|argument| argument.spread) {
+        if let Some(spread) = call.arguments.iter().find_map(|argument| match argument {
+            ast::Argument::SpreadElement(spread) => Some(spread.span),
+            _ => None,
+        }) {
             self.reject_subset(
                 RejectionSite::PromiseReactionSpread,
                 "spread arguments require variadic parameters, which the language does not have",
@@ -158,7 +161,7 @@ impl<'p> Checker<'p> {
             return None;
         }
         let most = if method == "then" { 2 } else { 1 };
-        if call.args.is_empty() {
+        if call.arguments.is_empty() {
             self.reject_combinator(
                 method,
                 format!("`.{method}(...)` requires a callback"),
@@ -166,7 +169,7 @@ impl<'p> Checker<'p> {
             );
             return None;
         }
-        if call.args.len() > most {
+        if call.arguments.len() > most {
             self.reject_subset(
                 RejectionSite::PromiseReactionArguments,
                 if method == "then" {
@@ -174,26 +177,26 @@ impl<'p> Checker<'p> {
                 } else {
                     format!("`.{method}(...)` takes one callback")
                 },
-                self.pos(call.args[most].expr.span()),
+                self.pos(crate::check::argument_expression(&call.arguments[most]).span()),
             );
             return None;
         }
-        if let Some(argument) = call.args.iter().find(|argument| {
+        if let Some(argument) = call.arguments.iter().find(|argument| {
             matches!(
-                unparen_expr(&argument.expr),
-                ast::Expr::Lit(ast::Lit::Null(_))
+                unparen_expr(crate::check::argument_expression(argument)),
+                ast::Expression::NullLiteral(_)
             )
         }) {
             if method == "then"
                 && call
-                    .args
+                    .arguments
                     .get(1)
                     .is_some_and(|arg| std::ptr::eq(arg, argument))
             {
                 let diagnostic = crate::check::rejection::diagnostic(
                     RejectionSite::PromiseThenNullRejection,
                     "`.then(...)` takes no `null` rejection callback; use `.then(f)`",
-                    self.pos(argument.expr.span()),
+                    self.pos(crate::check::argument_expression(argument).span()),
                 );
                 self.diags.push(diagnostic);
                 return None;
@@ -201,7 +204,7 @@ impl<'p> Checker<'p> {
             self.reject_combinator(
                 method,
                 format!("`.{method}(...)` takes no `null` callback; `.catch(r)` takes a rejection callback alone"),
-                self.pos(argument.expr.span()),
+                self.pos(crate::check::argument_expression(argument).span()),
             );
             return None;
         }
@@ -211,14 +214,14 @@ impl<'p> Checker<'p> {
                 // the fulfillment callback the context `C`.
                 let context = self.reaction_result_context(call);
                 let (f, f_expr) = self.check_reaction_callback(
-                    &call.args[0],
+                    &call.arguments[0],
                     Role::Fulfilled,
                     value,
                     context.as_ref(),
                     method,
                     fx,
                 )?;
-                let Some(argument) = call.args.get(1) else {
+                let Some(argument) = call.arguments.get(1) else {
                     return Some((Reaction::Then(f), vec![f_expr]));
                 };
                 let (r, r_expr) = self.check_reaction_callback(
@@ -235,7 +238,7 @@ impl<'p> Checker<'p> {
                     self.reject_subset(
                         RejectionSite::PromiseReactionResult,
                         format!("a rejection callback of `.then(...)` must return `{expected}`, the value of its fulfillment callback; it returns `{actual}`"),
-                        self.pos(argument.expr.span()),
+                        self.pos(crate::check::argument_expression(argument).span()),
                     );
                     return None;
                 }
@@ -243,7 +246,7 @@ impl<'p> Checker<'p> {
             }
             "catch" => {
                 let (r, r_expr) = self.check_reaction_callback(
-                    &call.args[0],
+                    &call.arguments[0],
                     Role::Rejected,
                     value,
                     Some(value),
@@ -259,7 +262,7 @@ impl<'p> Checker<'p> {
                     self.reject_subset(
                         RejectionSite::PromiseReactionResult,
                         message,
-                        self.pos(call.args[0].expr.span()),
+                        self.pos(crate::check::argument_expression(&call.arguments[0]).span()),
                     );
                     return None;
                 }
@@ -267,7 +270,7 @@ impl<'p> Checker<'p> {
             }
             _ => {
                 let (f, f_expr) = self.check_reaction_callback(
-                    &call.args[0],
+                    &call.arguments[0],
                     Role::Settled,
                     value,
                     None,
@@ -283,7 +286,7 @@ impl<'p> Checker<'p> {
                             RejectionSite::PromiseReactionResult
                         },
                         format!("a `finally` callback must be `() => void`; it is `{actual}`"),
-                        self.pos(call.args[0].expr.span()),
+                        self.pos(crate::check::argument_expression(&call.arguments[0]).span()),
                     );
                     return None;
                 }
@@ -301,14 +304,14 @@ impl<'p> Checker<'p> {
     /// value and `Error` for the reason.
     fn check_reaction_callback(
         &mut self,
-        argument: &ast::ExprOrSpread,
+        argument: &ast::Argument,
         role: Role,
         value: &Type,
         hint: Option<&Type>,
         method: &str,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Option<(Callback, hir::Expr)> {
-        let pos = self.pos(argument.expr.span());
+        let pos = self.pos(crate::check::argument_expression(argument).span());
         let error = Type::Class(self.error_class);
         let void_value = self.apparent_type(value) == Type::Void;
         let (context, params) = match role {
@@ -319,18 +322,21 @@ impl<'p> Checker<'p> {
         };
         let settled_place =
             matches!(role, Role::Settled).then(|| Type::func(Vec::new(), Type::Void));
-        let mut checked = if let ast::Expr::Arrow(arrow) = unparen_expr(&argument.expr) {
+        let mut checked = if let ast::Expression::ArrowFunctionExpression(arrow) =
+            unparen_expr(crate::check::argument_expression(argument))
+        {
             // A parameter with no default and no context is a TypeScript
             // arity error: report it before its missing annotation.
-            let required = arrow
-                .params
-                .iter()
-                .rposition(|parameter| match parameter {
-                    ast::Pat::Assign(_) => false,
-                    ast::Pat::Ident(binding) => !binding.id.optional,
-                    _ => true,
-                })
-                .map_or(0, |index| index + 1);
+            let required = if arrow.params.rest.is_some() {
+                arrow.params.items.len() + 1
+            } else {
+                arrow
+                    .params
+                    .items
+                    .iter()
+                    .rposition(|parameter| parameter.initializer.is_none() && !parameter.optional)
+                    .map_or(0, |index| index + 1)
+            };
             if required > context.len() {
                 self.reject_reaction_arity(role, method, &context, &params, pos);
                 return None;
@@ -338,13 +344,14 @@ impl<'p> Checker<'p> {
             // §233 rule 1a: the string literal result of an async arrow
             // reaches the call through `PromiseLike`, and `tsc` gives it
             // the type `string` there. A numeric literal keeps the hint.
-            let string_result = arrow.is_async
-                && matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body)
-                    if super::type_arguments::is_string_literal_result(body));
+            let string_result = arrow.r#async
+                && arrow
+                    .body
+                    .as_expression()
+                    .is_some_and(super::type_arguments::is_string_literal_result);
             // compiler.md §245 rule 1: a body that is a `then` call gives a
             // handle that the callback adopts, so it takes `Promise<C>`.
-            let nested_then = matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body)
-                if is_then_call(body));
+            let nested_then = arrow.body.as_expression().is_some_and(is_then_call);
             self.lambda_result_hint = hint.filter(|_| !string_result).map(|value| {
                 if nested_then {
                     Type::async_handle(value.clone())
@@ -367,7 +374,11 @@ impl<'p> Checker<'p> {
         } else {
             // compiler.md §242 rule 1: the `finally` place reaches each
             // branch of a conditional.
-            self.check_expr(&argument.expr, settled_place.as_ref(), fx)
+            self.check_expr(
+                crate::check::argument_expression(argument),
+                settled_place.as_ref(),
+                fx,
+            )
         };
         // compiler.md §240 rule 2 and §242 rule 2: the `finally` callback
         // place has the type `() => void`. An async callback keeps its
@@ -634,13 +645,9 @@ impl Reaction {
 
 /// Whether `expr`, through parentheses, is a call of `then` (compiler.md
 /// §245 rule 1).
-fn is_then_call(expr: &ast::Expr) -> bool {
-    let ast::Expr::Call(call) = unparen_expr(expr) else {
+fn is_then_call(expr: &ast::Expression) -> bool {
+    let ast::Expression::CallExpression(call) = unparen_expr(expr) else {
         return false;
     };
-    let ast::Callee::Expr(callee) = &call.callee else {
-        return false;
-    };
-    matches!(unparen_expr(callee), ast::Expr::Member(member)
-        if matches!(&member.prop, ast::MemberProp::Ident(name) if name.sym.as_ref() == "then"))
+    matches!(unparen_expr(&call.callee), ast::Expression::StaticMemberExpression(member) if member.property.name == "then")
 }

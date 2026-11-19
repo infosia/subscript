@@ -4,11 +4,11 @@ use crate::check::{rejection::RejectionSite, FnCtx};
 impl<'p> Checker<'p> {
     pub(super) fn check_promise_all(
         &mut self,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        if call.type_args.is_some() {
+        if call.type_arguments.is_some() {
             self.reject_subset(
                 RejectionSite::PromiseAllTypeArguments,
                 "Promise.all takes no explicit type arguments",
@@ -16,7 +16,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let [argument] = call.args.as_slice() else {
+        let [argument] = call.arguments.as_slice() else {
             self.reject_subset(
                 RejectionSite::PromiseAllArguments,
                 "Promise.all requires one Promise<T>[] argument",
@@ -24,7 +24,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         };
-        if argument.spread.is_some() {
+        if matches!(argument, ast::Argument::SpreadElement(_)) {
             self.reject_subset(
                 RejectionSite::PromiseAllSpread,
                 "spread arguments require variadic parameters, which the language does not have",
@@ -32,7 +32,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let jobs = self.check_expr(&argument.expr, None, fx);
+        let jobs = self.check_expr(crate::check::argument_expression(argument), None, fx);
         // The call consumes the jobs even when an element has a diagnostic.
         let origins = self.expr_async_origins(&jobs, fx);
         fx.handle_async_origins(&origins);

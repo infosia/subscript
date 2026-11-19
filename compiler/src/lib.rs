@@ -1,5 +1,5 @@
 #![warn(missing_docs)]
-//! subscript compiler front end: SWC parse, the semantic checker for the
+//! subscript compiler front end: oxc parse, the semantic checker for the
 //! collision rules (`specs/blocks/collisions.md`), and the typed HIR.
 //!
 //! The primary public entry point is [`check_program`]: it takes one or
@@ -196,10 +196,15 @@ pub fn check_program_with(
     if !unknown.is_empty() {
         return Err(unknown);
     }
-    swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-        let parsed = parse::parse_program(files)?;
-        check::run(&parsed, options)
-    })
+    let allocator = oxc_allocator::Allocator::default();
+    let parsed = parse::parse_program(&allocator, files)?;
+    let module = check::run(&parsed, options)?;
+    let syntax_errors = parsed.syntax_diagnostics();
+    if syntax_errors.is_empty() {
+        Ok(module)
+    } else {
+        Err(syntax_errors)
+    }
 }
 
 #[cfg(test)]

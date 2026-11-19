@@ -12,7 +12,7 @@ pub(crate) enum TypeState {
 /// An unannotated lambda result in progress. A §286 block has a provisional
 /// signature; an expression body still needs its type (§290 rules 1 and 2).
 pub(super) struct LambdaResultInference {
-    pub span: swc_common::Span,
+    pub span: oxc_span::Span,
     pub pos: Pos,
     pub signature: Option<Type>,
     pub depends_on_parent: bool,
@@ -39,32 +39,32 @@ impl TypeState {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Initializer {
-    pub(super) expression: Box<ast::Expr>,
+pub(crate) struct Initializer<'p> {
+    pub(super) expression: Rc<ast::Expression<'p>>,
     pub(super) file: usize,
     subst: HashMap<String, Type>,
     class: Option<ClassId>,
     checked: Option<hir::Expr>,
     field_context: Option<field_initializer::FieldInitializer>,
     captures: Vec<hir::Capture>,
-    pending: Vec<DeferredExpression>,
+    pending: Vec<DeferredExpression<'p>>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DeferredExpression {
+pub(crate) struct DeferredExpression<'p> {
     id: usize,
-    work: DeferredWork,
-    frame: FnCtx,
+    work: DeferredWork<'p>,
+    frame: FnCtx<'p>,
     file: usize,
     subst: HashMap<String, Type>,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum DeferredWork {
+pub(crate) enum DeferredWork<'p> {
     Lambda {
-        source: ast::ArrowExpr,
+        source: Rc<ast::ArrowFunctionExpression<'p>>,
         inferred_void: bool,
-        params: Vec<ParamSig>,
+        params: Vec<ParamSig<'p>>,
         result: Type,
         /// The lambda is the callee of a call (compiler.md §241 rule 2).
         called_at_once: bool,
@@ -72,8 +72,8 @@ pub(crate) enum DeferredWork {
         reaction_parameter: bool,
     },
     Arguments {
-        source: Vec<ast::ExprOrSpread>,
-        params: Vec<ParamSig>,
+        source: Rc<Vec<ast::Argument<'p>>>,
+        params: Vec<ParamSig<'p>>,
         site: RejectionSite,
         what: String,
         checked: Option<Vec<Option<hir::Expr>>>,
@@ -128,11 +128,11 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn initializer(
         &self,
-        expression: &ast::Expr,
+        expression: &ast::Expression,
         class: Option<ClassId>,
-    ) -> Initializer {
+    ) -> Initializer<'p> {
         Initializer {
-            expression: Box::new(expression.clone()),
+            expression: Rc::new(expression.clone_in(self.prog.allocator)),
             file: self.cur_file,
             subst: self.subst.clone(),
             class,
@@ -184,15 +184,16 @@ impl<'p> Checker<'p> {
             && !generic
     }
 
-    fn decide_initializer(&mut self, source: &mut Initializer, fx: &mut FnCtx) -> Type {
+    fn decide_initializer(&mut self, source: &mut Initializer<'p>, fx: &mut FnCtx<'p>) -> Type {
         let file = std::mem::replace(&mut self.cur_file, source.file);
         let subst = std::mem::replace(&mut self.subst, source.subst.clone());
         let deciding = std::mem::replace(&mut self.deciding_type, true);
         let root = expr::unparen_expr(&source.expression);
-        let root_call = matches!(root, ast::Expr::Call(_)).then(|| root.span());
+        let root_call = matches!(root, ast::Expression::CallExpression(_)).then(|| root.span());
         let initializer_root = self.initializer_root.replace(root.span());
         let call = std::mem::replace(&mut self.initializer_call, root_call);
-        let direct_value = self.function_value_decision && matches!(root, ast::Expr::Ident(_));
+        let direct_value =
+            self.function_value_decision && matches!(root, ast::Expression::Identifier(_));
         let function_value = std::mem::replace(&mut self.function_value_decision, direct_value);
         let diagnostics = self.diags.len();
         let pending = self.deferred_expressions.take();
@@ -351,9 +352,9 @@ impl<'p> Checker<'p> {
     /// lambda that is called at once runs at once (compiler.md §241 rule 2).
     pub(crate) fn decide_lambda_parameters(
         &mut self,
-        params: &mut [ParamSig],
+        params: &mut [ParamSig<'p>],
         evaluation: Evaluation,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) {
         if params
             .iter()
@@ -380,7 +381,11 @@ impl<'p> Checker<'p> {
         self.decide_parameters_in(params, &mut context, None);
     }
 
-    fn owner_parameter(&mut self, owner: &ParameterOwner, index: usize) -> Option<&mut ParamSig> {
+    fn owner_parameter(
+        &mut self,
+        owner: &ParameterOwner,
+        index: usize,
+    ) -> Option<&mut ParamSig<'p>> {
         let parameters = match owner {
             ParameterOwner::Function(name) => &mut self.fn_sigs.get_mut(name)?.params,
             ParameterOwner::Constructor(id) => self.class_sigs.get_mut(id.0)?.ctor.as_mut()?,
@@ -397,7 +402,7 @@ impl<'p> Checker<'p> {
         parameters.get_mut(index)
     }
 
-    fn publish_parameter(&mut self, owner: &ParameterOwner, index: usize, param: &ParamSig) {
+    fn publish_parameter(&mut self, owner: &ParameterOwner, index: usize, param: &ParamSig<'p>) {
         if let Some(stored) = self.owner_parameter(owner, index) {
             *stored = param.clone();
         }
@@ -415,8 +420,8 @@ impl<'p> Checker<'p> {
 
     fn decide_parameters_in(
         &mut self,
-        params: &mut [ParamSig],
-        fx: &mut FnCtx,
+        params: &mut [ParamSig<'p>],
+        fx: &mut FnCtx<'p>,
         owner: Option<&ParameterOwner>,
     ) {
         let saved_default = std::mem::replace(&mut fx.parameter_default, true);
@@ -576,16 +581,16 @@ impl<'p> Checker<'p> {
                     continue;
                 };
                 match decl {
-                    ast::Decl::Var(v) => {
-                        for d in &v.decls {
-                            if let ast::Pat::Ident(b) = &d.name {
-                                let symbol = self.declaration_symbol(file, &b.id.sym);
-                                self.decide_global(&symbol, self.pos(b.id.span));
+                    ast::Declaration::VariableDeclaration(v) => {
+                        for d in &v.declarations {
+                            if let ast::BindingPattern::BindingIdentifier(b) = &d.id {
+                                let symbol = self.declaration_symbol(file, &b.name);
+                                self.decide_global(&symbol, self.pos(b.span));
                             }
                         }
                     }
-                    ast::Decl::Fn(f) => {
-                        let symbol = self.declaration_symbol(file, &f.ident.sym);
+                    ast::Declaration::FunctionDeclaration(f) => {
+                        let symbol = self.declaration_symbol(file, f.declaration_name());
                         self.decide_function_parameters(&symbol);
                     }
                     _ => {}
@@ -729,7 +734,7 @@ impl<'p> Checker<'p> {
         value
     }
 
-    pub(crate) fn defer_work(&mut self, work: DeferredWork, fx: &FnCtx) {
+    pub(crate) fn defer_work(&mut self, work: DeferredWork<'p>, fx: &FnCtx<'p>) {
         let id = self.next_deferred_id;
         self.next_deferred_id += 1;
         if let Some(slot) = self.expression_work.last_mut() {
@@ -746,26 +751,26 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn field_source(
         &self,
-        value: &ast::Expr,
+        value: &ast::Expression,
         id: ClassId,
         class: &ast::Class,
-        current: &ast::ClassProp,
-    ) -> Initializer {
+        current: &ast::PropertyDefinition,
+    ) -> Initializer<'p> {
         let mut source = self.initializer(value, Some(id));
         let mut earlier = HashSet::new();
         let mut definite_uninitialized = HashSet::new();
         let mut before = true;
-        for member in &class.body {
-            if let ast::ClassMember::ClassProp(prop) = member {
+        for member in &class.body.body {
+            if let ast::ClassElement::PropertyDefinition(prop) = member {
                 if prop.span == current.span {
                     before = false;
                 }
-                if let ast::PropName::Ident(name) = &prop.key {
-                    if !prop.is_static && before && prop.value.is_some() {
-                        earlier.insert(name.sym.to_string());
+                if let ast::PropertyKey::StaticIdentifier(name) = &prop.key {
+                    if !prop.r#static && before && prop.value.is_some() {
+                        earlier.insert(name.name.to_string());
                     }
-                    if !prop.is_static && prop.definite && prop.value.is_none() {
-                        definite_uninitialized.insert(name.sym.to_string());
+                    if !prop.r#static && prop.definite && prop.value.is_none() {
+                        definite_uninitialized.insert(name.name.to_string());
                     }
                 }
             }
@@ -779,7 +784,9 @@ impl<'p> Checker<'p> {
         source
     }
 
-    pub(crate) fn initializer_captures(source: &Option<Initializer>) -> &[hir::Capture] {
+    pub(crate) fn initializer_captures<'s>(
+        source: &'s Option<Initializer<'p>>,
+    ) -> &'s [hir::Capture] {
         source
             .as_ref()
             .map_or(&[], |source| source.captures.as_slice())
@@ -787,7 +794,7 @@ impl<'p> Checker<'p> {
 
     pub(crate) fn finish_initializer(
         &mut self,
-        source: &mut Option<Initializer>,
+        source: &mut Option<Initializer<'p>>,
     ) -> Option<hir::Expr> {
         let source = source.as_mut()?;
         let mut value = source.checked.take()?;
@@ -807,7 +814,7 @@ impl<'p> Checker<'p> {
     /// registry (compiler.md §329 rule 3). Type inference has its own frame.
     pub(crate) fn finish_parameter_initializer(
         &mut self,
-        source: &mut Option<Initializer>,
+        source: &mut Option<Initializer<'p>>,
         ty: &Type,
     ) -> Option<hir::Expr> {
         if self.apparent_type(ty).holds_async_handle() {
@@ -971,7 +978,7 @@ impl<'p> Checker<'p> {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Read a decided inferred global's initializer for its default call
     /// provenance (compiler.md §320 rules 1–3).
     pub(super) fn global_adapter_source(&self, symbol: &hir::Symbol) -> Option<hir::Expr> {
@@ -984,7 +991,7 @@ impl Checker<'_> {
     // compiler.md §288 rule 2: a global body can call itself before its initializer is complete.
     pub(super) fn cache_global_lambda_defaults(
         &mut self,
-        span: swc_common::Span,
+        span: oxc_span::Span,
         id: hir::LambdaId,
         params: &[hir::Param],
     ) {

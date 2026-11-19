@@ -1,37 +1,36 @@
-//! Resolves namespace qualifiers to ordinary imported declaration bindings.
-
+//! Resolves namespace qualifiers to imported declaration bindings (compiler.md §341 rule 5).
 use super::*;
-use crate::check::rejection::RejectionSite;
+use oxc_allocator::Box as ArenaBox;
+use oxc_ast_visit::{walk_mut, VisitMut};
 
 impl<'p> Checker<'p> {
-    /// Creates a private lookup key for the exported declaration identity.
-    /// The key is checker-only; HIR retains the declaration's existing symbol.
     fn namespace_member_ident(
         &mut self,
-        namespace: &ast::Ident,
-        member: &ast::IdentName,
-    ) -> Option<ast::Ident> {
+        namespace: &ast::IdentifierReference<'_>,
+        member: &ast::IdentifierName<'_>,
+    ) -> Option<ast::IdentifierReference<'p>> {
         let ScopeItem::Namespace { module, source } =
-            self.type_scope_item(namespace.sym.as_ref())?
+            self.type_scope_item(namespace.name.as_str())?
         else {
             return None;
         };
-        let item = module.and_then(|module| self.exports[module].get(member.sym.as_ref()).cloned());
+        let item =
+            module.and_then(|module| self.exports[module].get(member.name.as_str()).cloned());
         let item = item.unwrap_or_else(|| {
             if module.is_some() {
                 self.resolution_error(
-                    if member.sym.as_ref() == "default" {
+                    if member.name == "default" {
                         RejectionSite::NamespaceUnexportedMember
                     } else {
                         RejectionSite::NamespaceMemberMissing
                     },
-                    format!("`{}` is not exported by `{source}`", member.sym),
+                    format!("`{}` is not exported by `{source}`", member.name),
                     self.pos(member.span),
                 );
             }
             ScopeItem::Poisoned
         });
-        let key = format!("{}.{}", namespace.sym, member.sym);
+        let key = format!("{}.{}", namespace.name, member.name);
         self.file_scopes[self.cur_file].insert(
             key.clone(),
             ScopeBinding {
@@ -40,53 +39,55 @@ impl<'p> Checker<'p> {
                 type_only: false,
             },
         );
-        Some(ast::Ident::new_no_ctxt(key.into(), member.span))
+        Some(ast::IdentifierReference::new(
+            member.span,
+            self.prog.allocator.alloc_str(&key),
+            &oxc_ast::builder::AstBuilder::new(self.prog.allocator),
+        ))
     }
 
-    /// Resolves the program before signatures and bodies consume its declarations.
-    pub(super) fn resolve_namespace_program(&mut self, program: &mut ParsedProgram) {
+    pub(super) fn resolve_namespace_program(&mut self, program: &mut ParsedProgram<'p>) {
         for (file, source) in program.files.iter_mut().enumerate() {
             self.cur_file = file;
             let mut resolver = Resolver {
                 checker: self,
                 scopes: Vec::new(),
             };
-            for item in &mut source.module.body {
-                match item {
-                    ast::ModuleItem::Stmt(stmt) => resolver.stmt(stmt),
-                    ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => {
-                        resolver.decl(&mut export.decl)
-                    }
-                    _ => {}
+            for statement in &mut source.module.body {
+                if let ast::Statement::ExportDeclaration(export) = statement {
+                    resolver.visit_declaration(&mut export.declaration);
+                } else if !statement.is_module_declaration() {
+                    resolver.visit_statement(statement);
                 }
             }
         }
-        // Pass A stores generic templates. Replace those copies with resolved declarations.
+        // Templates retain the resolved declarations (compiler.md §341 rule 5).
         for (file, source) in program.files.iter().enumerate() {
             for item in &source.module.body {
                 match module_decl(item) {
-                    Some(ast::Decl::Fn(decl)) => {
-                        let symbol = self.declaration_symbol(file, decl.ident.sym.as_ref());
+                    Some(ast::Declaration::FunctionDeclaration(function)) => {
+                        let symbol = self.declaration_symbol(file, function.declaration_name());
                         if let Some(template) = self.generic_fns.get_mut(&symbol) {
-                            template.function = (*decl.function).clone();
+                            template.function =
+                                Rc::new(function.as_ref().clone_in(program.allocator));
                         }
                     }
-                    Some(ast::Decl::Class(decl)) => {
-                        let symbol = self.declaration_symbol(file, decl.ident.sym.as_ref());
+                    Some(ast::Declaration::ClassDeclaration(class)) => {
+                        let symbol = self.declaration_symbol(file, class.declaration_name());
                         if let Some(template) = self.generic_classes.get_mut(&symbol) {
-                            template.class = (*decl.class).clone();
+                            template.class = Rc::new(class.as_ref().clone_in(program.allocator));
                             for ((name, is_static), method) in
                                 &mut template.rejected_generic_methods
                             {
-                                if let Some(ast::ClassMember::Method(resolved)) = decl.class.body.iter().find(|member| {
-                                    matches!(member, ast::ClassMember::Method(m) if m.is_static == *is_static &&
-                                        matches!(&m.key, ast::PropName::Ident(key) if Some(key.sym.to_string()) == *name))
-                                }) { method.function = (*resolved.function).clone(); }
+                                if let Some(resolved) = class.body.body.iter().find_map(|member| match member {
+                                    ast::ClassElement::MethodDefinition(method) if method.kind != ast::MethodDefinitionKind::Constructor && method.r#static == *is_static && matches!(&method.key, ast::PropertyKey::StaticIdentifier(key) if Some(key.name.to_string()) == *name) => Some(method),
+                                    _ => None,
+                                }) { method.function = Rc::new(resolved.value.as_ref().clone_in(program.allocator)); }
                             }
                         }
                     }
-                    Some(ast::Decl::TsInterface(decl)) => {
-                        self.replace_interface_declaration(file, decl);
+                    Some(ast::Declaration::TSInterfaceDeclaration(interface)) => {
+                        self.replace_interface_declaration(file, interface)
                     }
                     _ => {}
                 }
@@ -95,816 +96,356 @@ impl<'p> Checker<'p> {
     }
 }
 
-struct Resolver<'a, 'p> {
-    checker: &'a mut Checker<'p>,
+struct Resolver<'s, 'p> {
+    checker: &'s mut Checker<'p>,
     scopes: Vec<HashSet<String>>,
 }
-
-impl Resolver<'_, '_> {
+impl<'p> Resolver<'_, 'p> {
     fn shadowed(&self, name: &str) -> bool {
         self.scopes.iter().rev().any(|scope| scope.contains(name))
     }
-
-    fn member(&mut self, member: &mut ast::MemberExpr) -> Option<ast::Ident> {
-        if let (ast::Expr::Ident(namespace), ast::MemberProp::Ident(name)) =
-            (super::expr::unparen_expr(&member.obj), &member.prop)
-        {
-            if !self.shadowed(namespace.sym.as_ref()) {
-                if let Some(ident) = self.checker.namespace_member_ident(namespace, name) {
-                    return Some(ident);
-                }
+    fn member(
+        &mut self,
+        member: &ast::StaticMemberExpression<'p>,
+    ) -> Option<ast::IdentifierReference<'p>> {
+        if let ast::Expression::Identifier(namespace) = super::expr::unparen_expr(&member.object) {
+            if !self.shadowed(namespace.name.as_str()) {
+                return self
+                    .checker
+                    .namespace_member_ident(namespace, &member.property);
             }
-        }
-        self.expr(&mut member.obj);
-        if let ast::MemberProp::Computed(prop) = &mut member.prop {
-            self.expr(&mut prop.expr);
         }
         None
     }
-
-    fn ann(&mut self, ann: &mut Option<Box<ast::TsTypeAnn>>) {
-        if let Some(ann) = ann {
-            self.ty(&mut ann.type_ann);
-        }
-    }
-
-    fn args(&mut self, args: &mut Option<Box<ast::TsTypeParamInstantiation>>) {
-        if let Some(args) = args {
-            for ty in &mut args.params {
-                self.ty(ty);
-            }
-        }
-    }
-
-    fn params(&mut self, params: &mut Option<Box<ast::TsTypeParamDecl>>) {
-        if let Some(params) = params {
-            for param in &mut params.params {
-                if let Some(ty) = &mut param.constraint {
-                    self.ty(ty);
-                }
-                if let Some(ty) = &mut param.default {
-                    self.ty(ty);
+    fn type_name(&mut self, name: &mut ast::TSTypeName<'p>) {
+        if let ast::TSTypeName::QualifiedName(qualified) = name {
+            if let ast::TSTypeName::IdentifierReference(namespace) = &qualified.left {
+                if let Some(ident) = self
+                    .checker
+                    .namespace_member_ident(namespace, &qualified.right)
+                {
+                    *name = ast::TSTypeName::IdentifierReference(ArenaBox::new_in(
+                        ident,
+                        &self.checker.prog.allocator,
+                    ));
                 }
             }
         }
     }
-
-    fn pat(&mut self, pat: &mut ast::Pat) {
-        match pat {
-            ast::Pat::Ident(p) => self.ann(&mut p.type_ann),
-            ast::Pat::Array(p) => {
-                self.ann(&mut p.type_ann);
-                for p in p.elems.iter_mut().flatten() {
-                    self.pat(p);
-                }
-            }
-            ast::Pat::Object(p) => {
-                self.ann(&mut p.type_ann);
-                for prop in &mut p.props {
-                    match prop {
-                        ast::ObjectPatProp::KeyValue(p) => {
-                            self.key(&mut p.key);
-                            self.pat(&mut p.value);
-                        }
-                        ast::ObjectPatProp::Assign(p) => {
-                            if let Some(e) = &mut p.value {
-                                self.expr(e);
-                            }
-                        }
-                        ast::ObjectPatProp::Rest(p) => self.pat(&mut p.arg),
-                    }
-                }
-            }
-            ast::Pat::Assign(p) => {
-                self.pat(&mut p.left);
-                self.expr(&mut p.right);
-            }
-            ast::Pat::Rest(p) => {
-                self.ann(&mut p.type_ann);
-                self.pat(&mut p.arg);
-            }
-            ast::Pat::Expr(e) => self.expr(e),
-            ast::Pat::Invalid(_) => {}
-        }
-    }
-
-    fn key(&mut self, key: &mut ast::PropName) {
-        if let ast::PropName::Computed(key) = key {
-            self.expr(&mut key.expr);
-        }
-    }
-
-    fn block(&mut self, block: &mut ast::BlockStmt) {
+    fn block(&mut self, statements: &mut [ast::Statement<'p>]) {
         let mut names = HashSet::new();
-        for stmt in &block.stmts {
-            if let ast::Stmt::Decl(decl) = stmt {
-                decl_names(decl, &mut names);
+        for statement in statements.iter() {
+            if let Some(declaration) = statement.as_declaration() {
+                decl_names(declaration, &mut names);
             }
         }
         self.scopes.push(names);
-        for stmt in &mut block.stmts {
-            self.stmt(stmt);
+        for statement in statements {
+            self.visit_statement(statement);
         }
         self.scopes.pop();
     }
-
-    fn function(&mut self, function: &mut ast::Function) {
+    fn function(&mut self, function: &mut ast::Function<'p>) {
         let mut names = HashSet::new();
-        for param in &function.params {
-            pat_names(&param.pat, &mut names);
+        for parameter in &function.params.items {
+            pat_names(&parameter.pattern, &mut names);
+        }
+        if function.this_param.is_some() {
+            names.insert("this".to_owned());
+        }
+        if let Some(rest) = &function.params.rest {
+            pat_names(&rest.rest.argument, &mut names);
         }
         self.scopes.push(names);
-        self.params(&mut function.type_params);
-        self.ann(&mut function.return_type);
-        for decorator in &mut function.decorators {
-            self.expr(&mut decorator.expr);
+        if let Some(params) = &mut function.type_parameters {
+            self.visit_ts_type_parameter_declaration(params);
         }
-        for param in &mut function.params {
-            self.pat(&mut param.pat);
+        if let Some(this) = &mut function.this_param {
+            self.visit_ts_this_parameter(this);
         }
+        if let Some(ty) = &mut function.return_type {
+            self.visit_ts_type_annotation(ty);
+        }
+        self.visit_formal_parameters(&mut function.params);
         if let Some(body) = &mut function.body {
-            self.block(body);
+            self.block(&mut body.statements);
         }
         self.scopes.pop();
     }
-
-    fn decl(&mut self, decl: &mut ast::Decl) {
-        match decl {
-            ast::Decl::Fn(f) => self.function(&mut f.function),
-            ast::Decl::Class(c) => self.class(&mut c.class),
-            ast::Decl::Var(v) => self.vars(&mut v.decls),
-            ast::Decl::Using(v) => self.vars(&mut v.decls),
-            ast::Decl::TsTypeAlias(t) => {
-                self.params(&mut t.type_params);
-                self.ty(&mut t.type_ann);
-            }
-            ast::Decl::TsEnum(e) => {
-                for m in &mut e.members {
-                    if let Some(e) = &mut m.init {
-                        self.expr(e);
+}
+impl<'p> VisitMut<'p> for Resolver<'_, 'p> {
+    fn visit_statement(&mut self, statement: &mut ast::Statement<'p>) {
+        match statement {
+            ast::Statement::FunctionDeclaration(function) => self.function(function),
+            ast::Statement::BlockStatement(block) => self.block(&mut block.body),
+            ast::Statement::ForStatement(node) => {
+                let mut names = HashSet::new();
+                if let Some(ast::ForStatementInit::VariableDeclaration(var)) = &node.init {
+                    for declaration in &var.declarations {
+                        pat_names(&declaration.id, &mut names);
                     }
                 }
+                self.scopes.push(names);
+                walk_mut::walk_for_statement(self, node);
+                self.scopes.pop();
             }
-            ast::Decl::TsInterface(interface) => {
+            ast::Statement::ForInStatement(node) => {
+                self.visit_expression(&mut node.right);
+                self.scopes.push(head_names(&node.left));
+                self.visit_for_statement_left(&mut node.left);
+                self.visit_statement(&mut node.body);
+                self.scopes.pop();
+            }
+            ast::Statement::ForOfStatement(node) => {
+                self.visit_expression(&mut node.right);
+                self.scopes.push(head_names(&node.left));
+                self.visit_for_statement_left(&mut node.left);
+                self.visit_statement(&mut node.body);
+                self.scopes.pop();
+            }
+            ast::Statement::SwitchStatement(node) => {
+                self.visit_expression(&mut node.discriminant);
+                let mut names = HashSet::new();
+                for case in &node.cases {
+                    for statement in &case.consequent {
+                        if let Some(decl) = statement.as_declaration() {
+                            decl_names(decl, &mut names);
+                        }
+                    }
+                }
+                self.scopes.push(names);
+                for case in &mut node.cases {
+                    if let Some(test) = &mut case.test {
+                        self.visit_expression(test);
+                    }
+                    for statement in &mut case.consequent {
+                        self.visit_statement(statement);
+                    }
+                }
+                self.scopes.pop();
+            }
+            declaration if declaration.as_declaration().is_some() => {
+                if let Some(declaration) = declaration.as_declaration_mut() {
+                    self.visit_declaration(declaration);
+                }
+            }
+            _ => walk_mut::walk_statement(self, statement),
+        }
+    }
+    fn visit_declaration(&mut self, declaration: &mut ast::Declaration<'p>) {
+        match declaration {
+            ast::Declaration::FunctionDeclaration(function) => self.function(function),
+            ast::Declaration::TSNamespaceDeclaration(_)
+            | ast::Declaration::TSExternalModuleDeclaration(_)
+            | ast::Declaration::TSGlobalDeclaration(_) => {}
+            ast::Declaration::TSInterfaceDeclaration(interface) => {
                 for element in &mut interface.body.body {
-                    match element {
-                        ast::TsTypeElement::TsMethodSignature(method) => {
-                            for parameter in &mut method.params {
-                                if let ast::TsFnParam::Ident(binding) = parameter {
-                                    self.ann(&mut binding.type_ann);
+                    if let ast::TSSignature::TSMethodSignature(method) = element {
+                        if method.kind == ast::TSMethodSignatureKind::Method {
+                            if let Some(this) = &mut method.this_param {
+                                self.visit_ts_this_parameter(this);
+                            }
+                            for parameter in &mut method.params.items {
+                                if matches!(
+                                    parameter.pattern,
+                                    ast::BindingPattern::BindingIdentifier(_)
+                                ) {
+                                    if let Some(ty) = &mut parameter.type_annotation {
+                                        self.visit_ts_type_annotation(ty);
+                                    }
                                 }
                             }
-                            self.ann(&mut method.type_ann);
+                            if let Some(ty) = &mut method.return_type {
+                                self.visit_ts_type_annotation(ty);
+                            }
+                        } else if method.kind == ast::TSMethodSignatureKind::Get {
+                            if let Some(ty) = &mut method.return_type {
+                                self.visit_ts_type_annotation(ty);
+                            }
                         }
-                        ast::TsTypeElement::TsGetterSignature(getter) => {
-                            self.ann(&mut getter.type_ann);
-                        }
-                        _ => {}
                     }
                 }
             }
-            // TS namespaces have no accepted bodies.
-            ast::Decl::TsModule(_) => {}
+            _ => walk_mut::walk_declaration(self, declaration),
         }
     }
-
-    fn vars(&mut self, vars: &mut [ast::VarDeclarator]) {
-        for var in vars {
-            self.pat(&mut var.name);
-            if let Some(e) = &mut var.init {
-                self.expr(e);
+    fn visit_catch_clause(&mut self, catch: &mut ast::CatchClause<'p>) {
+        let mut names = HashSet::new();
+        if let Some(param) = &catch.param {
+            pat_names(&param.pattern, &mut names);
+        }
+        self.scopes.push(names);
+        walk_mut::walk_catch_clause(self, catch);
+        self.scopes.pop();
+    }
+    fn visit_expression(&mut self, expression: &mut ast::Expression<'p>) {
+        let alias = match expression {
+            ast::Expression::StaticMemberExpression(member) => self.member(member),
+            ast::Expression::ChainExpression(chain) => match &chain.expression {
+                ast::ChainElement::StaticMemberExpression(member) => self.member(member),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(alias) = alias {
+            *expression =
+                ast::Expression::Identifier(ArenaBox::new_in(alias, &self.checker.prog.allocator));
+            return;
+        }
+        match expression {
+            ast::Expression::FunctionExpression(function) => {
+                let names = function.id.iter().map(|id| id.name.to_string()).collect();
+                self.scopes.push(names);
+                self.function(function);
+                self.scopes.pop();
+            }
+            ast::Expression::ArrowFunctionExpression(arrow) => {
+                let mut names = HashSet::new();
+                for parameter in &arrow.params.items {
+                    pat_names(&parameter.pattern, &mut names);
+                }
+                if let Some(rest) = &arrow.params.rest {
+                    pat_names(&rest.rest.argument, &mut names);
+                }
+                self.scopes.push(names);
+                if let Some(params) = &mut arrow.type_parameters {
+                    self.visit_ts_type_parameter_declaration(params);
+                }
+                if let Some(ty) = &mut arrow.return_type {
+                    self.visit_ts_type_annotation(ty);
+                }
+                self.visit_formal_parameters(&mut arrow.params);
+                match &mut arrow.body {
+                    ast::ArrowFunctionBody::FunctionBody(body) => self.block(&mut body.statements),
+                    body => {
+                        if let Some(expr) = body.as_expression_mut() {
+                            self.visit_expression(expr);
+                        }
+                    }
+                }
+                self.scopes.pop();
+            }
+            _ => walk_mut::walk_expression(self, expression),
+        }
+    }
+    fn visit_assignment_target(&mut self, target: &mut ast::AssignmentTarget<'p>) {
+        if let ast::AssignmentTarget::StaticMemberExpression(member) = target {
+            if let Some(alias) = self.member(member) {
+                *target = ast::AssignmentTarget::AssignmentTargetIdentifier(ArenaBox::new_in(
+                    alias,
+                    &self.checker.prog.allocator,
+                ));
+                return;
             }
         }
+        walk_mut::walk_assignment_target(self, target);
     }
-
-    fn class(&mut self, class: &mut ast::Class) {
-        self.params(&mut class.type_params);
-        self.args(&mut class.super_type_params);
-        // §208.1 rule 3: a clause can name an interface through a namespace.
+    fn visit_simple_assignment_target(&mut self, target: &mut ast::SimpleAssignmentTarget<'p>) {
+        if let ast::SimpleAssignmentTarget::StaticMemberExpression(member) = target {
+            if let Some(alias) = self.member(member) {
+                *target = ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(
+                    ArenaBox::new_in(alias, &self.checker.prog.allocator),
+                );
+                return;
+            }
+        }
+        walk_mut::walk_simple_assignment_target(self, target);
+    }
+    fn visit_class(&mut self, class: &mut ast::Class<'p>) {
+        if let Some(params) = &mut class.type_parameters {
+            self.visit_ts_type_parameter_declaration(params);
+        }
+        if let Some(heritage) = &mut class.heritage {
+            self.visit_class_heritage(heritage);
+        }
         for clause in &mut class.implements {
-            if let ast::Expr::Member(member) = &mut *clause.expr {
-                if let Some(ident) = self.member(member) {
-                    *clause.expr = ast::Expr::Ident(ident);
-                }
+            self.type_name(&mut clause.expression);
+            if let Some(args) = &mut clause.type_arguments {
+                self.visit_ts_type_parameter_instantiation(args);
             }
-            self.args(&mut clause.type_args);
         }
-        if let Some(e) = &mut class.super_class {
-            self.expr(e);
-        }
-        for d in &mut class.decorators {
-            self.expr(&mut d.expr);
-        }
-        for member in &mut class.body {
+        self.visit_decorators(&mut class.decorators);
+        for member in &mut class.body.body {
             match member {
-                ast::ClassMember::Method(m) => {
-                    self.key(&mut m.key);
-                    self.function(&mut m.function);
+                ast::ClassElement::MethodDefinition(method) => {
+                    if method.computed {
+                        self.visit_property_key(&mut method.key);
+                    }
+                    self.visit_decorators(&mut method.decorators);
+                    self.function(&mut method.value);
                 }
-                ast::ClassMember::PrivateMethod(m) => self.function(&mut m.function),
-                ast::ClassMember::ClassProp(p) => {
-                    self.key(&mut p.key);
-                    self.ann(&mut p.type_ann);
-                    if let Some(e) = &mut p.value {
-                        self.expr(e);
+                ast::ClassElement::PropertyDefinition(property) => {
+                    if property.computed {
+                        self.visit_property_key(&mut property.key);
                     }
-                    for d in &mut p.decorators {
-                        self.expr(&mut d.expr);
+                    if let Some(ty) = &mut property.type_annotation {
+                        self.visit_ts_type_annotation(ty);
                     }
-                }
-                ast::ClassMember::PrivateProp(p) => {
-                    self.ann(&mut p.type_ann);
-                    if let Some(e) = &mut p.value {
-                        self.expr(e);
+                    if let Some(value) = &mut property.value {
+                        self.visit_expression(value);
+                    }
+                    if !matches!(property.key, ast::PropertyKey::PrivateIdentifier(_)) {
+                        self.visit_decorators(&mut property.decorators);
                     }
                 }
-                ast::ClassMember::Constructor(c) => {
-                    let mut names = HashSet::new();
-                    for p in &c.params {
-                        match p {
-                            ast::ParamOrTsParamProp::Param(p) => pat_names(&p.pat, &mut names),
-                            ast::ParamOrTsParamProp::TsParamProp(p) => match &p.param {
-                                ast::TsParamPropParam::Ident(i) => {
-                                    names.insert(i.id.sym.to_string());
-                                }
-                                ast::TsParamPropParam::Assign(p) => pat_names(&p.left, &mut names),
-                            },
-                        }
-                    }
-                    self.scopes.push(names);
-                    for p in &mut c.params {
-                        match p {
-                            ast::ParamOrTsParamProp::Param(p) => self.pat(&mut p.pat),
-                            ast::ParamOrTsParamProp::TsParamProp(p) => match &mut p.param {
-                                ast::TsParamPropParam::Ident(i) => self.ann(&mut i.type_ann),
-                                ast::TsParamPropParam::Assign(p) => {
-                                    self.pat(&mut p.left);
-                                    self.expr(&mut p.right);
-                                }
-                            },
-                        }
-                    }
-                    if let Some(body) = &mut c.body {
-                        self.block(body);
-                    }
-                    self.scopes.pop();
+                ast::ClassElement::StaticBlock(block) => self.block(&mut block.body),
+                ast::ClassElement::TSIndexSignature(signature) => {
+                    self.visit_ts_index_signature(signature)
                 }
-                ast::ClassMember::TsIndexSignature(i) => {
-                    for param in &mut i.params {
-                        self.fn_param(param);
-                    }
-                    self.ann(&mut i.type_ann);
-                }
-                ast::ClassMember::StaticBlock(b) => self.block(&mut b.body),
-                ast::ClassMember::AutoAccessor(_) | ast::ClassMember::Empty(_) => {}
+                _ => {}
             }
         }
     }
-
-    fn head(&mut self, head: &mut ast::ForHead) {
-        match head {
-            ast::ForHead::VarDecl(v) => self.vars(&mut v.decls),
-            ast::ForHead::UsingDecl(v) => self.vars(&mut v.decls),
-            ast::ForHead::Pat(p) => self.pat(p),
-        }
-    }
-
-    fn stmt(&mut self, stmt: &mut ast::Stmt) {
-        match stmt {
-            ast::Stmt::Block(b) => self.block(b),
-            ast::Stmt::Decl(d) => self.decl(d),
-            ast::Stmt::Expr(e) => self.expr(&mut e.expr),
-            ast::Stmt::Return(r) => {
-                if let Some(e) = &mut r.arg {
-                    self.expr(e);
-                }
-            }
-            ast::Stmt::Throw(t) => self.expr(&mut t.arg),
-            ast::Stmt::If(i) => {
-                self.expr(&mut i.test);
-                self.stmt(&mut i.cons);
-                if let Some(s) = &mut i.alt {
-                    self.stmt(s);
-                }
-            }
-            ast::Stmt::While(w) => {
-                self.expr(&mut w.test);
-                self.stmt(&mut w.body);
-            }
-            ast::Stmt::DoWhile(w) => {
-                self.stmt(&mut w.body);
-                self.expr(&mut w.test);
-            }
-            ast::Stmt::For(f) => {
-                let mut names = HashSet::new();
-                if let Some(ast::VarDeclOrExpr::VarDecl(v)) = &f.init {
-                    for d in &v.decls {
-                        pat_names(&d.name, &mut names);
-                    }
-                }
-                self.scopes.push(names);
-                if let Some(init) = &mut f.init {
-                    match init {
-                        ast::VarDeclOrExpr::VarDecl(v) => self.vars(&mut v.decls),
-                        ast::VarDeclOrExpr::Expr(e) => self.expr(e),
-                    }
-                }
-                if let Some(e) = &mut f.test {
-                    self.expr(e);
-                }
-                if let Some(e) = &mut f.update {
-                    self.expr(e);
-                }
-                self.stmt(&mut f.body);
-                self.scopes.pop();
-            }
-            ast::Stmt::ForOf(f) => {
-                self.expr(&mut f.right);
-                self.scopes.push(head_names(&f.left));
-                self.head(&mut f.left);
-                self.stmt(&mut f.body);
-                self.scopes.pop();
-            }
-            ast::Stmt::ForIn(f) => {
-                self.expr(&mut f.right);
-                self.scopes.push(head_names(&f.left));
-                self.head(&mut f.left);
-                self.stmt(&mut f.body);
-                self.scopes.pop();
-            }
-            ast::Stmt::Switch(s) => {
-                self.expr(&mut s.discriminant);
-                let mut names = HashSet::new();
-                for c in &s.cases {
-                    for s in &c.cons {
-                        if let ast::Stmt::Decl(d) = s {
-                            decl_names(d, &mut names);
-                        }
-                    }
-                }
-                self.scopes.push(names);
-                for c in &mut s.cases {
-                    if let Some(e) = &mut c.test {
-                        self.expr(e);
-                    }
-                    for s in &mut c.cons {
-                        self.stmt(s);
-                    }
-                }
-                self.scopes.pop();
-            }
-            ast::Stmt::Try(t) => {
-                self.block(&mut t.block);
-                if let Some(c) = &mut t.handler {
-                    let mut names = HashSet::new();
-                    if let Some(p) = &c.param {
-                        pat_names(p, &mut names);
-                    }
-                    self.scopes.push(names);
-                    if let Some(p) = &mut c.param {
-                        self.pat(p);
-                    }
-                    self.block(&mut c.body);
-                    self.scopes.pop();
-                }
-                if let Some(b) = &mut t.finalizer {
-                    self.block(b);
-                }
-            }
-            ast::Stmt::Labeled(s) => self.stmt(&mut s.body),
-            ast::Stmt::With(s) => {
-                self.expr(&mut s.obj);
-                self.stmt(&mut s.body);
-            }
-            ast::Stmt::Empty(_)
-            | ast::Stmt::Debugger(_)
-            | ast::Stmt::Break(_)
-            | ast::Stmt::Continue(_) => {}
-        }
-    }
-
-    fn expr(&mut self, expr: &mut ast::Expr) {
-        match expr {
-            ast::Expr::Member(m) => {
-                if let Some(i) = self.member(m) {
-                    *expr = ast::Expr::Ident(i);
-                }
-            }
-            ast::Expr::Paren(p) => self.expr(&mut p.expr),
-            ast::Expr::Call(c) => {
-                if let ast::Callee::Expr(e) = &mut c.callee {
-                    self.expr(e);
-                }
-                self.args(&mut c.type_args);
-                for a in &mut c.args {
-                    self.expr(&mut a.expr);
-                }
-            }
-            ast::Expr::New(n) => {
-                self.expr(&mut n.callee);
-                self.args(&mut n.type_args);
-                if let Some(args) = &mut n.args {
-                    for a in args {
-                        self.expr(&mut a.expr);
-                    }
-                }
-            }
-            ast::Expr::Await(a) => self.expr(&mut a.arg),
-            ast::Expr::Yield(y) => {
-                if let Some(e) = &mut y.arg {
-                    self.expr(e);
-                }
-            }
-            ast::Expr::Unary(u) => self.expr(&mut u.arg),
-            ast::Expr::Update(u) => self.expr(&mut u.arg),
-            ast::Expr::Bin(b) => {
-                self.expr(&mut b.left);
-                self.expr(&mut b.right);
-            }
-            ast::Expr::Cond(c) => {
-                self.expr(&mut c.test);
-                self.expr(&mut c.cons);
-                self.expr(&mut c.alt);
-            }
-            ast::Expr::Assign(a) => {
-                match &mut a.left {
-                    ast::AssignTarget::Simple(target) => {
-                        let mut e: Box<ast::Expr> = target.clone().into();
-                        self.expr(&mut e);
-                        if let Ok(resolved) = ast::SimpleAssignTarget::try_from(e) {
-                            *target = resolved;
-                        }
-                    }
-                    ast::AssignTarget::Pat(p) => {
-                        let mut pat: ast::Pat = p.clone().into();
-                        self.pat(&mut pat);
-                        if let Ok(resolved) = ast::AssignTargetPat::try_from(pat) {
-                            *p = resolved;
-                        }
-                    }
-                }
-                self.expr(&mut a.right);
-            }
-            ast::Expr::Array(a) => {
-                for e in a.elems.iter_mut().flatten() {
-                    self.expr(&mut e.expr);
-                }
-            }
-            ast::Expr::Object(o) => {
-                for p in &mut o.props {
-                    match p {
-                        ast::PropOrSpread::Spread(s) => self.expr(&mut s.expr),
-                        ast::PropOrSpread::Prop(p) => match &mut **p {
-                            ast::Prop::KeyValue(p) => {
-                                self.key(&mut p.key);
-                                self.expr(&mut p.value);
-                            }
-                            ast::Prop::Assign(p) => self.expr(&mut p.value),
-                            ast::Prop::Method(p) => {
-                                self.key(&mut p.key);
-                                self.function(&mut p.function);
-                            }
-                            ast::Prop::Getter(p) => {
-                                self.key(&mut p.key);
-                                self.ann(&mut p.type_ann);
-                                if let Some(b) = &mut p.body {
-                                    self.block(b);
-                                }
-                            }
-                            ast::Prop::Setter(p) => {
-                                self.key(&mut p.key);
-                                let mut names = HashSet::new();
-                                pat_names(&p.param, &mut names);
-                                self.scopes.push(names);
-                                self.pat(&mut p.param);
-                                if let Some(b) = &mut p.body {
-                                    self.block(b);
-                                }
-                                self.scopes.pop();
-                            }
-                            ast::Prop::Shorthand(_) => {}
-                        },
-                    }
-                }
-            }
-            ast::Expr::Fn(f) => {
-                let mut names = HashSet::new();
-                if let Some(i) = &f.ident {
-                    names.insert(i.sym.to_string());
-                }
-                self.scopes.push(names);
-                self.function(&mut f.function);
-                self.scopes.pop();
-            }
-            ast::Expr::Arrow(a) => {
-                let mut names = HashSet::new();
-                for p in &a.params {
-                    pat_names(p, &mut names);
-                }
-                self.scopes.push(names);
-                self.params(&mut a.type_params);
-                self.ann(&mut a.return_type);
-                for p in &mut a.params {
-                    self.pat(p);
-                }
-                match &mut *a.body {
-                    ast::BlockStmtOrExpr::BlockStmt(b) => self.block(b),
-                    ast::BlockStmtOrExpr::Expr(e) => self.expr(e),
-                }
-                self.scopes.pop();
-            }
-            ast::Expr::Class(c) => self.class(&mut c.class),
-            ast::Expr::Seq(s) => {
-                for e in &mut s.exprs {
-                    self.expr(e);
-                }
-            }
-            ast::Expr::Tpl(t) => {
-                for e in &mut t.exprs {
-                    self.expr(e);
-                }
-            }
-            ast::Expr::TaggedTpl(t) => {
-                self.expr(&mut t.tag);
-                self.args(&mut t.type_params);
-                for e in &mut t.tpl.exprs {
-                    self.expr(e);
-                }
-            }
-            ast::Expr::TsAs(t) => {
-                self.expr(&mut t.expr);
-                self.ty(&mut t.type_ann);
-            }
-            ast::Expr::TsTypeAssertion(t) => {
-                self.expr(&mut t.expr);
-                self.ty(&mut t.type_ann);
-            }
-            ast::Expr::TsSatisfies(t) => {
-                self.expr(&mut t.expr);
-                self.ty(&mut t.type_ann);
-            }
-            ast::Expr::TsInstantiation(t) => {
-                self.expr(&mut t.expr);
-                for ty in &mut t.type_args.params {
-                    self.ty(ty);
-                }
-            }
-            ast::Expr::TsNonNull(t) => self.expr(&mut t.expr),
-            ast::Expr::TsConstAssertion(t) => self.expr(&mut t.expr),
-            ast::Expr::OptChain(c) => match &mut *c.base {
-                ast::OptChainBase::Member(m) => {
-                    if let Some(ident) = self.member(m) {
-                        *expr = ast::Expr::Ident(ident);
-                    }
-                }
-                ast::OptChainBase::Call(c) => {
-                    self.expr(&mut c.callee);
-                    self.args(&mut c.type_args);
-                    for a in &mut c.args {
-                        self.expr(&mut a.expr);
-                    }
-                }
-            },
-            ast::Expr::SuperProp(s) => {
-                if let ast::SuperProp::Computed(p) = &mut s.prop {
-                    self.expr(&mut p.expr);
-                }
-            }
-            // JSX has no accepted expression form.
-            ast::Expr::JSXMember(_)
-            | ast::Expr::JSXNamespacedName(_)
-            | ast::Expr::JSXEmpty(_)
-            | ast::Expr::JSXElement(_)
-            | ast::Expr::JSXFragment(_)
-            | ast::Expr::PrivateName(_)
-            | ast::Expr::This(_)
-            | ast::Expr::Ident(_)
-            | ast::Expr::Lit(_)
-            | ast::Expr::MetaProp(_)
-            | ast::Expr::Invalid(_) => {}
-        }
-    }
-
-    fn ty(&mut self, ty: &mut ast::TsType) {
+    fn visit_ts_type(&mut self, ty: &mut ast::TSType<'p>) {
         match ty {
-            ast::TsType::TsTypeRef(r) => {
-                if let ast::TsEntityName::TsQualifiedName(q) = &r.type_name {
-                    if let ast::TsEntityName::Ident(ns) = &q.left {
-                        if let Some(i) = self.checker.namespace_member_ident(ns, &q.right) {
-                            r.type_name = ast::TsEntityName::Ident(i);
-                        }
-                    }
-                }
-                self.args(&mut r.type_params);
-            }
-            ast::TsType::TsArrayType(t) => self.ty(&mut t.elem_type),
-            ast::TsType::TsTupleType(t) => {
-                for e in &mut t.elem_types {
-                    self.ty(&mut e.ty);
+            ast::TSType::TSTypeReference(reference) => {
+                self.type_name(&mut reference.type_name);
+                if let Some(args) = &mut reference.type_arguments {
+                    self.visit_ts_type_parameter_instantiation(args);
                 }
             }
-            ast::TsType::TsOptionalType(t) => self.ty(&mut t.type_ann),
-            ast::TsType::TsRestType(t) => self.ty(&mut t.type_ann),
-            ast::TsType::TsParenthesizedType(t) => self.ty(&mut t.type_ann),
-            ast::TsType::TsUnionOrIntersectionType(t) => match t {
-                ast::TsUnionOrIntersectionType::TsUnionType(t) => {
-                    for t in &mut t.types {
-                        self.ty(t);
-                    }
-                }
-                ast::TsUnionOrIntersectionType::TsIntersectionType(t) => {
-                    for t in &mut t.types {
-                        self.ty(t);
-                    }
-                }
-            },
-            ast::TsType::TsFnOrConstructorType(t) => match t {
-                ast::TsFnOrConstructorType::TsFnType(t) => {
-                    self.params(&mut t.type_params);
-                    for p in &mut t.params {
-                        self.fn_param(p);
-                    }
-                    self.ty(&mut t.type_ann.type_ann);
-                }
-                ast::TsFnOrConstructorType::TsConstructorType(t) => {
-                    self.params(&mut t.type_params);
-                    for p in &mut t.params {
-                        self.fn_param(p);
-                    }
-                    self.ty(&mut t.type_ann.type_ann);
-                }
-            },
-            ast::TsType::TsTypeLit(t) => {
-                for member in &mut t.members {
-                    self.type_element(member);
+            ast::TSType::TSTypeQuery(query) => {
+                if let Some(args) = &mut query.type_arguments {
+                    self.visit_ts_type_parameter_instantiation(args);
                 }
             }
-            ast::TsType::TsTypeOperator(t) => self.ty(&mut t.type_ann),
-            ast::TsType::TsIndexedAccessType(t) => {
-                self.ty(&mut t.obj_type);
-                self.ty(&mut t.index_type);
-            }
-            ast::TsType::TsConditionalType(t) => {
-                self.ty(&mut t.check_type);
-                self.ty(&mut t.extends_type);
-                self.ty(&mut t.true_type);
-                self.ty(&mut t.false_type);
-            }
-            ast::TsType::TsTypePredicate(t) => self.ann(&mut t.type_ann),
-            ast::TsType::TsImportType(t) => self.args(&mut t.type_args),
-            ast::TsType::TsMappedType(t) => {
-                if let Some(t) = &mut t.type_ann {
-                    self.ty(t);
-                }
-                if let Some(t) = &mut t.name_type {
-                    self.ty(t);
-                }
-                if let Some(t) = &mut t.type_param.constraint {
-                    self.ty(t);
-                }
-            }
-            ast::TsType::TsInferType(t) => {
-                if let Some(t) = &mut t.type_param.constraint {
-                    self.ty(t);
-                }
-            }
-            ast::TsType::TsTypeQuery(t) => self.args(&mut t.type_args),
-            ast::TsType::TsLitType(_)
-            | ast::TsType::TsKeywordType(_)
-            | ast::TsType::TsThisType(_) => {}
-        }
-    }
-
-    fn fn_param(&mut self, p: &mut ast::TsFnParam) {
-        match p {
-            ast::TsFnParam::Ident(p) => self.ann(&mut p.type_ann),
-            ast::TsFnParam::Array(p) => self.ann(&mut p.type_ann),
-            ast::TsFnParam::Object(p) => self.ann(&mut p.type_ann),
-            ast::TsFnParam::Rest(p) => {
-                self.ann(&mut p.type_ann);
-                self.pat(&mut p.arg);
-            }
-        }
-    }
-
-    fn type_element(&mut self, element: &mut ast::TsTypeElement) {
-        match element {
-            ast::TsTypeElement::TsPropertySignature(p) => {
-                self.expr(&mut p.key);
-                self.ann(&mut p.type_ann);
-            }
-            ast::TsTypeElement::TsMethodSignature(p) => {
-                self.expr(&mut p.key);
-                self.params(&mut p.type_params);
-                for p in &mut p.params {
-                    self.fn_param(p);
-                }
-                self.ann(&mut p.type_ann);
-            }
-            ast::TsTypeElement::TsCallSignatureDecl(p) => {
-                self.params(&mut p.type_params);
-                for p in &mut p.params {
-                    self.fn_param(p);
-                }
-                self.ann(&mut p.type_ann);
-            }
-            ast::TsTypeElement::TsConstructSignatureDecl(p) => {
-                self.params(&mut p.type_params);
-                for p in &mut p.params {
-                    self.fn_param(p);
-                }
-                self.ann(&mut p.type_ann);
-            }
-            ast::TsTypeElement::TsIndexSignature(p) => {
-                for p in &mut p.params {
-                    self.fn_param(p);
-                }
-                self.ann(&mut p.type_ann);
-            }
-            ast::TsTypeElement::TsGetterSignature(p) => {
-                self.expr(&mut p.key);
-                self.ann(&mut p.type_ann);
-            }
-            ast::TsTypeElement::TsSetterSignature(p) => {
-                self.expr(&mut p.key);
-                self.fn_param(&mut p.param);
-            }
+            _ => walk_mut::walk_ts_type(self, ty),
         }
     }
 }
-
-fn pat_names(pat: &ast::Pat, names: &mut HashSet<String>) {
-    match pat {
-        ast::Pat::Ident(p) => {
-            names.insert(p.id.sym.to_string());
-        }
-        ast::Pat::Array(p) => {
-            for p in p.elems.iter().flatten() {
-                pat_names(p, names);
-            }
-        }
-        ast::Pat::Object(p) => {
-            for p in &p.props {
-                match p {
-                    ast::ObjectPatProp::KeyValue(p) => pat_names(&p.value, names),
-                    ast::ObjectPatProp::Assign(p) => {
-                        names.insert(p.key.id.sym.to_string());
-                    }
-                    ast::ObjectPatProp::Rest(p) => pat_names(&p.arg, names),
-                }
-            }
-        }
-        ast::Pat::Rest(p) => pat_names(&p.arg, names),
-        ast::Pat::Assign(p) => pat_names(&p.left, names),
-        ast::Pat::Expr(_) | ast::Pat::Invalid(_) => {}
+fn pat_names(pattern: &ast::BindingPattern<'_>, names: &mut HashSet<String>) {
+    for binding in pattern::collect_names(pattern) {
+        names.insert(binding.name.to_string());
     }
 }
-
-fn decl_names(decl: &ast::Decl, names: &mut HashSet<String>) {
-    match decl {
-        ast::Decl::Var(v) => {
-            for d in &v.decls {
-                pat_names(&d.name, names);
-            }
+fn decl_names(declaration: &ast::Declaration<'_>, names: &mut HashSet<String>) {
+    if !matches!(
+        declaration,
+        ast::Declaration::TSNamespaceDeclaration(_)
+            | ast::Declaration::TSExternalModuleDeclaration(_)
+            | ast::Declaration::TSGlobalDeclaration(_)
+    ) {
+        for binding in exports::declaration_names(declaration) {
+            names.insert(binding.name.to_string());
         }
-        ast::Decl::Using(v) => {
-            for d in &v.decls {
-                pat_names(&d.name, names);
-            }
-        }
-        ast::Decl::Class(c) => {
-            names.insert(c.ident.sym.to_string());
-        }
-        ast::Decl::Fn(f) => {
-            names.insert(f.ident.sym.to_string());
-        }
-        ast::Decl::TsTypeAlias(t) => {
-            names.insert(t.id.sym.to_string());
-        }
-        ast::Decl::TsEnum(e) => {
-            names.insert(e.id.sym.to_string());
-        }
-        ast::Decl::TsInterface(i) => {
-            names.insert(i.id.sym.to_string());
-        }
-        ast::Decl::TsModule(_) => {}
     }
 }
-
-fn head_names(head: &ast::ForHead) -> HashSet<String> {
+fn head_names(head: &ast::ForStatementLeft<'_>) -> HashSet<String> {
     let mut names = HashSet::new();
-    match head {
-        ast::ForHead::VarDecl(v) => {
-            for d in &v.decls {
-                pat_names(&d.name, &mut names);
-            }
+    if let ast::ForStatementLeft::VariableDeclaration(var) = head {
+        for declaration in &var.declarations {
+            pat_names(&declaration.id, &mut names);
         }
-        ast::ForHead::UsingDecl(v) => {
-            for d in &v.decls {
-                pat_names(&d.name, &mut names);
+    } else if let Some(target) = head.as_assignment_target() {
+        struct Names<'s>(&'s mut HashSet<String>);
+        impl<'a> oxc_ast_visit::Visit<'a> for Names<'_> {
+            fn visit_identifier_reference(&mut self, ident: &ast::IdentifierReference<'a>) {
+                self.0.insert(ident.name.to_string());
             }
+            fn visit_expression(&mut self, _: &ast::Expression<'a>) {}
+            fn visit_member_expression(&mut self, _: &ast::MemberExpression<'a>) {}
         }
-        ast::ForHead::Pat(p) => pat_names(p, &mut names),
+        oxc_ast_visit::Visit::visit_assignment_target(&mut Names(&mut names), target);
     }
     names
 }

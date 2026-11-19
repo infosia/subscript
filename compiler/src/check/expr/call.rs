@@ -1,8 +1,9 @@
 //! Checks call expressions, method calls, and argument lists.
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_allocator::CloneIn;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::check::{source_name, static_member_symbol, Checker, FnCtx, ParamSig, ScopeItem};
 use crate::diag::Pos;
@@ -12,9 +13,9 @@ use crate::types::{ClassId, Type};
 impl<'p> Checker<'p> {
     pub(super) fn check_call(
         &mut self,
-        c: &ast::CallExpr,
+        c: &ast::CallExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         self.read_call_result(c, fx);
@@ -30,43 +31,43 @@ impl<'p> Checker<'p> {
 
     fn check_call_inner(
         &mut self,
-        c: &ast::CallExpr,
+        c: &ast::CallExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let ast::Callee::Expr(callee) = &c.callee else {
-            let site = match &c.callee {
-                ast::Callee::Super(_)
-                    if c.type_args.is_none()
-                        && fx
-                            .frames
-                            .last()
-                            .is_some_and(|frame| frame.super_call_available) =>
-                {
-                    RejectionSite::SuperConstructorCall
-                }
-                ast::Callee::Super(_) => RejectionSite::NonExpressionCalleeUnavailable,
-                ast::Callee::Import(_) if Self::is_dynamic_import_call(c) => {
-                    RejectionSite::DynamicImportCall
-                }
-                ast::Callee::Import(_) => RejectionSite::NonExpressionCalleeUnavailable,
-                ast::Callee::Expr(_) => RejectionSite::NonExpressionCalleeUnavailable,
+        if matches!(&c.callee, ast::Expression::Super(_)) {
+            let site = if c.type_arguments.is_none()
+                && fx
+                    .frames
+                    .last()
+                    .is_some_and(|frame| frame.super_call_available)
+            {
+                RejectionSite::SuperConstructorCall
+            } else {
+                RejectionSite::NonExpressionCalleeUnavailable
             };
             self.reject_subset(site, "call form outside the decided surface", pos.clone());
             return self.err_expr(pos);
-        };
-        let mut callee: &ast::Expr = callee;
-        while let ast::Expr::Paren(p) = callee {
-            callee = &p.expr;
+        }
+        let callee = &c.callee;
+        let mut callee: &ast::Expression = callee;
+        while let ast::Expression::ParenthesizedExpression(p) = callee {
+            callee = &p.expression;
         }
         match callee {
-            ast::Expr::Ident(id) => self.check_named_call(id, c, fx, pos, false),
-            ast::Expr::Member(m) => self.check_method_call(m, c, ctx, fx, pos),
+            ast::Expression::Identifier(id) => self.check_named_call(id, c, fx, pos, false),
+            expression if expression.as_member_expression().is_some() => {
+                match expression.as_member_expression() {
+                    Some(m) => self.check_method_call(m, c, ctx, fx, pos),
+                    None => self.err_expr(pos),
+                }
+            }
             other => {
                 // compiler.md §241 rule 2: a lambda that is the callee runs
                 // at once.
-                self.lambda_called_at_once = matches!(other, ast::Expr::Arrow(_));
+                self.lambda_called_at_once =
+                    matches!(other, ast::Expression::ArrowFunctionExpression(_));
                 let value = self.check_expr(other, None, fx);
                 self.lambda_called_at_once = false;
                 self.check_indirect_call(value, c, fx, pos)
@@ -76,14 +77,14 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_named_call(
         &mut self,
-        id: &ast::Ident,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        id: &ast::IdentifierReference,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         unreachable_statement: bool,
     ) -> hir::Expr {
         self.with_expression_work(|checker| {
-            let name = id.sym.to_string();
+            let name = id.name.to_string();
             let ident_pos = checker.pos(id.span);
             if let Some(call) = checker.check_lambda_self_call(id, c, fx, &pos) {
                 return call;
@@ -102,7 +103,7 @@ impl<'p> Checker<'p> {
             if item.is_none() && crate::check::exception::ErrorKind::from_name(&name).is_some() {
                 return checker.reject_error_call(&name, pos);
             }
-            if c.type_args.is_some()
+            if c.type_arguments.is_some()
                 && matches!(
                     item,
                     Some(ScopeItem::Func(_) | ScopeItem::Foreign(_) | ScopeItem::StandardText(_))
@@ -118,7 +119,7 @@ impl<'p> Checker<'p> {
                 Some(
                     ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_),
                 ) => {
-                    checker.check_poisoned_arguments(&c.args, fx);
+                    checker.check_poisoned_arguments(&c.arguments, fx);
                     checker.err_expr(pos)
                 }
                 Some(ScopeItem::Func(f)) => checker.check_direct_call(&f, c, fx, pos),
@@ -128,7 +129,7 @@ impl<'p> Checker<'p> {
                     checker.check_text_call(operation, c, fx, pos)
                 }
                 Some(ScopeItem::GenericFunc(key)) => {
-                    let (arguments, checked) = if let Some(type_args) = &c.type_args {
+                    let (arguments, checked) = if let Some(type_args) = &c.type_arguments {
                         (checker.resolve_instance_arguments(type_args), None)
                     } else {
                         let Some((arguments, checked)) =
@@ -245,8 +246,8 @@ impl<'p> Checker<'p> {
     fn check_direct_call(
         &mut self,
         fn_name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         self.check_direct_call_with_arguments(fn_name, c, fx, pos, None)
@@ -255,8 +256,8 @@ impl<'p> Checker<'p> {
     pub(super) fn check_direct_call_with_arguments(
         &mut self,
         fn_name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         checked: Option<Vec<Option<hir::Expr>>>,
     ) -> hir::Expr {
@@ -273,7 +274,7 @@ impl<'p> Checker<'p> {
             let args = self.check_args_with_arguments(
                 RejectionSite::SourceFunctionArgumentCount,
                 &sig.params,
-                &c.args,
+                &c.arguments,
                 fx,
                 &pos,
                 fn_name,
@@ -307,7 +308,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args_with_arguments(
             RejectionSite::ForeignFunctionArgumentCount,
             &sig.params,
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             fn_name,
@@ -333,8 +334,8 @@ impl<'p> Checker<'p> {
     fn check_foreign_call(
         &mut self,
         name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let Some(sig) = self.foreign_sigs.get(name).cloned() else {
@@ -343,7 +344,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(
             RejectionSite::ContextMethodArgumentCount,
             &sig.params,
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             name,
@@ -371,8 +372,8 @@ impl<'p> Checker<'p> {
     fn check_ambient_call(
         &mut self,
         ambient: AmbientFn,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let params: Vec<ParamSig> = crate::ambient::ambient_params(ambient)
@@ -387,7 +388,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(
             RejectionSite::AmbientFunctionArgumentCount,
             &params,
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             &label,
@@ -465,13 +466,13 @@ impl<'p> Checker<'p> {
     fn check_context_bytes_call(
         &mut self,
         function: ContextBytesFn,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         member_pos: Pos,
     ) -> hir::Expr {
         let name = function.name();
-        let Some(type_args) = &call.type_args else {
+        let Some(type_args) = &call.type_arguments else {
             self.reject_subset(
                 RejectionSite::ContextBytesMissingType,
                 format!("`Context.{name}<T>` takes exactly one type argument"),
@@ -546,7 +547,10 @@ impl<'p> Checker<'p> {
                 vec![Type::array(Type::U8), Type::U32]
             }
         };
-        if let Some(spread) = call.args.iter().find_map(|argument| argument.spread) {
+        if let Some(spread) = call.arguments.iter().find_map(|argument| match argument {
+            ast::Argument::SpreadElement(spread) => Some(spread.span),
+            _ => None,
+        }) {
             let spread_pos = self.pos(spread);
             self.reject_subset(
                 RejectionSite::ContextBytesSpread,
@@ -555,21 +559,25 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(spread_pos);
         }
-        if call.args.len() != params.len() {
+        if call.arguments.len() != params.len() {
             self.reject_subset(
                 RejectionSite::ContextBytesArgumentCount,
                 format!(
                     "`Context.{name}` expects exactly {} argument(s), got {}",
                     params.len(),
-                    call.args.len()
+                    call.arguments.len()
                 ),
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
         let mut args = Vec::with_capacity(params.len());
-        for (argument, expected) in call.args.iter().zip(&params) {
-            let mut checked = self.check_expr(&argument.expr, Some(expected), fx);
+        for (argument, expected) in call.arguments.iter().zip(&params) {
+            let mut checked = self.check_expr(
+                crate::check::argument_expression(argument),
+                Some(expected),
+                fx,
+            );
             if self.involves_type_parameter(expected) || self.involves_type_parameter(&checked.ty) {
                 self.require_expr_assignable(
                     &mut checked,
@@ -623,8 +631,8 @@ impl<'p> Checker<'p> {
     pub(super) fn check_indirect_call(
         &mut self,
         callee: hir::Expr,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         self.mark_user_call(c, false);
@@ -634,8 +642,8 @@ impl<'p> Checker<'p> {
     fn check_indirect_call_with_arguments(
         &mut self,
         callee: hir::Expr,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         checked_arguments: Option<Vec<Option<hir::Expr>>>,
     ) -> hir::Expr {
@@ -670,9 +678,11 @@ impl<'p> Checker<'p> {
             let callee = checker.apparent_expr(callee);
             match checker.apparent_type(&callee.ty.clone()) {
                 Type::Func(ft) => {
-                    let named_call = matches!(&c.callee, ast::Callee::Expr(expr)
-                        if matches!(super::unparen_expr(expr), ast::Expr::Ident(_)));
-                    let defaults = (c.args.len() < ft.params.len() && named_call)
+                    let named_call = matches!(
+                        super::unparen_expr(&c.callee),
+                        ast::Expression::Identifier(_)
+                    );
+                    let defaults = (c.arguments.len() < ft.params.len() && named_call)
                         .then(|| checker.named_lambda_defaults(&callee, fx))
                         .flatten();
                     let params: Vec<ParamSig> = defaults
@@ -691,10 +701,10 @@ impl<'p> Checker<'p> {
                     };
                     let count_site = if defaults.is_some() {
                         RejectionSite::SourceFunctionArgumentCount
-                    } else if c.args.len() < params.len()
+                    } else if c.arguments.len() < params.len()
                         && checker
                             .function_value_required(&callee, fx)
-                            .is_some_and(|required| c.args.len() >= required)
+                            .is_some_and(|required| c.arguments.len() >= required)
                     {
                         RejectionSite::FunctionValueOptionalArgumentCount
                     } else {
@@ -703,7 +713,7 @@ impl<'p> Checker<'p> {
                     let args = checker.check_args_with_arguments(
                         count_site,
                         &params,
-                        &c.args,
+                        &c.arguments,
                         fx,
                         &pos,
                         &name,
@@ -749,17 +759,17 @@ impl<'p> Checker<'p> {
 
     pub(super) fn rejected_static_generic_method(
         &self,
-        receiver: &ast::Expr,
+        receiver: &ast::Expression,
         name: &str,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> bool {
-        let ast::Expr::Ident(receiver) = receiver else {
+        let ast::Expression::Identifier(receiver) = receiver else {
             return false;
         };
-        if fx.owns_local_name(receiver.sym.as_ref()) {
+        if fx.owns_local_name(receiver.name.as_ref()) {
             return false;
         }
-        match self.peek_scope_item(receiver.sym.as_ref()) {
+        match self.peek_scope_item(receiver.name.as_ref()) {
             Some(ScopeItem::Class(class)) => {
                 self.class_sigs[class.0].generic_method_is_rejected(name, true)
             }
@@ -776,21 +786,23 @@ impl<'p> Checker<'p> {
 
     fn check_static_method_call(
         &mut self,
-        member: &ast::MemberExpr,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        member: &ast::MemberExpression,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         member_pos: Pos,
         name: &str,
     ) -> Option<hir::Expr> {
-        if self.rejected_static_generic_method(&member.obj, name, fx) {
+        let view = super::member_view(member);
+        let member = &view;
+        if self.rejected_static_generic_method(member.object, name, fx) {
             self.mark_user_call(call, true);
             return Some(self.err_expr(pos));
         }
-        let ast::Expr::Ident(receiver) = &*member.obj else {
+        let ast::Expression::Identifier(receiver) = member.object else {
             return None;
         };
-        let class_name = receiver.sym.to_string();
+        let class_name = receiver.name.to_string();
         if fx.owns_local_name(&class_name) {
             return None;
         }
@@ -821,7 +833,7 @@ impl<'p> Checker<'p> {
         if !self.class_sigs[class.0].static_methods.contains_key(name) {
             return None;
         }
-        if call.type_args.is_some() {
+        if call.type_arguments.is_some() {
             self.reject_subset(
                 RejectionSite::NonGenericStaticMethodTypeArguments,
                 format!("static method `{class_name}.{name}` is not generic"),
@@ -834,28 +846,33 @@ impl<'p> Checker<'p> {
 
     fn check_method_call(
         &mut self,
-        m: &ast::MemberExpr,
-        c: &ast::CallExpr,
+        m: &ast::MemberExpression,
+        c: &ast::CallExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        if self.reject_caught_property(&m.obj, fx) || self.reject_static_this_member(m, fx) {
+        let view = super::member_view(m);
+        let m = &view;
+        if self.reject_caught_property(m.object, fx) || self.reject_static_this_member(m, fx) {
             return self.err_expr(pos);
         }
-        let ast::MemberProp::Ident(prop) = &m.prop else {
+        let super::MemberKey::Ident(prop) = &m.prop else {
             let value = self.check_member_read(m, fx);
             return self.check_indirect_call(value, c, fx, pos);
         };
         if fx.field_initializer.is_some()
-            && matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
+            && matches!(
+                super::unparen_expr(m.object),
+                ast::Expression::ThisExpression(_)
+            )
         {
             let value = self.check_member_read(m, fx);
             return self.check_indirect_call(value, c, fx, pos);
         }
-        let name = prop.sym.to_string();
+        let name = prop.name.to_string();
         let prop_pos = self.pos(prop.span);
-        if self.ambient_namespace(&m.obj, fx) == Some("Promise") {
+        if self.ambient_namespace(m.object, fx) == Some("Promise") {
             if name == "all" {
                 return self.check_promise_all(c, fx, pos);
             }
@@ -866,7 +883,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Worker")
+        if matches!(m.object, ast::Expression::Identifier(id) if id.name.as_ref() == "Worker")
             && self.worker_is_ambient(fx)
         {
             if name == "spawn" {
@@ -890,7 +907,7 @@ impl<'p> Checker<'p> {
         }
         // `Context.collect()` / `Context.free(value)` (Q6/Q7): ambient
         // namespace calls lower through the existing ambient-call path.
-        if self.is_context_namespace(&m.obj, fx) {
+        if self.is_context_namespace(m.object, fx) {
             if let Some(function) = crate::ambient::context_bytes_fn(&name) {
                 return self.check_context_bytes_call(function, c, fx, pos, prop_pos);
             }
@@ -902,7 +919,7 @@ impl<'p> Checker<'p> {
         // call, resolved before the generic namespace-member path (which
         // treats a function member read as an error). Constants and
         // out-of-subset members fall through to that path.
-        if self.is_math_namespace(&m.obj, fx) {
+        if self.is_math_namespace(m.object, fx) {
             if let Some(f) = crate::ambient::math_fn(&name) {
                 return self.check_math_call(f, c, fx, pos);
             }
@@ -910,7 +927,7 @@ impl<'p> Checker<'p> {
         // Accepted Number statics (stdlib.md §11.1/§11.3, Q27) are
         // resolved before generic namespace-member handling. Parser
         // spellings share the globals' NumFn/runtime identity.
-        if self.is_number_namespace(&m.obj, fx) {
+        if self.is_number_namespace(m.object, fx) {
             if let Some(f) = crate::ambient::number_static(&name) {
                 return if matches!(f, NumFn::ParseInt | NumFn::ParseFloat) {
                     self.check_number_global_call(f, c, fx, pos, &format!("Number.{name}"))
@@ -921,28 +938,28 @@ impl<'p> Checker<'p> {
         }
         // `JSON.stringify<T>(value)` is checked from the argument's
         // static type and expanded into a call-site serializer graph.
-        if self.is_json_namespace(&m.obj, fx) {
+        if self.is_json_namespace(m.object, fx) {
             return self.check_json_call(&name, c, ctx, fx, pos, prop_pos);
         }
         // `Date.UTC(…)` / `Date.now()` (stdlib.md §3): static intrinsic
         // calls, resolved before the generic namespace-member path.
-        if self.is_date_namespace(&m.obj, fx) {
+        if self.is_date_namespace(m.object, fx) {
             if let Some(handled) = self.check_date_static_call(&name, c, fx, pos.clone()) {
                 return handled;
             }
         }
-        if matches!(&*m.obj, ast::Expr::Ident(id) if id.sym.as_ref() == "Map")
+        if matches!(m.object, ast::Expression::Identifier(id) if id.name.as_ref() == "Map")
             && self.assoc_is_ambient("Map", fx)
             && name == "groupBy"
         {
             return self.check_map_group_by(c, fx, pos);
         }
         // Resolves Array namespace calls (stdlib.md §9.11; compiler.md §105).
-        if self.ambient_namespace(&m.obj, fx) == Some("Array") {
+        if self.ambient_namespace(m.object, fx) == Some("Array") {
             return self.check_array_static_call(&name, c, ctx, fx, pos, prop_pos);
         }
         if let Some(handled) =
-            self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
+            self.check_namespace_member(m.object, &name, prop_pos.clone(), fx, false)
         {
             // Enum members are values, not callables.
             if matches!(self.apparent_type(&handled.ty), Type::Error) {
@@ -950,7 +967,7 @@ impl<'p> Checker<'p> {
             }
             return self.check_indirect_call(handled, c, fx, pos);
         }
-        let recv = self.check_receiver(&m.obj, fx);
+        let recv = self.check_receiver(m.object, fx);
         // §186 rule 5: the receiver type selects a reaction, not the name.
         if matches!(name.as_str(), "then" | "catch" | "finally")
             && matches!(self.apparent_type(&recv.ty), Type::AsyncHandle(_))
@@ -965,16 +982,16 @@ impl<'p> Checker<'p> {
         &mut self,
         class: ClassId,
         name: &str,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         is_static: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> Option<crate::check::constraint_call::MethodInstance> {
         self.mark_user_call(call, true);
         if self.class_sigs[class.0].generic_method_is_rejected(name, is_static) {
             return None;
         }
-        let (arguments, checked) = match &call.type_args {
+        let (arguments, checked) = match &call.type_arguments {
             Some(type_args) => (self.resolve_instance_arguments(type_args), None),
             None => {
                 let (arguments, checked) =
@@ -1007,9 +1024,9 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn check_method_call_on(
         &mut self,
         recv: hir::Expr,
-        property: &ast::IdentName,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        property: &ast::IdentifierName,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         self.with_expression_work(|checker| {
@@ -1040,7 +1057,7 @@ impl<'p> Checker<'p> {
         {
             checker.mark_user_call(c, true);
         }
-        let mut name = property.sym.to_string();
+        let mut name = property.name.to_string();
         let mut inferred = None;
         let mut result_type = None;
         let prop_pos = checker.pos(property.span);
@@ -1053,7 +1070,7 @@ impl<'p> Checker<'p> {
                 format!("`{type_name}` has no method `{name}`"),
                 prop_pos,
             );
-            checker.check_poisoned_arguments(&c.args, fx);
+            checker.check_poisoned_arguments(&c.arguments, fx);
             return checker.err_expr(pos);
         }
         // §82.4 rule 3: the call names the instance, not the template.
@@ -1082,12 +1099,12 @@ impl<'p> Checker<'p> {
             checker.check_args(
                 RejectionSite::ScalarToStringArgumentCount,
                 &[],
-                &c.args,
+                &c.arguments,
                 fx,
                 &pos,
                 &name,
             );
-            if c.type_args.is_some() {
+            if c.type_arguments.is_some() {
                 checker.reject_subset(
                     RejectionSite::ToStringTypeArguments,
                     "`toString` is not generic",
@@ -1164,7 +1181,7 @@ impl<'p> Checker<'p> {
                 args.extend(checker.check_args(
                     RejectionSite::InboxWaitArgumentCount,
                     &params,
-                    &c.args,
+                    &c.arguments,
                     fx,
                     &pos,
                     &name,
@@ -1201,7 +1218,7 @@ impl<'p> Checker<'p> {
                 args.extend(checker.check_args(
                     RejectionSite::OutboxPostArgumentCount,
                     &[],
-                    &c.args,
+                    &c.arguments,
                     fx,
                     &pos,
                     &name,
@@ -1244,7 +1261,7 @@ impl<'p> Checker<'p> {
                 args.extend(checker.check_args(
                     RejectionSite::FixedArrayPushArgumentCount,
                     &params,
-                    &c.args,
+                    &c.arguments,
                     fx,
                     &pos,
                     &name,
@@ -1265,7 +1282,7 @@ impl<'p> Checker<'p> {
                     let args = checker.check_args(
                         RejectionSite::ArrayPopArgumentCount,
                         &[],
-                        &c.args,
+                        &c.arguments,
                         fx,
                         &pos,
                         "pop",
@@ -1275,7 +1292,7 @@ impl<'p> Checker<'p> {
                 }
                 other => {
                     // The §9 method intrinsics (stdlib.md §9, Q22).
-                    if other == "toString" && !c.args.is_empty() {
+                    if other == "toString" && !c.arguments.is_empty() {
                         checker.reject_subset(
                             RejectionSite::ToStringArgumentCount,
                             "`toString` expects no arguments",
@@ -1357,7 +1374,7 @@ impl<'p> Checker<'p> {
                     let args = checker.check_args(
                         RejectionSite::GeneratorNextArgumentCount,
                         &[],
-                        &c.args,
+                        &c.arguments,
                         fx,
                         &pos,
                         "next",
@@ -1419,7 +1436,7 @@ impl<'p> Checker<'p> {
                             let args = checker.check_args_with_arguments(
                                 RejectionSite::AsyncMethodArgumentCount,
                                 &sig.params,
-                                &c.args,
+                                &c.arguments,
                                 fx,
                                 &pos,
                                 &name,
@@ -1445,7 +1462,7 @@ impl<'p> Checker<'p> {
                         let args = checker.check_args_with_arguments(
                             RejectionSite::InstanceMethodArgumentCount,
                             &sig.params,
-                            &c.args,
+                            &c.arguments,
                             fx,
                             &pos,
                             &name,
@@ -1498,11 +1515,11 @@ impl<'p> Checker<'p> {
 
     pub(in crate::check) fn check_poisoned_arguments(
         &mut self,
-        args: &[ast::ExprOrSpread],
-        fx: &mut FnCtx,
+        args: &[ast::Argument],
+        fx: &mut FnCtx<'p>,
     ) {
         for argument in args {
-            let _ = self.check_expr(&argument.expr, None, fx);
+            let _ = self.check_expr(crate::check::argument_expression(argument), None, fx);
         }
     }
 
@@ -1512,11 +1529,13 @@ impl<'p> Checker<'p> {
         &mut self,
         site: RejectionSite,
         (total, required): (usize, usize),
-        args: &[ast::ExprOrSpread],
+        args: &[ast::Argument],
         pos: &Pos,
         what: &str,
     ) {
-        let has_spread = args.iter().any(|arg| arg.spread.is_some());
+        let has_spread = args
+            .iter()
+            .any(|arg| matches!(arg, ast::Argument::SpreadElement(_)));
         if !has_spread && (args.len() < required || args.len() > total) {
             if matches!(
                 site,
@@ -1543,9 +1562,9 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn check_args(
         &mut self,
         site: RejectionSite,
-        params: &[ParamSig],
-        args: &[ast::ExprOrSpread],
-        fx: &mut FnCtx,
+        params: &[ParamSig<'p>],
+        args: &[ast::Argument],
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
         what: &str,
     ) -> Vec<hir::Expr> {
@@ -1555,9 +1574,9 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn check_args_with_arguments(
         &mut self,
         site: RejectionSite,
-        params: &[ParamSig],
-        args: &[ast::ExprOrSpread],
-        fx: &mut FnCtx,
+        params: &[ParamSig<'p>],
+        args: &[ast::Argument],
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
         what: &str,
         checked: Option<Vec<Option<hir::Expr>>>,
@@ -1577,14 +1596,18 @@ impl<'p> Checker<'p> {
                 .iter()
                 .zip(&checked)
                 .map(|(argument, value)| {
-                    value
-                        .clone()
-                        .unwrap_or_else(|| self.err_expr(self.pos(argument.expr.span())))
+                    value.clone().unwrap_or_else(|| {
+                        self.err_expr(self.pos(crate::check::argument_expression(argument).span()))
+                    })
                 })
                 .collect();
             self.defer_work(
                 crate::check::initializer::DeferredWork::Arguments {
-                    source: args.to_vec(),
+                    source: std::rc::Rc::new(
+                        args.iter()
+                            .map(|argument| argument.clone_in(self.prog.allocator))
+                            .collect(),
+                    ),
                     params: params.to_vec(),
                     site,
                     what: what.to_string(),
@@ -1608,8 +1631,8 @@ impl<'p> Checker<'p> {
         let mut out = Vec::new();
         for (i, arg) in args.iter().enumerate() {
             let prechecked = checked.next().flatten();
-            if arg.spread.is_some() {
-                let p = self.pos(arg.spread.unwrap_or_default());
+            if let ast::Argument::SpreadElement(spread) = arg {
+                let p = self.pos(spread.span);
                 self.reject_subset(
                     RejectionSite::CallSpread,
                     "spread arguments require variadic parameters, which the language does not have",
@@ -1620,7 +1643,7 @@ impl<'p> Checker<'p> {
             if params.get(i).is_some_and(|p| {
                 matches!(p.state, crate::check::initializer::TypeState::InProgress)
             }) {
-                self.cycle(self.pos(arg.expr.span()));
+                self.cycle(self.pos(crate::check::argument_expression(arg).span()));
             }
             let param_ty = params.get(i).map(|p| p.ty().clone());
             // compiler.md §252 rule 1: a call with its type arguments, given
@@ -1632,12 +1655,17 @@ impl<'p> Checker<'p> {
                         .as_ref()
                         .and_then(|ty| self.lambda_context(ty))
                         .map(|function| function.params.len()),
-                    &arg.expr,
+                    crate::check::argument_expression(arg),
                 );
             let saved_context =
                 std::mem::replace(&mut self.generic_callback_context, callback_context);
-            let mut checked =
-                prechecked.unwrap_or_else(|| self.check_expr(&arg.expr, param_ty.as_ref(), fx));
+            let mut checked = prechecked.unwrap_or_else(|| {
+                self.check_expr(
+                    crate::check::argument_expression(arg),
+                    param_ty.as_ref(),
+                    fx,
+                )
+            });
             self.generic_callback_context = saved_context;
             if let Some(param_ty) = param_ty {
                 self.require_expr_assignable(&mut checked, &param_ty, fx, "the argument");

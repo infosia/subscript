@@ -42,13 +42,13 @@ pub(crate) fn poisoned(ty: &Type) -> bool {
 
 /// A module-level interface declaration (§208.1 rule 1).
 #[derive(Debug, Clone)]
-pub(crate) struct InterfaceDef {
+pub(crate) struct InterfaceDef<'p> {
     name: String,
     file: usize,
     /// False when the declaration has a form outside the decided surface
     /// (§208.1 rule 2); the name is then poisoned.
     accepted: bool,
-    declaration: ast::TsInterfaceDecl,
+    declaration: Rc<ast::TSInterfaceDeclaration<'p>>,
     members: Vec<InterfaceMember>,
 }
 
@@ -74,38 +74,55 @@ const MEMBER_FORM: &str = "has a member form outside the decided surface";
 impl<'p> Checker<'p> {
     /// Pass A: records a module-level interface declaration and binds its
     /// name when every form is in the decided surface (§208.1 rules 1–2).
-    pub(super) fn collect_interface(&mut self, file: usize, declaration: &ast::TsInterfaceDecl) {
-        let name = declaration.id.sym.to_string();
+    pub(super) fn collect_interface(
+        &mut self,
+        file: usize,
+        declaration: &ast::TSInterfaceDeclaration,
+    ) {
+        let name = declaration.id.name.to_string();
         let mut outside = Vec::new();
-        if let Some(parameters) = &declaration.type_params {
+        if let Some(parameters) = &declaration.type_parameters {
             outside.push(parameters.span);
         }
         outside.extend(declaration.extends.iter().map(|clause| clause.span));
         let mut names = HashSet::new();
         for element in &declaration.body.body {
             match element {
-                ast::TsTypeElement::TsMethodSignature(method) => {
-                    let named = match &*method.key {
-                        ast::Expr::Ident(key) if !method.computed => {
-                            names.insert(key.sym.to_string())
+                ast::TSSignature::TSMethodSignature(method)
+                    if method.kind == ast::TSMethodSignatureKind::Method =>
+                {
+                    let named = match &method.key {
+                        ast::PropertyKey::StaticIdentifier(key) if !method.computed => {
+                            names.insert(key.name.to_string())
                         }
                         _ => false,
                     };
-                    if !named || method.optional || method.type_params.is_some() {
+                    if !named || method.optional || method.type_parameters.is_some() {
                         outside.push(method.span);
+                    }
+                    if let Some(rest) = &method.params.rest {
+                        outside.push(rest.span);
                     }
                     outside.extend(
                         method
                             .params
+                            .items
                             .iter()
-                            .filter(|parameter| !matches!(parameter, ast::TsFnParam::Ident(_)))
+                            .filter(|parameter| {
+                                !matches!(
+                                    parameter.pattern,
+                                    ast::BindingPattern::BindingIdentifier(_)
+                                )
+                            })
                             .map(|parameter| parameter.span()),
                     );
                 }
-                ast::TsTypeElement::TsGetterSignature(getter) => {
-                    let named = match &*getter.key {
-                        ast::Expr::Ident(key) if !getter.computed => {
-                            names.insert(key.sym.to_string())
+                ast::TSSignature::TSMethodSignature(getter)
+                    if getter.kind == ast::TSMethodSignatureKind::Get =>
+                {
+                    let named = match &getter.key {
+                        ast::PropertyKey::StaticIdentifier(key) if !getter.computed => {
+                            names.insert(key.name.to_string())
                         }
                         _ => false,
                     };
@@ -127,7 +144,7 @@ impl<'p> Checker<'p> {
         for span in &outside {
             self.reject_subset(
                 if declaration.body.body.iter().any(|element| {
-                    matches!(element, ast::TsTypeElement::TsCallSignatureDecl(call) if call.span == *span)
+                    matches!(element, ast::TSSignature::TSCallSignatureDeclaration(call) if call.span == *span)
                 }) { RejectionSite::InterfaceCallSignature } else { RejectionSite::InterfaceMemberForm },
                 format!("interface `{name}` {MEMBER_FORM}"),
                 self.pos(*span),
@@ -139,7 +156,7 @@ impl<'p> Checker<'p> {
             name: name.clone(),
             file,
             accepted,
-            declaration: declaration.clone(),
+            declaration: Rc::new(declaration.clone_in(self.prog.allocator)),
             members: Vec::new(),
         });
         if accepted {
@@ -153,12 +170,12 @@ impl<'p> Checker<'p> {
     pub(super) fn replace_interface_declaration(
         &mut self,
         file: usize,
-        declaration: &ast::TsInterfaceDecl,
+        declaration: &ast::TSInterfaceDeclaration,
     ) {
         if let Some(interface) = self.interfaces.iter_mut().find(|interface| {
             interface.file == file && interface.declaration.span == declaration.span
         }) {
-            interface.declaration = declaration.clone();
+            interface.declaration = Rc::new(declaration.clone_in(self.prog.allocator));
         }
     }
 
@@ -174,32 +191,48 @@ impl<'p> Checker<'p> {
             let mut members = Vec::new();
             for element in &declaration.body.body {
                 let (key, accessor, params, annotation, span) = match element {
-                    ast::TsTypeElement::TsMethodSignature(method) => (
-                        &method.key,
-                        false,
-                        method.params.as_slice(),
-                        method.type_ann.as_deref(),
-                        method.span,
-                    ),
-                    ast::TsTypeElement::TsGetterSignature(getter) => (
-                        &getter.key,
-                        true,
-                        &[][..],
-                        getter.type_ann.as_deref(),
-                        getter.span,
-                    ),
+                    ast::TSSignature::TSMethodSignature(method)
+                        if method.kind == ast::TSMethodSignatureKind::Method =>
+                    {
+                        (
+                            &method.key,
+                            false,
+                            formal_parameters(
+                                method.this_param.as_deref(),
+                                &method.params,
+                                self.prog.allocator,
+                            ),
+                            method.return_type.as_deref(),
+                            method.span,
+                        )
+                    }
+                    ast::TSSignature::TSMethodSignature(getter)
+                        if getter.kind == ast::TSMethodSignatureKind::Get =>
+                    {
+                        (
+                            &getter.key,
+                            true,
+                            oxc_allocator::Vec::new_in(&self.prog.allocator),
+                            getter.return_type.as_deref(),
+                            getter.span,
+                        )
+                    }
                     _ => continue,
                 };
-                let ast::Expr::Ident(key) = &**key else {
+                let ast::PropertyKey::StaticIdentifier(key) = key else {
                     continue;
                 };
                 let params = params
                     .iter()
                     .map(|parameter| match parameter {
-                        ast::TsFnParam::Ident(binding) => self
-                            .resolve_param_pat(&ast::Pat::Ident(binding.clone()))
-                            .ty()
-                            .clone(),
+                        parameter
+                            if matches!(
+                                parameter.pattern,
+                                ast::BindingPattern::BindingIdentifier(_)
+                            ) =>
+                        {
+                            self.resolve_param_pat(parameter).ty().clone()
+                        }
                         _ => Type::Error,
                     })
                     .collect();
@@ -207,7 +240,7 @@ impl<'p> Checker<'p> {
                     Some(annotation) => {
                         // The result of a member is a method result (§195.1 rule 4).
                         self.undefined_result = true;
-                        let ret = self.resolve_result_type(&annotation.type_ann);
+                        let ret = self.resolve_result_type(&annotation.type_annotation);
                         self.undefined_result = false;
                         ret
                     }
@@ -221,7 +254,7 @@ impl<'p> Checker<'p> {
                     }
                 };
                 members.push(InterfaceMember {
-                    name: key.sym.to_string(),
+                    name: key.name.to_string(),
                     accessor,
                     params,
                     ret,
@@ -233,13 +266,13 @@ impl<'p> Checker<'p> {
 
     /// The constraint type of a type parameter: an interface name is the
     /// interface type (§208.1 rule 4); every other form is a value type.
-    pub(crate) fn resolve_constraint(&mut self, constraint: &ast::TsType) -> Type {
-        if let ast::TsType::TsTypeRef(reference) = constraint {
-            if let ast::TsEntityName::Ident(ident) = &reference.type_name {
-                let name = ident.sym.as_ref();
+    pub(crate) fn resolve_constraint(&mut self, constraint: &ast::TSType) -> Type {
+        if let ast::TSType::TSTypeReference(reference) = constraint {
+            if let ast::TSTypeName::IdentifierReference(ident) = &reference.type_name {
+                let name = ident.name.as_ref();
                 if !self.subst.contains_key(name) {
                     if let Some(ScopeItem::Interface(index)) = self.type_scope_item(name) {
-                        if reference.type_params.is_some() {
+                        if reference.type_arguments.is_some() {
                             self.reject_subset(
                                 RejectionSite::NonGenericClassTypeArguments,
                                 format!("`{name}` is not generic"),
@@ -340,11 +373,11 @@ impl<'p> Checker<'p> {
             }
             self.cur_file = file;
             for item in &source.module.body {
-                let Some(ast::Decl::Class(class)) = module_decl(item) else {
+                let Some(ast::Declaration::ClassDeclaration(class)) = module_decl(item) else {
                     continue;
                 };
                 let mut interfaces = Vec::new();
-                for clause in &class.class.implements {
+                for clause in &class.implements {
                     if let Some(index) = self.clause_interface(clause) {
                         interfaces.push(index);
                     }
@@ -352,14 +385,14 @@ impl<'p> Checker<'p> {
                 if interfaces.is_empty() {
                     continue;
                 }
-                let name = class.ident.sym.to_string();
+                let name = class.declaration_name().to_string();
                 let symbol = self.declaration_symbol(file, &name);
                 let implementing = Implementing {
                     name,
-                    pos: self.pos(class.ident.span),
+                    pos: self.pos(class.declaration_name_span()),
                     interfaces,
                 };
-                if class.class.type_params.is_some() {
+                if class.type_parameters.is_some() {
                     self.implements.templates.insert(symbol, implementing);
                 } else if let Some(&id) = self.class_ids.get(&symbol) {
                     self.implements.classes.push((id, implementing));
@@ -370,23 +403,23 @@ impl<'p> Checker<'p> {
 
     /// The interface that one clause names. A poisoned name gives `None`
     /// with no diagnostic; another name gives the §205 diagnostic.
-    fn clause_interface(&mut self, clause: &ast::TsExprWithTypeArgs) -> Option<usize> {
+    fn clause_interface(&mut self, clause: &ast::TSClassImplements) -> Option<usize> {
         let pos = self.pos(clause.span);
-        let name = match &*clause.expr {
-            ast::Expr::Ident(ident) => ident.sym.to_string(),
-            ast::Expr::Member(member) => match (&*member.obj, &member.prop) {
-                (ast::Expr::Ident(object), ast::MemberProp::Ident(property)) => {
-                    format!("{}.{}", object.sym, property.sym)
+        let name = match &clause.expression {
+            ast::TSTypeName::IdentifierReference(ident) => ident.name.to_string(),
+            ast::TSTypeName::QualifiedName(qualified) => match &qualified.left {
+                ast::TSTypeName::IdentifierReference(object) => {
+                    format!("{}.{}", object.name, qualified.right.name)
                 }
-                _ => "the clause".to_string(),
+                _ => "the clause".to_owned(),
             },
-            _ => "the clause".to_string(),
+            _ => "the clause".to_owned(),
         };
-        if let ast::Expr::Ident(ident) = &*clause.expr {
-            match self.type_scope_item(ident.sym.as_ref()) {
+        if let ast::TSTypeName::IdentifierReference(ident) = &clause.expression {
+            match self.type_scope_item(ident.name.as_ref()) {
                 Some(ScopeItem::Poisoned) => return None,
                 Some(ScopeItem::Interface(index)) => {
-                    if clause.type_args.is_some() {
+                    if clause.type_arguments.is_some() {
                         self.reject_subset(
                             RejectionSite::NonGenericClassTypeArguments,
                             format!("`{name}` is not generic"),
@@ -555,12 +588,12 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         interface: &InterfaceType,
-        property: &ast::IdentName,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        property: &ast::IdentifierName,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let name = property.sym.as_ref();
+        let name = property.name.as_ref();
         let prop_pos = self.pos(property.span);
         let Some(member) = self
             .interface_member(interface, name)
@@ -571,10 +604,10 @@ impl<'p> Checker<'p> {
                 format!("`{}` has no method `{name}`", interface.name),
                 prop_pos,
             );
-            self.check_poisoned_arguments(&call.args, fx);
+            self.check_poisoned_arguments(&call.arguments, fx);
             return self.err_expr(pos);
         };
-        let params: Vec<ParamSig> = member
+        let params: Vec<ParamSig<'p>> = member
             .params
             .iter()
             .cloned()
@@ -583,7 +616,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(
             RejectionSite::InstanceMethodArgumentCount,
             &params,
-            &call.args,
+            &call.arguments,
             fx,
             &pos,
             name,
@@ -608,9 +641,9 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         interface: &InterfaceType,
-        property: &ast::IdentName,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        property: &ast::IdentifierName,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let recv = self.apparent_expr(recv);
@@ -637,7 +670,7 @@ impl<'p> Checker<'p> {
                 RejectionSite::AwaitSynchronousMethod,
                 format!(
                     "method `{}` is synchronous and cannot be awaited",
-                    property.sym
+                    property.name
                 ),
                 self.pos(property.span),
             );

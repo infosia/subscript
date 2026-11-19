@@ -627,7 +627,6 @@ fn every_other_mirror_variable_form_reports_once_at_its_name() {
         ("declare const N: i32;", 15, "print(`${N}`);"),
         ("declare let N: i32;", 13, "print(`${N}`); N = 3;"),
         ("declare var N: i32;", 13, "print(`${N}`); N = 3;"),
-        ("declare let N = 1;", 13, "print(`${N}`); N = 3;"),
         (
             "declare const N: u64;",
             15,
@@ -657,6 +656,23 @@ fn every_other_mirror_variable_form_reports_once_at_its_name() {
             "{form}"
         );
     }
+    // compiler.md §341 rule 6a: an ambient mutable initializer is a parse error.
+    let errors = check_program(&[
+        SourceFile::ambient("mirror.d.ts", "declare const X = 1;\ndeclare let N = 1;\n"),
+        SourceFile::entry(
+            "main.ts",
+            "export function main(): void { print(`${X}`); print(`${N}`); N = 3; }",
+        ),
+    ])
+    .expect_err("an ambient mutable initializer is invalid TypeScript");
+    assert_eq!(
+        diagnostic_triples(&errors),
+        vec![(
+            RuleCode::S100,
+            "parse error: Initializers are not allowed in ambient contexts.".into(),
+            Pos::new("mirror.d.ts", 2, 17)
+        )],
+    );
     // Control: the accepted form in the same mirror checks clean and folds.
     let module = check_program(&[
         SourceFile::ambient("mirror.d.ts", "declare const X = 1;\n"),

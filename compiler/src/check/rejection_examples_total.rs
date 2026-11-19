@@ -192,13 +192,14 @@ fn checker_failures(
                     0
                 } else {
                     let files = fragment_files(variant, source);
-                    crate::parse::parse_program(&files).map_or(0, |program| {
-                        program
-                            .files
-                            .iter()
-                            .map(|file| file.module.body.len())
-                            .sum()
-                    })
+                    crate::parse::parse_program(&oxc_allocator::Allocator::default(), &files)
+                        .map_or(0, |program| {
+                            program
+                                .files
+                                .iter()
+                                .map(|file| file.module.body.len())
+                                .sum()
+                        })
                 };
                 if lines.max(statements) > 3 {
                     failures.push(format!("{site:?}: site fragment has {lines} program lines and {statements} statements"));

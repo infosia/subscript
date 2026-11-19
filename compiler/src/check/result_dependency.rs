@@ -1,6 +1,6 @@
 //! Result dependencies retained across local initializers (§306 rules 1 and 2).
 use super::*;
-use swc_common::Span;
+use oxc_span::Span;
 
 #[derive(Default)]
 pub(super) struct ResultDependencies {
@@ -147,14 +147,14 @@ impl ResultDependencies {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// The type of an unannotated binding comes from these lambda values.
     /// An annotation and an annotated call result stop that dependency.
     /// None means at least one source is independent of lambda inference,
     /// so a call through the entire value does not need a cyclic result.
     pub(super) fn lambda_value_sources(
         &self,
-        source: &ast::Expr,
+        source: &ast::Expression,
         fx: &FnCtx,
     ) -> Option<Vec<(Span, bool)>> {
         self.value_sources(source, Some(fx), self.cur_file, &mut HashSet::new())
@@ -162,21 +162,21 @@ impl Checker<'_> {
 
     fn value_sources(
         &self,
-        source: &ast::Expr,
+        source: &ast::Expression,
         fx: Option<&FnCtx>,
         file: usize,
         seen: &mut HashSet<String>,
     ) -> Option<Vec<(Span, bool)>> {
         match expr::unparen_expr(source) {
-            ast::Expr::Arrow(arrow) if arrow.return_type.is_none() => {
+            ast::Expression::ArrowFunctionExpression(arrow) if arrow.return_type.is_none() => {
                 Some(vec![(arrow.span, false)])
             }
-            ast::Expr::Ident(name) => {
+            ast::Expression::Identifier(name) => {
                 for scope in fx.into_iter().flat_map(|fx| fx.scopes.iter().rev()) {
-                    if scope.owns(name.sym.as_ref()) {
+                    if scope.owns(name.name.as_ref()) {
                         return scope
                             .result_sources
-                            .get(name.sym.as_ref())
+                            .get(name.name.as_ref())
                             .cloned()
                             .flatten();
                     }
@@ -184,8 +184,8 @@ impl Checker<'_> {
                 let binding = self
                     .file_scopes
                     .get(file)
-                    .and_then(|scope| scope.get(name.sym.as_ref()))
-                    .or_else(|| self.ambient_scope.get(name.sym.as_ref()));
+                    .and_then(|scope| scope.get(name.name.as_ref()))
+                    .or_else(|| self.ambient_scope.get(name.name.as_ref()));
                 let Some(ScopeItem::Global(name)) = binding
                     .filter(|binding| !binding.type_only)
                     .map(|binding| self.binding_item(&binding.item))
@@ -204,27 +204,26 @@ impl Checker<'_> {
                 seen.remove(&name);
                 sources
             }
-            ast::Expr::Array(array) => array
-                .elems
+            ast::Expression::ArrayExpression(array) => array
+                .elements
                 .iter()
-                .flatten()
-                .map(|item| self.value_sources(&item.expr, fx, file, seen))
+                .filter_map(super::array_element_expression)
+                .map(|item| self.value_sources(item, fx, file, seen))
                 .collect::<Option<Vec<_>>>()
                 .map(|sources| sources.into_iter().flatten().collect()),
-            ast::Expr::Member(member) if matches!(member.prop, ast::MemberProp::Computed(_)) => {
-                self.value_sources(&member.obj, fx, file, seen)
-                    .map(|sources| sources.into_iter().map(|(span, _)| (span, true)).collect())
-            }
-            ast::Expr::Cond(cond) => {
-                let mut sources = self.value_sources(&cond.cons, fx, file, seen)?;
-                sources.extend(self.value_sources(&cond.alt, fx, file, seen)?);
+            ast::Expression::ComputedMemberExpression(member) => self
+                .value_sources(&member.object, fx, file, seen)
+                .map(|sources| sources.into_iter().map(|(span, _)| (span, true)).collect()),
+            ast::Expression::ConditionalExpression(cond) => {
+                let mut sources = self.value_sources(&cond.consequent, fx, file, seen)?;
+                sources.extend(self.value_sources(&cond.alternate, fx, file, seen)?);
                 Some(sources.into_iter().map(|(span, _)| (span, true)).collect())
             }
             _ => None,
         }
     }
 
-    pub(super) fn read_call_result(&mut self, call: &ast::CallExpr, fx: &FnCtx) {
+    pub(super) fn read_call_result(&mut self, call: &ast::CallExpression, fx: &FnCtx) {
         if !self.inferring_result_operand {
             return;
         }
@@ -235,9 +234,7 @@ impl Checker<'_> {
         else {
             return;
         };
-        let ast::Callee::Expr(callee) = &call.callee else {
-            return;
-        };
+        let callee = &call.callee;
         let sources = self.lambda_value_sources(callee, fx).unwrap_or_default();
         let diagnostics = self.result_dependencies.read(owner, sources);
         for result in &mut self.lambda_result_inference {
@@ -252,12 +249,11 @@ impl Checker<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use swc_common::BytePos;
 
     #[test]
     /// Cost: less than 0.001 seconds; no compiler or engine subprocess.
     fn a_new_read_invalidates_only_its_ancestors_and_rollback_restores_them() {
-        let [a, b, c, d, e] = [1, 2, 3, 4, 5].map(|pos| Span::new(BytePos(pos), BytePos(pos + 1)));
+        let [a, b, c, d, e] = [1, 2, 3, 4, 5].map(|pos| Span::new(pos, pos + 1));
         let mut dependencies = ResultDependencies::default();
         dependencies.read(a, vec![(b, false)]);
         dependencies.read(c, vec![(d, false)]);

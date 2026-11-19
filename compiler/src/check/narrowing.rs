@@ -766,7 +766,7 @@ impl Checker<'_> {
     }
 }
 
-impl FnCtx {
+impl<'p> FnCtx<'p> {
     pub(super) fn has_narrowing_facts(&self) -> bool {
         !self.finally_ended_narrowing.is_empty()
             || !self.narrowed.is_empty()

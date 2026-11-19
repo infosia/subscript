@@ -34,14 +34,14 @@ pub(crate) struct Adoption {
     value: Type,
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Adopts the handle under each optional-chain test, or completes with
     /// no value on an absent path (compiler.md §318 rule 2).
     /// Returns whether each value adopts; preserves each rejected operand.
     pub(in crate::check) fn adopt_void_return_statements(
         &mut self,
         statements: Vec<hir::Stmt>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
@@ -84,9 +84,9 @@ impl Checker<'_> {
     /// whether the return split.
     pub(super) fn split_mixed_return(
         &mut self,
-        operand: &ast::Expr,
+        operand: &ast::Expression,
         ret: &Type,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         let in_async = fx.frames.last().is_some_and(|frame| frame.is_async);
@@ -95,7 +95,7 @@ impl Checker<'_> {
         }
         if !matches!(
             crate::check::expr::unparen_expr(operand),
-            ast::Expr::Cond(_)
+            ast::Expression::ConditionalExpression(_)
         ) {
             return false;
         }
@@ -116,25 +116,30 @@ impl Checker<'_> {
     /// Returns whether `operand` is a conditional.
     pub(super) fn split_return(
         &mut self,
-        operand: &ast::Expr,
-        fx: &mut FnCtx,
+        operand: &ast::Expression,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
-        let ast::Expr::Cond(conditional) = crate::check::expr::unparen_expr(operand) else {
+        let ast::Expression::ConditionalExpression(conditional) =
+            crate::check::expr::unparen_expr(operand)
+        else {
             return false;
         };
-        let leaf_return = |leaf: &ast::Expr| {
-            Box::new(ast::Stmt::Return(ast::ReturnStmt {
-                span: leaf.span(),
-                arg: Some(Box::new(leaf.clone())),
-            }))
+        let builder = oxc_ast::builder::AstBuilder::new(self.prog.allocator);
+        let leaf_return = |leaf: &ast::Expression| {
+            ast::Statement::ReturnStatement(ast::ReturnStatement::boxed(
+                leaf.span(),
+                Some(leaf.clone_in(self.prog.allocator)),
+                &builder,
+            ))
         };
-        let split = ast::Stmt::If(ast::IfStmt {
-            span: conditional.span,
-            test: conditional.test.clone(),
-            cons: leaf_return(&conditional.cons),
-            alt: Some(leaf_return(&conditional.alt)),
-        });
+        let split = ast::Statement::IfStatement(ast::IfStatement::boxed(
+            conditional.span,
+            conditional.test.clone_in(self.prog.allocator),
+            leaf_return(&conditional.consequent),
+            Some(leaf_return(&conditional.alternate)),
+            &builder,
+        ));
         self.check_stmt(&split, fx, out);
         true
     }
@@ -144,7 +149,7 @@ impl Checker<'_> {
     /// handle without a context, the operand takes `Promise<T>`. Otherwise
     /// it takes `T`. A return whose leaves mix splits before this context
     /// (`split_mixed_return`).
-    pub(super) fn return_context(&self, operand: &ast::Expr, ret: &Type, fx: &FnCtx) -> Type {
+    pub(super) fn return_context(&self, operand: &ast::Expression, ret: &Type, fx: &FnCtx) -> Type {
         let in_async = fx.frames.last().is_some_and(|frame| frame.is_async);
         if !in_async {
             return ret.clone();
@@ -160,7 +165,7 @@ impl Checker<'_> {
     /// Whether `leaf`, read without a context, has the type `Promise<…>`:
     /// the declared result of its callee, or the declared type of a local,
     /// a parameter, or a field.
-    fn leaf_gives_handle(&self, leaf: &ast::Expr, fx: &FnCtx) -> bool {
+    fn leaf_gives_handle(&self, leaf: &ast::Expression, fx: &FnCtx) -> bool {
         self.leaf_handle(leaf, fx).is_some()
     }
 
@@ -168,37 +173,35 @@ impl Checker<'_> {
     /// A leaf whose declaration has a type parameter, or a reaction, gives
     /// `Type::Error`: it gives a handle, but its value type depends on the
     /// call.
-    fn leaf_handle(&self, leaf: &ast::Expr, fx: &FnCtx) -> Option<Type> {
+    fn leaf_handle(&self, leaf: &ast::Expression, fx: &FnCtx) -> Option<Type> {
         let handle =
             |ty: Type| matches!(self.apparent_type(&ty), Type::AsyncHandle(_)).then_some(ty);
         match leaf {
-            ast::Expr::Ident(name) => self.local_type(name.sym.as_ref(), fx).and_then(handle),
-            ast::Expr::Member(member) => {
-                let ast::MemberProp::Ident(field) = &member.prop else {
-                    return None;
-                };
-                let class = self.receiver_class(&member.obj, fx)?;
+            ast::Expression::Identifier(name) => {
+                self.local_type(name.name.as_ref(), fx).and_then(handle)
+            }
+            ast::Expression::StaticMemberExpression(member) => {
+                let field = &member.property;
+                let class = self.receiver_class(&member.object, fx)?;
                 self.classes[class.0]
                     .fields
                     .iter()
-                    .find(|candidate| candidate.name == field.sym.as_ref())
+                    .find(|candidate| candidate.name == field.name.as_ref())
                     .and_then(|candidate| handle(candidate.ty.clone()))
             }
-            ast::Expr::Call(call) => {
-                let ast::Callee::Expr(callee) = &call.callee else {
-                    return None;
-                };
+            ast::Expression::CallExpression(call) => {
+                let callee = &call.callee;
                 self.callee_handle(crate::check::expr::unparen_expr(callee), fx)
             }
             _ => None,
         }
     }
 
-    fn callee_handle(&self, callee: &ast::Expr, fx: &FnCtx) -> Option<Type> {
+    fn callee_handle(&self, callee: &ast::Expression, fx: &FnCtx) -> Option<Type> {
         let template = |function: &ast::Function| declares_handle(function).then_some(Type::Error);
         match callee {
-            ast::Expr::Ident(name) if !fx.owns_local_name(name.sym.as_ref()) => {
-                match self.peek_scope_item(name.sym.as_ref()) {
+            ast::Expression::Identifier(name) if !fx.owns_local_name(name.name.as_ref()) => {
+                match self.peek_scope_item(name.name.as_ref()) {
                     Some(ScopeItem::Func(function)) => self
                         .fn_sigs
                         .get(&function)
@@ -210,23 +213,21 @@ impl Checker<'_> {
                     _ => None,
                 }
             }
-            ast::Expr::Ident(name) => self
-                .local_type(name.sym.as_ref(), fx)
+            ast::Expression::Identifier(name) => self
+                .local_type(name.name.as_ref(), fx)
                 .and_then(|ty| self.apparent_type(&ty).function_type().cloned())
                 .and_then(|function| {
                     matches!(self.apparent_type(&function.ret), Type::AsyncHandle(_))
                         .then(|| function.ret.clone())
                 }),
-            ast::Expr::Member(member) => {
-                let ast::MemberProp::Ident(name) = &member.prop else {
-                    return None;
-                };
-                if matches!(name.sym.as_ref(), "then" | "catch" | "finally") {
+            ast::Expression::StaticMemberExpression(member) => {
+                let name = &member.property;
+                if matches!(name.name.as_ref(), "then" | "catch" | "finally") {
                     return Some(Type::Error);
                 }
-                let class = self.receiver_class(&member.obj, fx)?;
+                let class = self.receiver_class(&member.object, fx)?;
                 let signatures = &self.class_sigs[class.0];
-                let name = name.sym.as_ref();
+                let name = name.name.as_ref();
                 match signatures
                     .methods
                     .get(name)
@@ -264,8 +265,8 @@ impl Checker<'_> {
     /// states its value type.
     pub(in crate::check) fn mixed_body_result(
         &self,
-        operand: &ast::Expr,
-        fx: &FnCtx,
+        operand: &ast::Expression,
+        fx: &FnCtx<'p>,
     ) -> Option<Type> {
         let mut leaves = Vec::new();
         leaves_of(operand, &mut leaves);
@@ -293,18 +294,19 @@ impl Checker<'_> {
 
     /// The class of a receiver that is a local, a parameter, `this`, a
     /// construction, or a class name. A `C | null` receiver gives `C`.
-    fn receiver_class(&self, receiver: &ast::Expr, fx: &FnCtx) -> Option<ClassId> {
+    fn receiver_class(&self, receiver: &ast::Expression, fx: &FnCtx) -> Option<ClassId> {
         let ty = match crate::check::expr::unparen_expr(receiver) {
-            ast::Expr::Ident(name) => match self.local_type(name.sym.as_ref(), fx) {
+            ast::Expression::Identifier(name) => match self.local_type(name.name.as_ref(), fx) {
                 Some(ty) => ty,
-                None => match self.peek_scope_item(name.sym.as_ref()) {
+                None => match self.peek_scope_item(name.name.as_ref()) {
                     Some(ScopeItem::Class(class)) => return Some(class),
                     _ => return None,
                 },
             },
-            ast::Expr::This(_) => fx.frames.last()?.this_ty.clone()?,
-            ast::Expr::New(new) => match &*new.callee {
-                ast::Expr::Ident(name) => match self.peek_scope_item(name.sym.as_ref()) {
+            ast::Expression::ThisExpression(_) => fx.frames.last()?.this_ty.clone()?,
+            ast::Expression::NewExpression(new) => match &new.callee {
+                ast::Expression::Identifier(name) => match self.peek_scope_item(name.name.as_ref())
+                {
                     Some(ScopeItem::Class(class)) => return Some(class),
                     _ => return None,
                 },
@@ -334,7 +336,7 @@ impl Checker<'_> {
         &mut self,
         checked: hir::Expr,
         ret: &Type,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
         out: &mut Vec<hir::Stmt>,
     ) -> Option<hir::Expr> {
@@ -588,11 +590,11 @@ fn compare(state: &str, op: hir::BinOp, value: usize, pos: &Pos) -> hir::Expr {
 
 /// Each leaf of `operand`: the operand, or a branch of a conditional or of
 /// parentheses in it (compiler.md §236 rule 3).
-fn leaves_of<'a>(operand: &'a ast::Expr, out: &mut Vec<&'a ast::Expr>) {
+fn leaves_of<'a>(operand: &'a ast::Expression<'a>, out: &mut Vec<&'a ast::Expression<'a>>) {
     match crate::check::expr::unparen_expr(operand) {
-        ast::Expr::Cond(conditional) => {
-            leaves_of(&conditional.cons, out);
-            leaves_of(&conditional.alt, out);
+        ast::Expression::ConditionalExpression(conditional) => {
+            leaves_of(&conditional.consequent, out);
+            leaves_of(&conditional.alternate, out);
         }
         leaf => out.push(leaf),
     }
@@ -600,11 +602,11 @@ fn leaves_of<'a>(operand: &'a ast::Expr, out: &mut Vec<&'a ast::Expr>) {
 
 /// Whether a generic template is async, or declares a `Promise<T>` result.
 fn declares_handle(function: &ast::Function) -> bool {
-    function.is_async
+    function.r#async
         || matches!(
-            function.return_type.as_deref().map(|annotation| &*annotation.type_ann),
-            Some(ast::TsType::TsTypeRef(reference))
-                if matches!(&reference.type_name, ast::TsEntityName::Ident(name) if name.sym.as_ref() == "Promise")
+            function.return_type.as_deref().map(|annotation| &annotation.type_annotation),
+            Some(ast::TSType::TSTypeReference(reference))
+                if matches!(&reference.type_name, ast::TSTypeName::IdentifierReference(name) if name.name.as_ref() == "Promise")
         )
 }
 

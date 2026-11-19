@@ -1,16 +1,16 @@
 //! Class modifier facts and checks for compiler.md §155.
 
+use oxc_ast::ast;
 use std::collections::{HashMap, HashSet};
-use swc_ecma_ast as ast;
 
 use super::{rejection::RejectionSite, Checker, FnCtx};
 use crate::{diag::Pos, types::ClassId};
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct ClassModifiers {
-    accessibility: HashMap<(bool, bool, String), ast::Accessibility>,
+    accessibility: HashMap<(bool, bool, String), ast::TSAccessibility>,
     readonly_fields: HashSet<String>,
-    constructor_accessibility: Option<ast::Accessibility>,
+    constructor_accessibility: Option<ast::TSAccessibility>,
     is_abstract: bool,
 }
 
@@ -28,46 +28,55 @@ impl ClassModifiers {
 
     pub(super) fn from_class(class: &ast::Class) -> Self {
         let mut facts = Self {
-            is_abstract: class.is_abstract,
+            is_abstract: class.r#abstract,
             ..Self::default()
         };
-        for member in &class.body {
+        for member in &class.body.body {
             let (key, is_static, accessibility, access) = match member {
-                ast::ClassMember::ClassProp(property) => {
-                    if let ast::PropName::Ident(name) = &property.key {
-                        if property.readonly && !property.is_static {
-                            facts.readonly_fields.insert(name.sym.to_string());
+                ast::ClassElement::PropertyDefinition(property) => {
+                    if let ast::PropertyKey::StaticIdentifier(name) = &property.key {
+                        if property.readonly && !property.r#static {
+                            facts.readonly_fields.insert(name.name.to_string());
                         }
                     }
                     (
                         &property.key,
-                        property.is_static,
+                        property.r#static,
                         property.accessibility,
                         None,
                     )
                 }
-                ast::ClassMember::Method(method) => (
-                    &method.key,
-                    method.is_static,
-                    method.accessibility,
-                    match method.kind {
-                        ast::MethodKind::Getter => Some(false),
-                        ast::MethodKind::Setter => Some(true),
-                        ast::MethodKind::Method => None,
-                    },
-                ),
-                ast::ClassMember::Constructor(constructor) => {
+                ast::ClassElement::MethodDefinition(method)
+                    if method.kind != ast::MethodDefinitionKind::Constructor =>
+                {
+                    (
+                        &method.key,
+                        method.r#static,
+                        method.accessibility,
+                        match method.kind {
+                            ast::MethodDefinitionKind::Get => Some(false),
+                            ast::MethodDefinitionKind::Set => Some(true),
+                            ast::MethodDefinitionKind::Method
+                            | ast::MethodDefinitionKind::Constructor => None,
+                        },
+                    )
+                }
+                ast::ClassElement::MethodDefinition(constructor)
+                    if constructor.kind == ast::MethodDefinitionKind::Constructor =>
+                {
                     facts.constructor_accessibility = constructor.accessibility;
                     continue;
                 }
                 _ => continue,
             };
-            if let (ast::PropName::Ident(name), Some(accessibility)) = (key, accessibility) {
+            if let (ast::PropertyKey::StaticIdentifier(name), Some(accessibility)) =
+                (key, accessibility)
+            {
                 for write in [false, true] {
                     if access.is_none_or(|access| access == write) {
                         facts
                             .accessibility
-                            .insert((is_static, write, name.sym.to_string()), accessibility);
+                            .insert((is_static, write, name.name.to_string()), accessibility);
                     }
                 }
             }
@@ -76,19 +85,19 @@ impl ClassModifiers {
     }
 }
 
-fn restricted(accessibility: ast::Accessibility) -> Option<&'static str> {
+fn restricted(accessibility: ast::TSAccessibility) -> Option<&'static str> {
     match accessibility {
-        ast::Accessibility::Private => Some("private"),
-        ast::Accessibility::Protected => Some("protected"),
-        ast::Accessibility::Public => None,
+        ast::TSAccessibility::Private => Some("private"),
+        ast::TSAccessibility::Protected => Some("protected"),
+        ast::TSAccessibility::Public => None,
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// §206: the front end lowers each member expression with a private
     /// name outside an optional chain, so the checker never reads one.
     /// A private name here means that the pass missed a position.
-    pub(super) fn reject_unlowered_private_name(&mut self, name: &ast::PrivateName) {
+    pub(super) fn reject_unlowered_private_name(&mut self, name: &ast::PrivateIdentifier) {
         self.reject_subset(
             RejectionSite::PrivateNameUnlowered,
             format!(
@@ -122,7 +131,7 @@ impl Checker<'_> {
         name: &str,
         is_static: bool,
         write: bool,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         pos: Pos,
     ) -> bool {
         if self.inside_class_body(class, fx) {
@@ -154,7 +163,7 @@ impl Checker<'_> {
         name: &str,
         // None is a read. Some records whether a write uses direct `this`.
         write: Option<bool>,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         pos: Pos,
     ) -> bool {
         if self.reject_member_access(class, name, false, write.is_some(), fx, pos.clone()) {
@@ -177,7 +186,7 @@ impl Checker<'_> {
         class: ClassId,
         name: &str,
         direct_this: bool,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         pos: Pos,
     ) -> bool {
         let direct_constructor = fx.lexical_class == Some(class)
@@ -198,7 +207,7 @@ impl Checker<'_> {
     pub(super) fn reject_construction_modifier(
         &mut self,
         class: ClassId,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         pos: Pos,
     ) -> bool {
         let facts = &self.class_sigs[class.0].modifiers;

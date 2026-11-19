@@ -325,7 +325,12 @@ impl<'p> Checker<'p> {
     /// conversion is a `Cast` whose type is exactly `to`: each later stage
     /// reads that type, and no operation runs (rule 5). A value that is not
     /// assignable gets no conversion and keeps its diagnostic.
-    pub(crate) fn place_function_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) {
+    pub(crate) fn place_function_value(
+        &mut self,
+        value: &mut hir::Expr,
+        to: &Type,
+        fx: &FnCtx<'p>,
+    ) {
         self.discard_function_result(value, to, fx);
         if !self.needs_function_conversion(&value.ty, to) {
             return;
@@ -342,7 +347,7 @@ impl<'p> Checker<'p> {
     /// `ctx`.
     pub(crate) fn leaf_context(
         &mut self,
-        branch: &ast::Expr,
+        branch: &ast::Expression,
         leaves: Option<&CallbackLeaves>,
         ctx: Option<&Type>,
     ) -> Option<Type> {
@@ -350,17 +355,19 @@ impl<'p> Checker<'p> {
             return ctx.cloned();
         };
         match super::expr::unparen_expr(branch) {
-            ast::Expr::Cond(_) => {
+            ast::Expression::ConditionalExpression(_) => {
                 self.callback_leaf_place = Some(CallbackLeaves {
                     nested: true,
                     ..leaves.clone()
                 });
                 None
             }
-            ast::Expr::Arrow(arrow) => leaves
-                .ret
-                .as_ref()
-                .map(|ret| leaves.place(arrow.params.len(), ret.clone())),
+            ast::Expression::ArrowFunctionExpression(arrow) => leaves.ret.as_ref().map(|ret| {
+                leaves.place(
+                    arrow.params.items.len() + usize::from(arrow.params.rest.is_some()),
+                    ret.clone(),
+                )
+            }),
             _ => None,
         }
     }
@@ -376,7 +383,7 @@ impl<'p> Checker<'p> {
         then: &mut hir::Expr,
         els: &mut hir::Expr,
         leaves: &CallbackLeaves,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) {
         let mut arities = Vec::new();
         for branch in [&*then, &*els] {
@@ -450,7 +457,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn place_function_list(
         &mut self,
         values: &mut [&mut hir::Expr],
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<Type> {
         if values.iter().any(|value| {
             !matches!(self.apparent_type(&value.ty), Type::Func(_))
@@ -485,7 +492,7 @@ impl<'p> Checker<'p> {
     /// Whether each leaf of `value` fits `to` by the value-taking check of
     /// compiler.md §240 rule 2a. The check runs on a copy, so `value` and
     /// the lambda numbering stay unchanged.
-    fn leaves_fit(&mut self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+    fn leaves_fit(&mut self, value: &hir::Expr, to: &Type, fx: &FnCtx<'p>) -> bool {
         if let hir::ExprKind::Cond { then, els, .. } = &value.kind {
             return self.leaves_fit(then, to, fx) && self.leaves_fit(els, to, fx);
         }
@@ -500,7 +507,7 @@ impl<'p> Checker<'p> {
     /// Places each leaf of `expr` at `place` using the user-place check
     /// (compiler.md §313 rule 1). A dropped handle names `subject`, as
     /// the callback itself does (§247 rule 1).
-    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, subject: &str, fx: &FnCtx) {
+    fn place_leaves(&mut self, expr: &mut hir::Expr, place: &Type, subject: &str, fx: &FnCtx<'p>) {
         self.place_leaves_with_defaults(expr, place, subject, fx, true);
     }
 
@@ -509,7 +516,7 @@ impl<'p> Checker<'p> {
         expr: &mut hir::Expr,
         place: &Type,
         subject: &str,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         omit_defaults: bool,
     ) {
         if let hir::ExprKind::Cond { then, els, .. } = &mut expr.kind {
@@ -615,7 +622,12 @@ impl<'p> Checker<'p> {
     /// function declaration or a static method becomes a lambda with no
     /// environment that calls it, when the place has more parameters or a
     /// `void` result that discards the value. Another value is unchanged.
-    pub(crate) fn discard_function_result(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) {
+    pub(crate) fn discard_function_result(
+        &mut self,
+        value: &mut hir::Expr,
+        to: &Type,
+        fx: &FnCtx<'p>,
+    ) {
         self.pad_lambda_parameters(value, to);
         if self.discard_lambda_result(value, to) {
             return;
@@ -685,7 +697,7 @@ impl<'p> Checker<'p> {
     /// const local of a function type, or a module-level `const` of a
     /// function type. A const local is captured by value, as a lambda
     /// written in the source captures it. Another value has no adapter.
-    fn adapter_callee(&self, value: &hir::Expr, fx: &FnCtx) -> Option<AdapterCallee> {
+    fn adapter_callee(&self, value: &hir::Expr, fx: &FnCtx<'p>) -> Option<AdapterCallee> {
         let value_callee = |function: crate::types::FuncType,
                             captures: Vec<hir::Capture>,
                             required: Option<usize>| AdapterCallee {
@@ -754,7 +766,12 @@ impl<'p> Checker<'p> {
     /// a const local name (§246 rule 5). The decision is the one of rule 1:
     /// the same callee facts, the same fit of the adapter, and the
     /// value-taking check of the adapted type against the place.
-    pub(crate) fn needs_adapter_name(&mut self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+    pub(crate) fn needs_adapter_name(
+        &mut self,
+        value: &hir::Expr,
+        to: &Type,
+        fx: &FnCtx<'p>,
+    ) -> bool {
         if matches!(
             value.kind,
             hir::ExprKind::FuncRef(_) | hir::ExprKind::Lambda { .. } | hir::ExprKind::Cond { .. }
@@ -782,7 +799,7 @@ impl<'p> Checker<'p> {
     /// [`Self::adapter_callee`], or, for another value of a function type,
     /// those of a const local name with its type (compiler.md §246 rule 5,
     /// §247 rule 1).
-    fn callee_facts(&self, value: &hir::Expr, fx: &FnCtx) -> Option<AdapterCallee> {
+    fn callee_facts(&self, value: &hir::Expr, fx: &FnCtx<'p>) -> Option<AdapterCallee> {
         if let Some(callee) = self.adapter_callee(value, fx) {
             return Some(callee);
         }
@@ -809,7 +826,12 @@ impl<'p> Checker<'p> {
     /// result that contains the error type has its diagnostic already. A
     /// conditional is not a value here; each of its leaves is (§247 rule
     /// 3).
-    pub(crate) fn dropped_handle(&self, value: &hir::Expr, to: &Type, fx: &FnCtx) -> Option<Type> {
+    pub(crate) fn dropped_handle(
+        &self,
+        value: &hir::Expr,
+        to: &Type,
+        fx: &FnCtx<'p>,
+    ) -> Option<Type> {
         if matches!(value.kind, hir::ExprKind::Cond { .. }) {
             return None;
         }
@@ -963,7 +985,7 @@ impl<'p> Checker<'p> {
     /// The value is not generic, not async, and not a generator. With more
     /// parameters in the place, it has no default parameter. Another value
     /// is unchanged.
-    fn adapt_function_reference(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) {
+    fn adapt_function_reference(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx<'p>) {
         let Some(place) = self.function_of(to) else {
             return;
         };
@@ -1069,7 +1091,7 @@ impl<'p> Checker<'p> {
     /// ([`Self::place_function_value`]), then its type is checked. Returns
     /// whether the value fits the place. A value that does not fit is
     /// unchanged.
-    pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx) -> bool {
+    pub(crate) fn place_value(&mut self, value: &mut hir::Expr, to: &Type, fx: &FnCtx<'p>) -> bool {
         if let Some(own) = self.function_of(&value.ty) {
             if own.callback_typedef.is_some()
                 && self
@@ -1165,7 +1187,7 @@ impl<'p> Checker<'p> {
         mut callback: hir::Expr,
         params: &[Type],
         ret: Option<&Type>,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> hir::Expr {
         let Type::Func(own) = self.apparent_type(&callback.ty) else {
             return callback;
@@ -1241,7 +1263,7 @@ impl<'p> Checker<'p> {
         &mut self,
         from: &mut hir::Expr,
         to: &Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) {
         self.require_expr_assignable(from, to, fx, "the return value");
     }
@@ -1264,7 +1286,7 @@ impl<'p> Checker<'p> {
         &mut self,
         from: &mut hir::Expr,
         to: &Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         what: &str,
     ) {
         self.require_expr_assignable_subject(from, to, fx, what, "function value");
@@ -1275,7 +1297,7 @@ impl<'p> Checker<'p> {
         &mut self,
         from: &mut hir::Expr,
         to: &Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         what: &str,
         subject: &str,
     ) {

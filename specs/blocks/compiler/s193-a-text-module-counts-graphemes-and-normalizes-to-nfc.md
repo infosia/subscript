@@ -49,6 +49,8 @@ no form for either operation.
 5. **Unicode version.** Unicode 17.0, through `unicode-segmentation`
    1.13.3 and `icu_normalizer` 2.2.0, pinned in `Cargo.lock`. A version
    change is a contract change, because it can move goldens.
+   *(Amended 2026-11-20 by §341 rule 1a: `icu_normalizer` 2.3.0. Its
+   NFC and NFD equal those of 2.2.0 for every scalar value (measured).)*
 6. **Every tier.** The dev tier, the ship tier, and the interpreter
    call the same runtime functions and give the same output.
 7. **Not in this section.** NFD, NFKC, NFKD, a grapheme iterator,

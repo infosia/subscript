@@ -13,14 +13,14 @@ impl<'p> Checker<'p> {
             let Some(decl) = module_decl(item) else {
                 continue;
             };
-            if let ast::Decl::TsTypeAlias(t) = decl {
-                if string_alias_members(&t.type_ann).is_some()
-                    || wire_alias_literal(&t.type_ann).is_some()
+            if let ast::Declaration::TSTypeAliasDeclaration(t) = decl {
+                if string_alias_members(&t.type_annotation).is_some()
+                    || wire_alias_literal(&t.type_annotation).is_some()
                 {
                     continue;
                 }
-                let mut ty = self.resolve_type(&t.type_ann);
-                let name = t.id.sym.to_string();
+                let mut ty = self.resolve_type(&t.type_annotation);
+                let name = t.id.name.to_string();
                 let pos = self.pos(t.id.span);
                 self.reject_mirror_nullable_view(file, &name, &ty, pos);
                 if let Type::Func(function) = &mut ty {
@@ -36,10 +36,10 @@ impl<'p> Checker<'p> {
                 continue;
             };
             match decl {
-                ast::Decl::Class(c) if c.class.type_params.is_none() => {
-                    let name = c.ident.sym.to_string();
+                ast::Declaration::ClassDeclaration(c) if c.type_parameters.is_none() => {
+                    let name = c.declaration_name().to_string();
                     if let Some(&id) = self.class_ids.get(&self.declaration_symbol(file, &name)) {
-                        self.resolve_class_shape(id, &c.class, c.declare);
+                        self.resolve_class_shape(id, c, c.declare);
                         for field in self.classes[id.0].fields.clone() {
                             self.reject_mirror_nullable_view(
                                 file,
@@ -48,15 +48,15 @@ impl<'p> Checker<'p> {
                                 field.pos,
                             );
                         }
-                        let class_pos = self.pos(c.ident.span);
+                        let class_pos = self.pos(c.declaration_name_span());
                         self.reject_mirror_member_signatures(file, id, &name, class_pos);
                     }
                 }
-                ast::Decl::Fn(f) => {
-                    let name = f.ident.sym.to_string();
-                    let pos = self.pos(f.ident.span);
+                ast::Declaration::FunctionDeclaration(f) => {
+                    let name = f.declaration_name().to_string();
+                    let pos = self.pos(f.declaration_name_span());
                     self.allow_wire_alias_boundary = true;
-                    let sig = self.resolve_fn_sig(&f.function, pos.clone());
+                    let sig = self.resolve_fn_sig(f, pos.clone());
                     self.allow_wire_alias_boundary = false;
                     self.reject_mirror_nullable_view(file, &name, &sig.ret, pos.clone());
                     for parameter in &sig.params {
@@ -86,7 +86,8 @@ impl<'p> Checker<'p> {
                     }
                     let mut params = Vec::with_capacity(sig.params.len());
                     for (index, parameter) in sig.params.iter().enumerate() {
-                        let ast_parameter = f.function.params.get(index);
+                        let parameters = super::function_parameters(f, self.prog.allocator);
+                        let ast_parameter = parameters.get(index);
                         let parameter_pos =
                             ast_parameter.map_or_else(|| pos.clone(), |p| self.pos(p.span));
                         let foreign_provenance = self.foreign_parameter_provenance(
@@ -160,12 +161,12 @@ impl<'p> Checker<'p> {
                     });
                     self.foreign_sigs.insert(name, sig);
                 }
-                ast::Decl::Var(v) => {
-                    for d in &v.decls {
+                ast::Declaration::VariableDeclaration(v) => {
+                    for d in &v.declarations {
                         // Pass A reports every other form and binds its
                         // name poisoned (compiler.md §136.1 rule 2).
-                        let (ast::Pat::Ident(binding), Some(value)) =
-                            (&d.name, mirror_const_value(v, d))
+                        let (ast::BindingPattern::BindingIdentifier(binding), Some(value)) =
+                            (&d.id, mirror_const_value(v, d))
                         else {
                             continue;
                         };
@@ -173,7 +174,7 @@ impl<'p> Checker<'p> {
                         // literal initializer on an ambient const only
                         // without a type annotation, so the value travels
                         // here and the `u64` flag type is supplied by rule.
-                        let symbol = self.declaration_symbol(file, &binding.id.sym);
+                        let symbol = self.declaration_symbol(file, &binding.name);
                         self.ambient_int_consts
                             .insert(symbol.clone(), (value, Type::U64));
                         self.global_sigs.insert(
@@ -255,16 +256,27 @@ impl<'p> Checker<'p> {
             let module = &self.prog.files[file].module;
             let mut additions: Vec<(String, ScopeItem, Pos, bool)> = Vec::new();
             for item in &module.body {
-                if let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportNamed(export)) = item {
-                    self.record_discovery_export(export);
-                    continue;
+                match item {
+                    ast::Statement::ExportNamedDeclaration(export) => {
+                        self.record_discovery_export(super::exports::NamedExport::local(export));
+                        continue;
+                    }
+                    ast::Statement::ExportFromDeclaration(export) => {
+                        self.record_discovery_export(super::exports::NamedExport::remote(export));
+                        continue;
+                    }
+                    _ => {}
                 }
-                let ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) = item else {
+                let ast::Statement::ImportDeclaration(import) = item else {
                     continue;
                 };
-                if import.type_only {
-                    if let Some(ast::ImportSpecifier::Namespace(namespace)) =
-                        import.specifiers.first()
+                if import.import_kind == ast::ImportOrExportKind::Type {
+                    if let Some(ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(
+                        namespace,
+                    )) = import
+                        .specifiers
+                        .as_ref()
+                        .and_then(|specifiers| specifiers.first())
                     {
                         let pos = self.pos(namespace.local.span);
                         self.reject_subset(
@@ -273,10 +285,10 @@ impl<'p> Checker<'p> {
                             pos.clone(),
                         );
                         additions.push((
-                            namespace.local.sym.to_string(),
+                            namespace.local.name.to_string(),
                             ScopeItem::Namespace {
                                 module: None,
-                                source: import.src.value.to_string(),
+                                source: import.source.value.to_string(),
                             },
                             pos,
                             false,
@@ -284,30 +296,31 @@ impl<'p> Checker<'p> {
                         continue;
                     }
                 }
-                let raw = import.src.value.to_string();
+                let raw = import.source.value.to_string();
                 if raw == "node:fs/promises" {
                     let enabled = self.enabled_modules.iter().any(|m| m == &raw);
                     if !enabled {
                         self.file_error(
                             RejectionSite::FileModuleDisabled,
                             "enable this module with --enable-module node:fs/promises",
-                            self.pos(import.src.span),
+                            self.pos(import.source.span),
                         );
                     }
-                    if import.specifiers.is_empty() {
+                    if import
+                        .specifiers
+                        .as_ref()
+                        .is_none_or(|specifiers| specifiers.is_empty())
+                    {
                         self.file_error(
                             RejectionSite::FileModuleImportForm,
                             super::file_module::FORMS,
-                            self.pos(import.src.span),
+                            self.pos(import.source.span),
                         );
                     }
-                    for spec in &import.specifiers {
-                        if let ast::ImportSpecifier::Named(named) = spec {
-                            let local = named.local.sym.to_string();
-                            let imported = named
-                                .imported
-                                .as_ref()
-                                .map_or_else(|| local.clone(), |n| n.atom().to_string());
+                    for spec in import.specifiers.iter().flatten() {
+                        if let ast::ImportDeclarationSpecifier::ImportSpecifier(named) = spec {
+                            let local = named.local.name.to_string();
+                            let imported = named.imported.name().to_string();
                             let item = match imported.as_str() {
                                 "readFile" if enabled => ScopeItem::StandardFile(false),
                                 "writeFile" if enabled => ScopeItem::StandardFile(true),
@@ -343,11 +356,15 @@ impl<'p> Checker<'p> {
                 }
                 let stem = normalize_module_specifier(&raw);
                 let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
-                    let pos = self.pos(import.src.span);
+                    let pos = self.pos(import.source.span);
                     let missing_message =
                         format!("imported module `{raw}` is not among the program's files");
                     if self.poison_missing_modules.contains(&stem) {
-                        if import.specifiers.is_empty() {
+                        if import
+                            .specifiers
+                            .as_ref()
+                            .is_none_or(|specifiers| specifiers.is_empty())
+                        {
                             self.resolution_error(
                                 RejectionSite::NamespaceImportTargetMissing,
                                 missing_message,
@@ -357,9 +374,12 @@ impl<'p> Checker<'p> {
                         }
                         let mut names = Vec::new();
                         let mut namespace_local = None;
-                        for spec in &import.specifiers {
-                            if let ast::ImportSpecifier::Namespace(namespace) = spec {
-                                let local = namespace.local.sym.to_string();
+                        for spec in import.specifiers.iter().flatten() {
+                            if let ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(
+                                namespace,
+                            ) = spec
+                            {
+                                let local = namespace.local.name.to_string();
                                 additions.push((
                                     local.clone(),
                                     ScopeItem::Namespace {
@@ -372,7 +392,8 @@ impl<'p> Checker<'p> {
                                 namespace_local = Some(local);
                                 continue;
                             }
-                            let ast::ImportSpecifier::Named(named) = spec else {
+                            let ast::ImportDeclarationSpecifier::ImportSpecifier(named) = spec
+                            else {
                                 self.reject_subset(
                                     if raw.starts_with('.') {
                                         RejectionSite::PoisonedRelativeDefaultImport
@@ -384,11 +405,8 @@ impl<'p> Checker<'p> {
                                 );
                                 continue;
                             };
-                            let local = named.local.sym.to_string();
-                            let imported = named
-                                .imported
-                                .as_ref()
-                                .map_or_else(|| local.clone(), |name| name.atom().to_string());
+                            let local = named.local.name.to_string();
+                            let imported = named.imported.name().to_string();
                             additions.push((
                                 local.clone(),
                                 ScopeItem::Poisoned,
@@ -407,7 +425,11 @@ impl<'p> Checker<'p> {
                         }
                     } else {
                         self.resolution_error(
-                            if import.specifiers.is_empty() {
+                            if import
+                                .specifiers
+                                .as_ref()
+                                .is_none_or(|specifiers| specifiers.is_empty())
+                            {
                                 RejectionSite::NamedImportModuleMissing
                             } else {
                                 RejectionSite::NamedImportUnresolvedModule
@@ -415,10 +437,13 @@ impl<'p> Checker<'p> {
                             missing_message,
                             pos,
                         );
-                        for spec in &import.specifiers {
-                            if let ast::ImportSpecifier::Namespace(namespace) = spec {
+                        for spec in import.specifiers.iter().flatten() {
+                            if let ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(
+                                namespace,
+                            ) = spec
+                            {
                                 additions.push((
-                                    namespace.local.sym.to_string(),
+                                    namespace.local.name.to_string(),
                                     ScopeItem::Namespace {
                                         module: None,
                                         source: raw.clone(),
@@ -427,9 +452,9 @@ impl<'p> Checker<'p> {
                                     false,
                                 ));
                             }
-                            if let ast::ImportSpecifier::Named(named) = spec {
+                            if let ast::ImportDeclarationSpecifier::ImportSpecifier(named) = spec {
                                 additions.push((
-                                    named.local.sym.to_string(),
+                                    named.local.name.to_string(),
                                     ScopeItem::Poisoned,
                                     self.pos(named.local.span),
                                     type_only_import(import, named),
@@ -439,17 +464,19 @@ impl<'p> Checker<'p> {
                     }
                     continue;
                 };
-                for spec in &import.specifiers {
-                    if let ast::ImportSpecifier::Namespace(namespace) = spec {
+                for spec in import.specifiers.iter().flatten() {
+                    if let ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(namespace) =
+                        spec
+                    {
                         let pos = self.pos(namespace.local.span);
                         let item = ScopeItem::Namespace {
                             module: Some(target),
                             source: raw.clone(),
                         };
-                        additions.push((namespace.local.sym.to_string(), item, pos, false));
+                        additions.push((namespace.local.name.to_string(), item, pos, false));
                         continue;
                     }
-                    let ast::ImportSpecifier::Named(named) = spec else {
+                    let ast::ImportDeclarationSpecifier::ImportSpecifier(named) = spec else {
                         let pos = self.pos(spec.span());
                         self.reject_subset(
                             RejectionSite::DefaultImport,
@@ -458,11 +485,9 @@ impl<'p> Checker<'p> {
                         );
                         continue;
                     };
-                    let local = named.local.sym.to_string();
-                    let imported = named.imported.as_ref();
-                    let imported_name =
-                        imported.map_or_else(|| local.clone(), |name| name.atom().to_string());
-                    let imported_pos = self.pos(imported.map_or(named.local.span, Spanned::span));
+                    let local = named.local.name.to_string();
+                    let imported_name = named.imported.name().to_string();
+                    let imported_pos = self.pos(named.imported.span());
                     let pos = self.pos(named.local.span);
                     let type_only = type_only_import(import, named);
                     match self.exports[target].get(&imported_name) {
@@ -509,26 +534,28 @@ impl<'p> Checker<'p> {
                 continue;
             };
             match decl {
-                ast::Decl::Class(c) if c.class.type_params.is_none() => {
-                    let name = c.ident.sym.to_string();
+                ast::Declaration::ClassDeclaration(c) if c.type_parameters.is_none() => {
+                    let name = c.declaration_name().to_string();
                     if let Some(&id) = self.class_ids.get(&self.declaration_symbol(file, &name)) {
-                        self.resolve_class_shape(id, &c.class, c.declare);
+                        self.resolve_class_shape(id, c, c.declare);
                     }
                 }
-                ast::Decl::Fn(f) if f.function.type_params.is_none() => {
-                    let name = f.ident.sym.to_string();
-                    let sig = self.resolve_fn_sig(&f.function, self.pos(f.ident.span));
+                ast::Declaration::FunctionDeclaration(f) if f.type_parameters.is_none() => {
+                    let name = f.declaration_name().to_string();
+                    let sig = self.resolve_fn_sig(f, self.pos(f.declaration_name_span()));
                     self.fn_sigs
                         .insert(self.declaration_symbol(file, &name), sig);
                 }
-                ast::Decl::Var(v) => {
-                    for d in &v.decls {
-                        let ast::Pat::Ident(binding) = &d.name else {
+                ast::Declaration::VariableDeclaration(v) => {
+                    for d in &v.declarations {
+                        let ast::BindingPattern::BindingIdentifier(binding) = &d.id else {
                             continue;
                         };
-                        let name = binding.id.sym.to_string();
-                        let state = match &binding.type_ann {
-                            Some(ann) => TypeState::decided(self.resolve_type(&ann.type_ann)),
+                        let name = binding.name.to_string();
+                        let state = match &d.type_annotation {
+                            Some(ann) => {
+                                TypeState::decided(self.resolve_type(&ann.type_annotation))
+                            }
                             None => TypeState::Undecided,
                         };
                         let ty = state.ty().clone();
@@ -536,24 +563,24 @@ impl<'p> Checker<'p> {
                             self.reject_subset(
                                 RejectionSite::WorkerEndpointModuleGlobal,
                                 "Worker, Inbox, and Outbox values may not be module globals",
-                                self.pos(binding.id.span),
+                                self.pos(binding.span),
                             );
                         }
                         self.global_sigs.insert(
                             self.declaration_symbol(file, &name),
                             GlobalSig {
-                                annotated: binding.type_ann.is_some(),
-                                named_lambda: v.kind == ast::VarDeclKind::Const
-                                    && binding.type_ann.is_none()
+                                annotated: d.type_annotation.is_some(),
+                                named_lambda: v.kind == ast::VariableDeclarationKind::Const
+                                    && d.type_annotation.is_none()
                                     && matches!(
-                                        d.init.as_deref().map(super::expr::unparen_expr),
-                                        Some(ast::Expr::Arrow(_))
+                                        d.init.as_ref().map(super::expr::unparen_expr),
+                                        Some(ast::Expression::ArrowFunctionExpression(_))
                                     ),
                                 lambda_defaults: None,
                                 function_value_required: None,
                                 state,
                                 initializer: d.init.as_ref().map(|e| self.initializer(e, None)),
-                                mutable: v.kind == ast::VarDeclKind::Let,
+                                mutable: v.kind == ast::VariableDeclarationKind::Let,
                             },
                         );
                     }
@@ -565,20 +592,20 @@ impl<'p> Checker<'p> {
 
     /// Resolves a function signature (pass B), including Q34's required
     /// `Promise<T>` view for async declarations.
-    pub(crate) fn resolve_fn_sig(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
+    pub(crate) fn resolve_fn_sig(&mut self, f: &ast::Function, pos: Pos) -> FnSig<'p> {
         let saved = self.task_group_parameters;
-        self.task_group_parameters = !f.is_async && !f.is_generator && !self.in_boundary;
-        let params = self.resolve_params(&f.params);
+        self.task_group_parameters = !f.r#async && !f.generator && !self.in_boundary;
+        let params = self.resolve_params(&f.params, f.this_param.as_deref());
         self.task_group_parameters = saved;
         let mut sig = self.resolve_fn_result(f, pos);
         sig.params = params;
         sig
     }
 
-    pub(super) fn resolve_fn_result(&mut self, f: &ast::Function, pos: Pos) -> FnSig {
+    pub(super) fn resolve_fn_result(&mut self, f: &ast::Function, pos: Pos) -> FnSig<'p> {
         let params = Vec::new();
-        if f.is_async {
-            if f.is_generator {
+        if f.r#async {
+            if f.generator {
                 self.reject_subset(
                     RejectionSite::AsyncGeneratorFunction,
                     "a function cannot be both async and a generator",
@@ -586,7 +613,7 @@ impl<'p> Checker<'p> {
                 );
                 return FnSig {
                     result_template: None,
-                    generic: f.type_params.is_some(),
+                    generic: f.type_parameters.is_some(),
                     params,
                     ret: Type::Error,
                     is_generator: false,
@@ -595,7 +622,7 @@ impl<'p> Checker<'p> {
                 };
             }
             let ret = match &f.return_type {
-                Some(ann) => self.resolve_async_return(&ann.type_ann),
+                Some(ann) => self.resolve_async_return(&ann.type_annotation),
                 None => {
                     self.reject_subset(
                         RejectionSite::AsyncReturnAnnotationMissing,
@@ -607,7 +634,7 @@ impl<'p> Checker<'p> {
             };
             return FnSig {
                 result_template: None,
-                generic: f.type_params.is_some(),
+                generic: f.type_parameters.is_some(),
                 params,
                 ret,
                 is_generator: false,
@@ -615,18 +642,18 @@ impl<'p> Checker<'p> {
                 yield_known: true,
             };
         }
-        if f.is_generator {
+        if f.generator {
             // The yield type is inferred from the body (checked in
             // source order); a `Generator<T>` annotation, when present,
             // seeds it.
             let mut yield_ty = None;
             if let Some(ann) = &f.return_type {
-                if let ast::TsType::TsTypeRef(r) = &*ann.type_ann {
-                    if let ast::TsEntityName::Ident(id) = &r.type_name {
-                        if id.sym.as_ref() == "Generator" {
-                            if let Some(args) = &r.type_params {
+                if let ast::TSType::TSTypeReference(r) = &ann.type_annotation {
+                    if let ast::TSTypeName::IdentifierReference(id) = &r.type_name {
+                        if id.name.as_ref() == "Generator" {
+                            if let Some(args) = &r.type_arguments {
                                 if !args.params.is_empty() {
-                                    let resolved = self.resolve_type(&ann.type_ann);
+                                    let resolved = self.resolve_type(&ann.type_annotation);
                                     yield_ty = Some(match self.apparent_type(&resolved) {
                                         Type::Generator(element) => *element,
                                         _ => Type::Error,
@@ -640,7 +667,7 @@ impl<'p> Checker<'p> {
             let known = yield_ty.is_some();
             return FnSig {
                 result_template: None,
-                generic: f.type_params.is_some(),
+                generic: f.type_parameters.is_some(),
                 params,
                 // An unknown yield type is a placeholder that `yield_known`
                 // marks, not a poisoned component, so the generator form
@@ -657,7 +684,7 @@ impl<'p> Checker<'p> {
                 // declaration or a class method can be `T | undefined`. A
                 // mirror declaration is not one (§195.6 rule 1).
                 self.undefined_result = !self.in_boundary;
-                let ret = self.resolve_result_type(&ann.type_ann);
+                let ret = self.resolve_result_type(&ann.type_annotation);
                 self.undefined_result = false;
                 ret
             }
@@ -672,7 +699,7 @@ impl<'p> Checker<'p> {
         };
         FnSig {
             result_template: None,
-            generic: f.type_params.is_some(),
+            generic: f.type_parameters.is_some(),
             params,
             ret,
             is_generator: false,
@@ -681,11 +708,31 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(crate) fn resolve_params(&mut self, params: &[ast::Param]) -> Vec<ParamSig> {
-        params
-            .iter()
-            .map(|p| self.resolve_param_pat(&p.pat))
-            .collect()
+    pub(crate) fn resolve_params(
+        &mut self,
+        params: &oxc_ast::ast::FormalParameters<'_>,
+        this_param: Option<&oxc_ast::ast::TSThisParameter<'_>>,
+    ) -> Vec<ParamSig<'p>> {
+        let mut resolved: Vec<_> =
+            super::formal_parameters(this_param, params, self.prog.allocator)
+                .iter()
+                .map(|parameter| self.resolve_param_pat(parameter))
+                .collect();
+        if let Some(rest) = &params.rest {
+            self.reject_subset(
+                RejectionSite::RestParameter,
+                "parameter pattern outside the decided surface",
+                self.pos(rest.span),
+            );
+            resolved.push(ParamSig {
+                annotated: false,
+                name: String::new(),
+                state: TypeState::Rejected,
+                initializer: None,
+                has_default: false,
+            });
+        }
+        resolved
     }
 
     fn inferred_pattern_parameter_name(&mut self) -> String {
@@ -694,129 +741,121 @@ impl<'p> Checker<'p> {
         format!("[[pattern#{id}.parameter]]")
     }
 
-    pub(crate) fn resolve_param_pat(&mut self, pat: &ast::Pat) -> ParamSig {
-        match pat {
-            ast::Pat::Ident(binding) => {
-                if binding.id.optional {
-                    // C7: optional parameters without defaults imply an
-                    // observable `undefined`.
-                    let pos = self.pos(binding.id.span);
+    pub(crate) fn resolve_param_pat(
+        &mut self,
+        pat: &oxc_ast::ast::FormalParameter<'_>,
+    ) -> ParamSig<'p> {
+        if let Some(initializer) = &pat.initializer {
+            let infer_name = if pat.type_annotation.is_none() {
+                match &pat.pattern {
+                    ast::BindingPattern::BindingIdentifier(binding) => {
+                        Some(binding.name.to_string())
+                    }
+                    ast::BindingPattern::ArrayPattern(_)
+                    | ast::BindingPattern::ObjectPattern(_)
+                        if !self.in_boundary =>
+                    {
+                        Some(self.inferred_pattern_parameter_name())
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            let mut inner = if let Some(name) = infer_name {
+                ParamSig {
+                    annotated: false,
+                    name,
+                    state: TypeState::Undecided,
+                    initializer: None,
+                    has_default: true,
+                }
+            } else {
+                self.resolve_parameter_binding(pat)
+            };
+            inner.initializer = Some(self.initializer(initializer, None));
+            inner.has_default = true;
+            return inner;
+        }
+        self.resolve_parameter_binding(pat)
+    }
+
+    fn resolve_parameter_binding(&mut self, parameter: &ast::FormalParameter<'_>) -> ParamSig<'p> {
+        let annotation = parameter.type_annotation.as_deref();
+        match &parameter.pattern {
+            ast::BindingPattern::BindingIdentifier(binding) => {
+                if parameter.optional {
                     self.reject_subset(
                         RejectionSite::OptionalParameter,
                         "optional parameters imply `undefined`; use a default value or `T | null`",
-                        pos,
+                        self.pos(binding.span),
                     );
                 }
-                let ty = match &binding.type_ann {
-                    Some(ann) => {
-                        let saved = self.task_group_type;
-                        self.task_group_type = self.task_group_parameters
-                            && type_reference_name(Some(&ann.type_ann)) == Some("TaskGroup");
-                        let ty = self.resolve_type(&ann.type_ann);
-                        self.task_group_type = saved;
-                        ty
-                    }
-                    None => {
-                        let pos = self.pos(binding.id.span);
-                        self.reject_subset(
-                            if self.generic_callback_context {
-                                RejectionSite::GenericCallbackParameterAnnotationMissing
-                            } else {
-                                RejectionSite::NamedParameterAnnotationMissing
-                            },
-                            "parameters require a type annotation",
-                            pos,
-                        );
-                        Type::Error
-                    }
+                let ty = if let Some(annotation) = annotation {
+                    let saved = self.task_group_type;
+                    self.task_group_type = self.task_group_parameters
+                        && type_reference_name(Some(&annotation.type_annotation))
+                            == Some("TaskGroup");
+                    let ty = self.resolve_type(&annotation.type_annotation);
+                    self.task_group_type = saved;
+                    ty
+                } else {
+                    self.reject_subset(
+                        if self.generic_callback_context {
+                            RejectionSite::GenericCallbackParameterAnnotationMissing
+                        } else {
+                            RejectionSite::NamedParameterAnnotationMissing
+                        },
+                        "parameters require a type annotation",
+                        self.pos(binding.span),
+                    );
+                    Type::Error
                 };
                 ParamSig {
-                    annotated: binding
-                        .type_ann
-                        .as_ref()
-                        .is_some_and(|ann| self.written_type(&ann.type_ann)),
-                    name: binding.id.sym.to_string(),
-                    state: crate::check::initializer::TypeState::decided(ty),
+                    annotated: annotation
+                        .is_some_and(|annotation| self.written_type(&annotation.type_annotation)),
+                    name: binding.name.to_string(),
+                    state: TypeState::decided(ty),
                     initializer: None,
                     has_default: false,
                 }
             }
-            ast::Pat::Assign(assign) => {
-                let infer_name = match &*assign.left {
-                    ast::Pat::Ident(binding) if binding.type_ann.is_none() => {
-                        Some(binding.id.sym.to_string())
-                    }
-                    ast::Pat::Array(array) if array.type_ann.is_none() && !self.in_boundary => {
-                        Some(self.inferred_pattern_parameter_name())
-                    }
-                    ast::Pat::Object(object) if object.type_ann.is_none() && !self.in_boundary => {
-                        Some(self.inferred_pattern_parameter_name())
-                    }
-                    _ => None,
-                };
-                let mut inner = if let Some(name) = infer_name {
-                    ParamSig {
-                        annotated: false,
-                        name,
-                        state: TypeState::Undecided,
-                        initializer: None,
-                        has_default: true,
-                    }
+            ast::BindingPattern::ArrayPattern(_) | ast::BindingPattern::ObjectPattern(_)
+                if !self.in_boundary =>
+            {
+                let ty = if let Some(annotation) = annotation {
+                    self.resolve_type(&annotation.type_annotation)
                 } else {
-                    self.resolve_param_pat(&assign.left)
+                    self.reject_subset(
+                        if self.generic_callback_context {
+                            RejectionSite::GenericCallbackParameterAnnotationMissing
+                        } else {
+                            RejectionSite::PatternParameterAnnotationMissing
+                        },
+                        "parameters require a type annotation",
+                        self.pos(parameter.pattern.span()),
+                    );
+                    Type::Error
                 };
-                inner.initializer = Some(self.initializer(&assign.right, None));
-                inner.has_default = true;
-                inner
-            }
-            // A binding pattern parameter takes its type from the
-            // pattern's own annotation, and binds into checker-generated
-            // storage that the entry prologue reads (§107.2). A boundary
-            // signature has no body, so it holds no such prologue.
-            ast::Pat::Array(_) | ast::Pat::Object(_) if !self.in_boundary => {
-                let annotation = match pat {
-                    ast::Pat::Array(array) => array.type_ann.as_deref(),
-                    ast::Pat::Object(object) => object.type_ann.as_deref(),
-                    _ => None,
-                };
-                let ty = match annotation {
-                    Some(annotation) => self.resolve_type(&annotation.type_ann),
-                    None => {
-                        let pos = self.pos(pat.span());
-                        self.reject_subset(
-                            if self.generic_callback_context {
-                                RejectionSite::GenericCallbackParameterAnnotationMissing
-                            } else {
-                                RejectionSite::PatternParameterAnnotationMissing
-                            },
-                            "parameters require a type annotation",
-                            pos,
-                        );
-                        Type::Error
-                    }
-                };
-                let id = self.next_pattern_id;
-                self.next_pattern_id += 1;
+                let name = self.inferred_pattern_parameter_name();
                 ParamSig {
-                    annotated: annotation.is_some_and(|ann| self.written_type(&ann.type_ann)),
-                    name: format!("[[pattern#{id}.parameter]]"),
+                    annotated: annotation
+                        .is_some_and(|annotation| self.written_type(&annotation.type_annotation)),
+                    name,
                     state: TypeState::decided(ty),
                     initializer: None,
                     has_default: false,
                 }
             }
             other => {
-                let pos = self.pos(other.span());
                 self.reject_subset(
-                    if matches!(other, ast::Pat::Rest(_)) {
-                        RejectionSite::RestParameter
-                    } else if self.mirror_array_parameter_noniterable(other) {
+                    if self.mirror_array_parameter_noniterable(parameter) {
                         RejectionSite::MirrorArrayParameterNonIterable
                     } else {
                         RejectionSite::MirrorBindingPatternParameter
                     },
                     "parameter pattern outside the decided surface",
-                    pos,
+                    self.pos(other.span()),
                 );
                 ParamSig {
                     annotated: false,
@@ -833,13 +872,14 @@ impl<'p> Checker<'p> {
     /// order (§107.2). Answers with the statements the body starts with.
     pub(super) fn bind_parameter_patterns(
         &mut self,
-        params: Vec<(ParamSig, ast::Pat)>,
-        fx: &mut FnCtx,
+        params: Vec<(ParamSig<'p>, ast::BindingPattern<'p>)>,
+        rest: Option<&ast::FormalParameterRest<'_>>,
+        fx: &mut FnCtx<'p>,
     ) -> Vec<hir::Stmt> {
         let mut prologue = Vec::new();
         for (signature, pat) in params {
             let pat = match &pat {
-                ast::Pat::Assign(assign) => assign.left.as_ref(),
+                ast::BindingPattern::AssignmentPattern(assign) => &assign.left,
                 other => other,
             };
             let pattern = pattern::classify(pat);
@@ -848,7 +888,7 @@ impl<'p> Checker<'p> {
                 _ if pattern.is_destructuring() => {
                     if let Some(scope) = fx.scopes.last_mut() {
                         for binding in pattern::collect_names(pat) {
-                            scope.parameter_names.insert(binding.id.sym.to_string());
+                            scope.parameter_names.insert(binding.name.to_string());
                         }
                     }
                     let source = hir::Expr {
@@ -873,6 +913,15 @@ impl<'p> Checker<'p> {
                 _ => {}
             }
         }
+        if let Some(rest) = rest {
+            let rejection = pattern::PatternRejection {
+                span: rest.span,
+                message: "a nested binding pattern needs recursive type checks and ordered effects",
+                site: RejectionSite::BindingPatternUnsupportedRoot,
+                names: pattern::collect_names(&rest.rest.argument),
+            };
+            self.reject_pattern(&rejection, fx);
+        }
         prologue
     }
 }
@@ -881,44 +930,52 @@ impl<'p> Checker<'p> {
 /// declaration is `import type`, or the specifier is written `type X`
 /// (compiler.md §134 rule 1).
 pub(super) fn type_only_import(
-    import: &ast::ImportDecl,
-    named: &ast::ImportNamedSpecifier,
+    import: &ast::ImportDeclaration,
+    named: &ast::ImportSpecifier,
 ) -> bool {
-    import.type_only || named.is_type_only
+    (import.import_kind == ast::ImportOrExportKind::Type)
+        || (named.import_kind == ast::ImportOrExportKind::Type)
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// A written annotation names no parameter of the enclosing generic source.
-    pub(crate) fn written_type(&self, ty: &ast::TsType) -> bool {
+    pub(crate) fn written_type(&self, ty: &ast::TSType) -> bool {
         match ty {
-            ast::TsType::TsKeywordType(_) => true,
-            ast::TsType::TsTypeRef(reference) => {
+            ty if ty.is_keyword() => true,
+            ast::TSType::TSTypeReference(reference) => {
                 let name_ok = match &reference.type_name {
-                    ast::TsEntityName::Ident(name) => !self.subst.contains_key(name.sym.as_ref()),
-                    ast::TsEntityName::TsQualifiedName(_) => true,
+                    ast::TSTypeName::IdentifierReference(name) => {
+                        !self.subst.contains_key(name.name.as_ref())
+                    }
+                    ast::TSTypeName::QualifiedName(_) => true,
+                    ast::TSTypeName::ThisExpression(_) => true,
                 };
                 name_ok
                     && reference
-                        .type_params
+                        .type_arguments
                         .as_ref()
                         .is_none_or(|args| args.params.iter().all(|arg| self.written_type(arg)))
             }
-            ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
-                function.type_params.is_none()
-                    && self.written_type(&function.type_ann.type_ann)
-                    && function.params.iter().all(|param| match param {
-                        ast::TsFnParam::Ident(binding) => binding
-                            .type_ann
+            ast::TSType::TSFunctionType(function) => {
+                function.type_parameters.is_none()
+                    && self.written_type(&function.return_type.type_annotation)
+                    && function.params.rest.is_none()
+                    && function.this_param.as_ref().is_none_or(|p| {
+                        p.type_annotation
                             .as_ref()
-                            .is_some_and(|ann| self.written_type(&ann.type_ann)),
-                        _ => false,
+                            .is_some_and(|ann| self.written_type(&ann.type_annotation))
+                    })
+                    && function.params.items.iter().all(|param| {
+                        matches!(param.pattern, ast::BindingPattern::BindingIdentifier(_))
+                            && param
+                                .type_annotation
+                                .as_ref()
+                                .is_some_and(|ann| self.written_type(&ann.type_annotation))
                     })
             }
-            ast::TsType::TsArrayType(array) => self.written_type(&array.elem_type),
-            ast::TsType::TsParenthesizedType(paren) => self.written_type(&paren.type_ann),
-            ast::TsType::TsUnionOrIntersectionType(
-                ast::TsUnionOrIntersectionType::TsUnionType(union),
-            ) => union.types.iter().all(|ty| self.written_type(ty)),
+            ast::TSType::TSArrayType(array) => self.written_type(&array.element_type),
+            ast::TSType::TSParenthesizedType(paren) => self.written_type(&paren.type_annotation),
+            ast::TSType::TSUnionType(union) => union.types.iter().all(|ty| self.written_type(ty)),
             // Unsupported forms provide no proof for a loop store.
             _ => false,
         }

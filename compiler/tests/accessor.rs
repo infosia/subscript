@@ -100,7 +100,7 @@ fn write_accessor_rejects_a_return_type() {
     assert_eq!(diagnostic.code, RuleCode::S100);
     assert_eq!(
         diagnostic.message,
-        "a write accessor cannot declare a return type"
+        "parse error: A 'set' accessor cannot have a return type annotation."
     );
 }
 
@@ -112,7 +112,7 @@ fn write_accessor_rejects_a_parameter_default() {
     assert_eq!(diagnostic.code, RuleCode::S100);
     assert_eq!(
         diagnostic.message,
-        "a write accessor parameter cannot have a default"
+        "parse error: A 'set' accessor cannot have an initializer."
     );
 }
 

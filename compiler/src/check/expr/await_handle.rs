@@ -11,7 +11,7 @@ use super::*;
 use crate::check::rejection::RejectionSite;
 use crate::check::{FnCtx, FnSig, ScopeItem};
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Checks `await K.m(...)` for a synchronous static method `m` of a
     /// class `K` as an ordinary call, and returns its handle. A result that
     /// is not a handle keeps the diagnostic of an awaited static call,
@@ -20,33 +20,32 @@ impl Checker<'_> {
     /// rule 3a).
     pub(super) fn await_static_call(
         &mut self,
-        callee: &ast::Expr,
-        operand: &ast::Expr,
-        fx: &mut FnCtx,
+        callee: &ast::Expression,
+        operand: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> Option<hir::Expr> {
-        let ast::Expr::Member(member) = callee else {
+        let ast::Expression::StaticMemberExpression(member) = callee else {
             return None;
         };
-        let (ast::Expr::Ident(receiver), ast::MemberProp::Ident(name)) =
-            (&*member.obj, &member.prop)
-        else {
+        let ast::Expression::Identifier(receiver) = &member.object else {
             return None;
         };
-        if fx.owns_local_name(receiver.sym.as_ref()) {
+        let name = &member.property;
+        if fx.owns_local_name(receiver.name.as_ref()) {
             return None;
         }
-        let Some(ScopeItem::Class(class)) = self.peek_scope_item(receiver.sym.as_ref()) else {
+        let Some(ScopeItem::Class(class)) = self.peek_scope_item(receiver.name.as_ref()) else {
             return None;
         };
         let signatures = &self.class_sigs[class.0];
         let synchronous = signatures
             .static_methods
-            .get(name.sym.as_ref())
+            .get(name.name.as_ref())
             .is_some_and(|sig| !sig.is_async)
             || signatures
                 .static_generic_methods
-                .get(name.sym.as_ref())
-                .is_some_and(|template| !template.function.is_async);
+                .get(name.name.as_ref())
+                .is_some_and(|template| !template.function.r#async);
         if !synchronous {
             return None;
         }
@@ -59,7 +58,7 @@ impl Checker<'_> {
             return Some(handle);
         }
         // The receiver check gives the diagnostic of an awaited static call.
-        self.check_receiver(&member.obj, fx);
+        self.check_receiver(&member.object, fx);
         Some(self.err_expr(handle.pos))
     }
 
@@ -69,16 +68,16 @@ impl Checker<'_> {
         &mut self,
         receiver: hir::Expr,
         name: String,
-        sig: &FnSig,
-        call: &ast::CallExpr,
+        sig: &FnSig<'p>,
+        call: &ast::CallExpression,
         inferred: Option<Vec<Option<hir::Expr>>>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let pos = self.pos(call.span);
         let args = self.check_args_with_arguments(
             RejectionSite::InstanceMethodArgumentCount,
             &sig.params,
-            &call.args,
+            &call.arguments,
             fx,
             &pos,
             &name,
@@ -104,7 +103,7 @@ impl Checker<'_> {
     pub(super) fn await_call_handle(
         &mut self,
         handle: hir::Expr,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {

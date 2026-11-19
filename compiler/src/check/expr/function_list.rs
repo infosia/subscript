@@ -3,18 +3,18 @@
 use crate::check::{Checker, FnCtx, Local, Scope};
 use crate::hir::{self, ExprKind};
 use crate::types::Type;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use super::entry::ContextKind;
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Only a context-free function list may defer conditional placement
     /// until its candidate selection (§305 rules 1 and 3).
     pub(super) fn check_function_list_element(
         &mut self,
-        expr: &ast::Expr,
+        expr: &ast::Expression,
         hint: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         self.check_expr_as(expr, hint, ContextKind::FunctionListHint, fx)
     }
@@ -25,7 +25,7 @@ impl Checker<'_> {
         &mut self,
         expr: &mut hir::Expr,
         expected: &Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         what: &str,
     ) {
         if !matches!(self.apparent_type(expected), Type::Func(_)) {
@@ -50,7 +50,7 @@ impl Checker<'_> {
     pub(super) fn place_spread_function_list(
         &mut self,
         elements: &mut [hir::ArrayLitElem],
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<Type> {
         let mut frame = fx.clone();
         frame.scopes.push(Scope::default());
@@ -115,7 +115,7 @@ impl Checker<'_> {
         element: &mut hir::ArrayLitElem,
         own: &Type,
         expected: &Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) {
         if !self.needs_function_conversion(own, expected) {
             return;

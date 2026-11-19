@@ -58,6 +58,10 @@ line, and a malformed argument list.
    (`git = <URL>, branch = …`), pinned by commit in `Cargo.lock`
    (CLAUDE.md, non-goals: forks, no upstreaming). No other swc crate
    moves.
+   *(Amended 2026-11-20 by §341 rule 1: the parser is the `oxc` fork
+   https://github.com/infosia/oxc at `43ad6ed`. The `swc_ecma_parser`
+   fork is no longer a dependency. `r185` gives the `oxc` message at the
+   same position.)*
 3. **The mutation survey is a standing test.**
    `compiler/tests/robustness.rs` runs the same mutation set as the
    measurement (truncation, byte replacement, line deletion; 12 each)

@@ -1,8 +1,8 @@
 //! Checks member reads and index reads.
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::check::{Checker, FnCtx};
 use crate::diag::Pos;
@@ -12,33 +12,44 @@ use crate::types::Type;
 use super::path_key;
 
 impl<'p> Checker<'p> {
-    pub(super) fn check_member_read(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
+    pub(super) fn check_member_read(
+        &mut self,
+        m: &ast::MemberExpression,
+        fx: &mut FnCtx<'p>,
+    ) -> hir::Expr {
+        let view = super::member_view(m);
+        let m = &view;
         self.check_member_read_inner(m, fx, false, false)
     }
 
     pub(super) fn check_member_read_inner(
         &mut self,
-        m: &ast::MemberExpr,
-        fx: &mut FnCtx,
+        m: &ast::MemberExpression,
+        fx: &mut FnCtx<'p>,
         allow_absence_test: bool,
         truth_test: bool,
     ) -> hir::Expr {
+        let view = super::member_view(m);
+        let m = &view;
         let pos = self.pos(m.span);
-        if self.reject_caught_property(&m.obj, fx) || self.reject_static_this_member(m, fx) {
+        if self.reject_caught_property(m.object, fx) || self.reject_static_this_member(m, fx) {
             return self.err_expr(pos);
         }
         // Classify optional descriptor arithmetic before checking this.
         if let Some(default_type) = &fx.descriptor_default {
             if let Type::Class(class) = self.apparent_type(default_type) {
                 if fx.descriptor_numeric_operand
-                    && matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
-                    && matches!(&m.prop, ast::MemberProp::Ident(name) if self.classes[class.0]
-                        .fields.iter().any(|field| field.name == name.sym.as_ref()
+                    && matches!(
+                        super::unparen_expr(m.object),
+                        ast::Expression::ThisExpression(_)
+                    )
+                    && matches!(&m.prop, super::MemberKey::Ident(name) if self.classes[class.0]
+                        .fields.iter().any(|field| field.name == name.name.as_ref()
                             && (field.is_defaulted || field.is_absence_capable)))
                 {
-                    let string_member = if let ast::MemberProp::Ident(name) = &m.prop {
+                    let string_member = if let super::MemberKey::Ident(name) = &m.prop {
                         self.classes[class.0].fields.iter().any(|field| {
-                            field.name == name.sym.as_ref()
+                            field.name == name.name.as_ref()
                                 && self.apparent_type(&field.ty) == Type::Str
                         })
                     } else {
@@ -51,28 +62,30 @@ impl<'p> Checker<'p> {
                             RejectionSite::DescriptorDefaultOptionalNumericOperand
                         },
                         "§147 rule 3a: `this` is forbidden in a descriptor member default",
-                        self.pos(m.obj.span()),
+                        self.pos(m.object.span()),
                     );
                     return self.err_expr(pos);
                 }
             }
         }
         if let Some(initializer) = &fx.field_initializer {
-            if matches!(super::unparen_expr(&m.obj), ast::Expr::This(_))
-                && !initializer.write
+            if matches!(
+                super::unparen_expr(m.object),
+                ast::Expression::ThisExpression(_)
+            ) && !initializer.write
                 && !fx.frames.last().is_some_and(|frame| frame.is_lambda)
             {
-                if let ast::MemberProp::Ident(name) = &m.prop {
-                    if initializer.earlier.contains(name.sym.as_ref()) {
+                if let super::MemberKey::Ident(name) = &m.prop {
+                    if initializer.earlier.contains(name.name.as_ref()) {
                         let object = hir::Expr {
                             pending_work: None,
                             kind: ExprKind::This,
                             ty: initializer.class_type.clone(),
-                            pos: self.pos(m.obj.span()),
+                            pos: self.pos(m.object.span()),
                         };
                         return self.member_on(
                             object,
-                            name.sym.as_ref(),
+                            name.name.as_ref(),
                             self.pos(name.span),
                             None,
                             fx,
@@ -84,14 +97,14 @@ impl<'p> Checker<'p> {
                     let is_field = self.classes[class.0]
                         .fields
                         .iter()
-                        .any(|field| field.name == name.sym.as_ref());
-                    let message = format!("§147 rule 2: `this.{}` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden", name.sym);
-                    let this_pos = self.pos(m.obj.span());
+                        .any(|field| field.name == name.name.as_ref());
+                    let message = format!("§147 rule 2: `this.{}` must read an earlier instance field with an initializer; the current field, later fields, fields without initializers, methods, and accessors are forbidden", name.name);
+                    let this_pos = self.pos(m.object.span());
                     if is_field {
                         self.reject_subset(
                             if initializer
                                 .definite_uninitialized
-                                .contains(name.sym.as_ref())
+                                .contains(name.name.as_ref())
                             {
                                 RejectionSite::FieldInitializerUninitializedRead
                             } else {
@@ -112,8 +125,8 @@ impl<'p> Checker<'p> {
             }
         }
         let (name, prop_pos) = match &m.prop {
-            ast::MemberProp::Computed(c) => {
-                let obj = self.check_receiver(&m.obj, fx);
+            super::MemberKey::Computed(c) => {
+                let obj = self.check_receiver(m.object, fx);
                 let index_context = match &self.apparent_type(&obj.ty) {
                     Type::Class(id) => self.classes[id.0]
                         .index_signature
@@ -130,25 +143,25 @@ impl<'p> Checker<'p> {
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = false;
                 }
-                self.mark_operand_calls(&c.expr);
-                let index = self.check_expr(&c.expr, Some(&index_context), fx);
+                self.mark_operand_calls(&c.expression);
+                let index = self.check_expr(&c.expression, Some(&index_context), fx);
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;
                 }
                 return self.check_index(obj, index, pos, fx);
             }
-            ast::MemberProp::Ident(prop) => (prop.sym.to_string(), self.pos(prop.span)),
-            ast::MemberProp::PrivateName(prop) => {
+            super::MemberKey::Ident(prop) => (prop.name.to_string(), self.pos(prop.span)),
+            super::MemberKey::PrivateName(prop) => {
                 self.reject_unlowered_private_name(prop);
                 return self.err_expr(pos);
             }
         };
         if let Some(handled) =
-            self.check_namespace_member(&m.obj, &name, prop_pos.clone(), fx, false)
+            self.check_namespace_member(m.object, &name, prop_pos.clone(), fx, false)
         {
             return handled;
         }
-        let obj = self.check_receiver(&m.obj, fx);
+        let obj = self.check_receiver(m.object, fx);
         let mut expr = self.member_on_context(obj, &name, prop_pos, None, truth_test, fx);
         self.apply_narrowing(&mut expr, fx);
         let narrowed = path_key(&expr).is_some_and(|key| {
@@ -181,7 +194,7 @@ impl<'p> Checker<'p> {
         obj: hir::Expr,
         index: hir::Expr,
         pos: Pos,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> hir::Expr {
         let element_key = match &index.kind {
             ExprKind::Int(value) => Some(format!("int:{value}")),
@@ -291,7 +304,7 @@ impl<'p> Checker<'p> {
         prop_pos: Pos,
         // None is a read. Some records whether a write uses direct `this`.
         write: Option<bool>,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> hir::Expr {
         self.member_on_context(obj, name, prop_pos, write, false, fx)
     }
@@ -303,7 +316,7 @@ impl<'p> Checker<'p> {
         prop_pos: Pos,
         write: Option<bool>,
         truth_test: bool,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> hir::Expr {
         if self.apparent_type(&obj.ty) == Type::TaskGroup {
             self.reject_subset(
@@ -457,7 +470,7 @@ impl<'p> Checker<'p> {
                             format!("method `{name}` may only be called, not read as a value")
                         }, prop_pos.clone());
                 } else if let Some(template) = self.class_sigs[id.0].generic_methods.get(name) {
-                    self.reject_subset(if truth_test { RejectionSite::MethodValueTruthTest } else if template.function.is_async { RejectionSite::GenericAsyncMethodValue } else { RejectionSite::GenericSynchronousMethodValue }, if template.function.is_async {
+                    self.reject_subset(if truth_test { RejectionSite::MethodValueTruthTest } else if template.function.r#async { RejectionSite::GenericAsyncMethodValue } else { RejectionSite::GenericSynchronousMethodValue }, if template.function.r#async {
                             format!(
                                 "async method `{name}` is not a first-class value; call it directly in await position"
                             )

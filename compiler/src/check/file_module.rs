@@ -4,29 +4,33 @@ use crate::hir::StandardHostOperation as Op;
 
 pub(super) const FORMS: &str = "accepted forms: readFile(path: string, encoding: \"utf8\"): Promise<string>; readFile(path: string): Promise<u8[]>; writeFile(path: string, data: string): Promise<void>; writeFile(path: string, data: u8[]): Promise<void>";
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     pub(super) fn file_error(&self, site: RejectionSite, message: &str, pos: Pos) {
         self.diags.push(rejection::diagnostic(site, message, pos));
     }
     pub(super) fn check_file_call(
         &mut self,
         write: bool,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let invalid = call.type_args.is_some()
-            || call.args.iter().any(|a| a.spread.is_some())
+        let invalid = call.type_arguments.is_some()
+            || call.arguments.iter().any(|a| a.is_spread())
             || if write {
-                call.args.len() != 2
+                call.arguments.len() != 2
             } else {
-                !(1..=2).contains(&call.args.len())
+                !(1..=2).contains(&call.arguments.len())
             };
         if invalid {
             self.file_error(RejectionSite::FileModuleArguments, FORMS, pos.clone());
             return self.err_expr(pos);
         }
-        let path = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
+        let path = self.check_expr(
+            argument_expression(&call.arguments[0]),
+            Some(&Type::Str),
+            fx,
+        );
         let mut path = self.apparent_expr(path);
         // compiler.md §339 rule 4: the host receives the member string.
         self.convert_string_operand(
@@ -45,9 +49,12 @@ impl Checker<'_> {
         let mut args = vec![path];
         let op = if write {
             let byte_array = Type::Array(Box::new(Type::U8));
-            let expected =
-                matches!(&*call.args[1].expr, ast::Expr::Array(_)).then_some(&byte_array);
-            let data = self.check_expr(&call.args[1].expr, expected, fx);
+            let expected = matches!(
+                argument_expression(&call.arguments[1]),
+                ast::Expression::ArrayExpression(_)
+            )
+            .then_some(&byte_array);
+            let data = self.check_expr(argument_expression(&call.arguments[1]), expected, fx);
             let data = self.apparent_expr(data);
             let op = match &data.ty {
                 Type::Str => Op::WriteText,
@@ -78,16 +85,22 @@ impl Checker<'_> {
             };
             args.push(data);
             op
-        } else if call.args.len() == 1 {
+        } else if call.arguments.len() == 1 {
             Op::ReadBytes
         } else {
-            let encoding = &*call.args[1].expr;
+            let encoding = argument_expression(&call.arguments[1]);
             let literal = self.literal_operand(encoding, fx);
             match encoding {
                 _ if literal.as_ref().and_then(|value| value.as_string()) == Some("utf8") => {
                     self.check_expr(encoding, Some(&Type::Str), fx);
                 }
-                ast::Expr::Lit(_) | ast::Expr::Object(_) => {
+                ast::Expression::NumericLiteral(_)
+                | ast::Expression::StringLiteral(_)
+                | ast::Expression::BooleanLiteral(_)
+                | ast::Expression::NullLiteral(_)
+                | ast::Expression::BigIntLiteral(_)
+                | ast::Expression::RegExpLiteral(_)
+                | ast::Expression::ObjectExpression(_) => {
                     self.file_error(
                         RejectionSite::FileModuleArguments,
                         FORMS,

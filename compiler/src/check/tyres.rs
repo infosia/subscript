@@ -3,8 +3,8 @@
 //! S011 general unions, S012 `undefined`, S013 `Promise`).
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::types::Type;
 
@@ -15,12 +15,12 @@ impl<'p> Checker<'p> {
     /// function and returns the fulfilled `T` carried in HIR. Promise is
     /// deliberately not a general [`Type`]: no Promise value exists in the
     /// language (Q34).
-    pub(crate) fn resolve_async_return(&mut self, ty: &ast::TsType) -> Type {
-        let ast::TsType::TsTypeRef(reference) = ty else {
+    pub(crate) fn resolve_async_return(&mut self, ty: &ast::TSType) -> Type {
+        let ast::TSType::TSTypeReference(reference) = ty else {
             let pos = self.pos(ty.span());
             let parenthesized_promise = match ty {
-                ast::TsType::TsParenthesizedType(p) => {
-                    let resolved = self.resolve_type(&p.type_ann);
+                ast::TSType::TSParenthesizedType(p) => {
+                    let resolved = self.resolve_type(&p.type_annotation);
                     matches!(self.apparent_type(&resolved), Type::AsyncHandle(_))
                 }
                 _ => false,
@@ -36,7 +36,7 @@ impl<'p> Checker<'p> {
             );
             return Type::Error;
         };
-        let ast::TsEntityName::Ident(ident) = &reference.type_name else {
+        let ast::TSTypeName::IdentifierReference(ident) = &reference.type_name else {
             let pos = self.pos(reference.span);
             self.reject_subset(
                 RejectionSite::AsyncReturnQualifiedName,
@@ -46,16 +46,16 @@ impl<'p> Checker<'p> {
             return Type::Error;
         };
         if matches!(
-            self.type_scope_item(ident.sym.as_ref()),
+            self.type_scope_item(ident.name.as_ref()),
             Some(ScopeItem::Poisoned)
         ) {
             return Type::Error;
         }
-        if ident.sym.as_ref() != "Promise" || self.type_scope_item("Promise").is_some() {
+        if ident.name.as_ref() != "Promise" || self.type_scope_item("Promise").is_some() {
             let pos = self.pos(ident.span);
             self.reject_subset(
                 if self
-                    .type_scope_item(ident.sym.as_ref())
+                    .type_scope_item(ident.name.as_ref())
                     .is_some_and(|item| {
                         let ScopeItem::TypeAlias(ty) = item else {
                             return false;
@@ -72,7 +72,7 @@ impl<'p> Checker<'p> {
             );
             return Type::Error;
         }
-        let Some(args) = &reference.type_params else {
+        let Some(args) = &reference.type_arguments else {
             let pos = self.pos(ident.span);
             self.reject_subset(
                 RejectionSite::AsyncReturnMissingArgument,
@@ -96,64 +96,73 @@ impl<'p> Checker<'p> {
     /// Resolves an annotation to a language type, emitting rule
     /// diagnostics for banned spellings. Errors resolve to
     /// [`Type::Error`] so one bad annotation does not cascade.
-    pub(crate) fn resolve_type(&mut self, ty: &ast::TsType) -> Type {
+    pub(crate) fn resolve_type(&mut self, ty: &ast::TSType) -> Type {
         self.resolve_type_position(ty, false)
     }
 
     /// Resolves a return, generator element, or Promise result type.
-    pub(crate) fn resolve_result_type(&mut self, ty: &ast::TsType) -> Type {
+    pub(crate) fn resolve_result_type(&mut self, ty: &ast::TSType) -> Type {
         self.resolve_type_position(ty, true)
     }
 
-    fn resolve_type_position(&mut self, ty: &ast::TsType, allow_void: bool) -> Type {
+    fn resolve_type_position(&mut self, ty: &ast::TSType, allow_void: bool) -> Type {
         // §230 rule 3: a resolved type argument entry is read.
         if !self.type_argument_watch.is_empty() {
             self.type_argument_watch.remove(&ty.span());
         }
         let undefined_result = std::mem::take(&mut self.undefined_result);
         let resolved = match ty {
-            ast::TsType::TsKeywordType(kw) => self.resolve_keyword(kw),
-            ast::TsType::TsTypeRef(r) => self.resolve_type_ref(r),
-            ast::TsType::TsArrayType(arr) => {
-                let elem = self.resolve_type(&arr.elem_type);
-                let elem_pos = self.pos(arr.elem_type.span());
+            keyword if keyword.is_keyword() && !matches!(keyword, ast::TSType::TSThisType(_)) => {
+                self.resolve_keyword(keyword)
+            }
+            ast::TSType::TSTypeReference(r) => self.resolve_type_ref(r),
+            ast::TSType::TSArrayType(arr) => {
+                let elem = self.resolve_type(&arr.element_type);
+                let elem_pos = self.pos(arr.element_type.span());
                 let elem = self.container_argument(ContainerSlot::ArrayElement, elem, elem_pos);
                 Type::array(elem)
             }
-            ast::TsType::TsUnionOrIntersectionType(u) => self.resolve_union(u, undefined_result),
-            ast::TsType::TsFnOrConstructorType(f) => self.resolve_fn_type(f),
-            ast::TsType::TsParenthesizedType(p) => {
+            u @ (ast::TSType::TSUnionType(_) | ast::TSType::TSIntersectionType(_)) => {
+                self.resolve_union(u, undefined_result)
+            }
+            f @ (ast::TSType::TSFunctionType(_) | ast::TSType::TSConstructorType(_)) => {
+                self.resolve_fn_type(f)
+            }
+            ast::TSType::TSParenthesizedType(p) => {
                 self.undefined_result = undefined_result;
-                self.resolve_type_position(&p.type_ann, allow_void)
+                self.resolve_type_position(&p.type_annotation, allow_void)
             }
             other => {
                 let pos = self.pos(other.span());
                 self.reject_subset(
                     match other {
-                        ast::TsType::TsTupleType(_) => RejectionSite::TupleAnnotation,
-                        ast::TsType::TsThisType(_) => RejectionSite::ThisAnnotation,
-                        ast::TsType::TsTypeQuery(_) => RejectionSite::QueryAnnotation,
-                        ast::TsType::TsTypeLit(_) => RejectionSite::StructuralAnnotation,
-                        ast::TsType::TsOptionalType(_) => RejectionSite::OptionalAnnotation,
-                        ast::TsType::TsRestType(_) => RejectionSite::RestAnnotation,
-                        ast::TsType::TsConditionalType(_) => RejectionSite::ConditionalAnnotation,
-                        ast::TsType::TsInferType(_) => RejectionSite::InferAnnotation,
-                        ast::TsType::TsTypeOperator(op) if op.op == ast::TsTypeOperatorOp::KeyOf => RejectionSite::KeyofAnnotation,
-                        ast::TsType::TsTypeOperator(_) => RejectionSite::OperatorAnnotation,
-                        ast::TsType::TsIndexedAccessType(_) => RejectionSite::IndexedAnnotation,
-                        ast::TsType::TsMappedType(_) => RejectionSite::MappedAnnotation,
-                        ast::TsType::TsTypePredicate(_) => RejectionSite::PredicateAnnotation,
-                        ast::TsType::TsImportType(_) => RejectionSite::ImportAnnotation,
-                        ast::TsType::TsLitType(lit) => match &lit.lit {
-                            ast::TsLit::Str(_) => RejectionSite::StringLiteralAnnotation,
-                            ast::TsLit::Number(_) => RejectionSite::NumberLiteralAnnotation,
-                            ast::TsLit::Bool(_) => RejectionSite::BooleanLiteralAnnotation,
-                            ast::TsLit::BigInt(_) => RejectionSite::BigIntLiteralAnnotation,
-                            ast::TsLit::Tpl(_) => RejectionSite::TemplateLiteralAnnotation,
+                        ast::TSType::TSTupleType(_) => RejectionSite::TupleAnnotation,
+                        ast::TSType::TSThisType(_) => RejectionSite::ThisAnnotation,
+                        ast::TSType::JSDocNullableType(nullable) if nullable.postfix => RejectionSite::OptionalAnnotation,
+                        ast::TSType::TSTemplateLiteralType(_) => RejectionSite::TemplateLiteralAnnotation,
+                        ast::TSType::TSTypeQuery(_) => RejectionSite::QueryAnnotation,
+                        ast::TSType::TSTypeLiteral(_) => RejectionSite::StructuralAnnotation,
+
+
+                        ast::TSType::TSConditionalType(_) => RejectionSite::ConditionalAnnotation,
+                        ast::TSType::TSInferType(_) => RejectionSite::InferAnnotation,
+                        ast::TSType::TSTypeOperatorType(op) if op.operator == ast::TSTypeOperatorOperator::Keyof => RejectionSite::KeyofAnnotation,
+                        ast::TSType::TSTypeOperatorType(_) => RejectionSite::OperatorAnnotation,
+                        ast::TSType::TSIndexedAccessType(_) => RejectionSite::IndexedAnnotation,
+                        ast::TSType::TSMappedType(_) => RejectionSite::MappedAnnotation,
+                        ast::TSType::TSTypePredicate(_) => RejectionSite::PredicateAnnotation,
+                        ast::TSType::TSImportType(_) => RejectionSite::ImportAnnotation,
+                        ast::TSType::TSLiteralType(lit) => match &lit.literal {
+                            ast::TSLiteral::StringLiteral(_) => RejectionSite::StringLiteralAnnotation,
+                            ast::TSLiteral::NumericLiteral(_) => RejectionSite::NumberLiteralAnnotation,
+                            ast::TSLiteral::BooleanLiteral(_) => RejectionSite::BooleanLiteralAnnotation,
+                            ast::TSLiteral::BigIntLiteral(_) => RejectionSite::BigIntLiteralAnnotation,
+                            ast::TSLiteral::TemplateLiteral(_) => RejectionSite::TemplateLiteralAnnotation,
+                            ast::TSLiteral::UnaryExpression(unary) => if matches!(unary.argument, ast::Expression::BigIntLiteral(_)) { RejectionSite::BigIntLiteralAnnotation } else { RejectionSite::NumberLiteralAnnotation },
                         },
                         _ => RejectionSite::UnsupportedAnnotationKind,
                     },
-                    if matches!(other, ast::TsType::TsTypeOperator(op) if op.op == ast::TsTypeOperatorOp::KeyOf) { "`keyof` annotations are not supported; name each accepted key explicitly" } else { "type annotation form outside the decided surface" },
+                    if matches!(other, ast::TSType::TSTypeOperatorType(op) if op.operator == ast::TSTypeOperatorOperator::Keyof) { "`keyof` annotations are not supported; name each accepted key explicitly" } else { "type annotation form outside the decided surface" },
                     pos,
                 );
                 Type::Error
@@ -171,11 +180,10 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn resolve_keyword(&mut self, kw: &ast::TsKeywordType) -> Type {
-        use ast::TsKeywordTypeKind::*;
-        let pos = self.pos(kw.span);
-        match kw.kind {
-            TsNumberKeyword => {
+    fn resolve_keyword(&mut self, kw: &ast::TSType) -> Type {
+        let pos = self.pos(kw.span());
+        match kw {
+            ast::TSType::TSNumberKeyword(_) => {
                 self.reject_subset(
                     RejectionSite::AnyTypeAnnotation,
                     "bare `number` is rejected; there is no default numeric type — \
@@ -185,7 +193,7 @@ impl<'p> Checker<'p> {
                 );
                 Type::Error
             }
-            TsAnyKeyword => {
+            ast::TSType::TSAnyKeyword(_) => {
                 self.reject_subset(
                     RejectionSite::UnknownTypeAnnotation,
                     "`any` is not part of the language",
@@ -193,7 +201,7 @@ impl<'p> Checker<'p> {
                 );
                 Type::Error
             }
-            TsUndefinedKeyword => {
+            ast::TSType::TSUndefinedKeyword(_) => {
                 self.reject_subset(
                     RejectionSite::UndefinedKeywordAnnotation,
                     "`undefined` is legal only in `T | undefined`, the result type of a function declaration or a class method",
@@ -201,11 +209,11 @@ impl<'p> Checker<'p> {
                 );
                 Type::Error
             }
-            TsBooleanKeyword => Type::Bool,
-            TsStringKeyword => Type::Str,
-            TsVoidKeyword => Type::Void,
-            TsNullKeyword => Type::Null,
-            TsObjectKeyword => {
+            ast::TSType::TSBooleanKeyword(_) => Type::Bool,
+            ast::TSType::TSStringKeyword(_) => Type::Str,
+            ast::TSType::TSVoidKeyword(_) => Type::Void,
+            ast::TSType::TSNullKeyword(_) => Type::Null,
+            ast::TSType::TSObjectKeyword(_) => {
                 // C7: the boundary-opaque `object` (and `object | null`)
                 // exists only at the C boundary. It is legal while
                 // resolving a mirror declaration (`in_boundary`); general
@@ -230,11 +238,11 @@ impl<'p> Checker<'p> {
             }
             _ => {
                 self.reject_subset(
-                    match kw.kind {
-                        TsNeverKeyword => RejectionSite::NeverAnnotation,
-                        TsUnknownKeyword => RejectionSite::UnknownAnnotation,
-                        TsSymbolKeyword => RejectionSite::SymbolAnnotation,
-                        TsBigIntKeyword => RejectionSite::BigIntAnnotation,
+                    match kw {
+                        ast::TSType::TSNeverKeyword(_) => RejectionSite::NeverAnnotation,
+                        ast::TSType::TSUnknownKeyword(_) => RejectionSite::UnknownAnnotation,
+                        ast::TSType::TSSymbolKeyword(_) => RejectionSite::SymbolAnnotation,
+                        ast::TSType::TSBigIntKeyword(_) => RejectionSite::BigIntAnnotation,
                         _ => RejectionSite::UnsupportedKeywordKind,
                     },
                     "keyword type outside the decided surface",
@@ -245,8 +253,8 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn resolve_type_ref(&mut self, r: &ast::TsTypeRef) -> Type {
-        let ast::TsEntityName::Ident(ident) = &r.type_name else {
+    fn resolve_type_ref(&mut self, r: &ast::TSTypeReference) -> Type {
+        let ast::TSTypeName::IdentifierReference(ident) = &r.type_name else {
             let pos = self.pos(r.span);
             self.reject_subset(
                 RejectionSite::QualifiedSourceTypeName,
@@ -255,7 +263,7 @@ impl<'p> Checker<'p> {
             );
             return Type::Error;
         };
-        let name = ident.sym.as_ref();
+        let name = ident.name.as_ref();
         let pos = self.pos(ident.span);
 
         if let Some(bound) = self.subst.get(name) {
@@ -271,7 +279,7 @@ impl<'p> Checker<'p> {
         if name != "Array" {
             if let Some(ScopeItem::TypeAlias(alias)) = self.type_scope_item(name) {
                 // §202.1 rule 3a: an alias has no type parameters.
-                if r.type_params.is_some() {
+                if r.type_arguments.is_some() {
                     self.reject_subset(
                         RejectionSite::AliasTypeArguments,
                         format!("type alias `{name}` is not generic"),
@@ -285,7 +293,7 @@ impl<'p> Checker<'p> {
         match name {
             "Worker" | "Inbox" | "Outbox" if self.type_scope_item(name).is_none() => {
                 let expected = if name == "Worker" { 2 } else { 1 };
-                let Some(args) = &r.type_params else {
+                let Some(args) = &r.type_arguments else {
                     self.reject_subset(
                         RejectionSite::WorkerTypeArgumentsMissing,
                         format!(
@@ -342,7 +350,7 @@ impl<'p> Checker<'p> {
                 };
             }
             "TaskGroup" if self.type_scope_item(name).is_none() => {
-                if !self.task_group_type || r.type_params.is_some() || self.in_boundary {
+                if !self.task_group_type || r.type_arguments.is_some() || self.in_boundary {
                     self.reject_subset(
                         RejectionSite::TaskGroupPosition,
                         "TaskGroup requires one const local or a synchronous borrowed parameter",
@@ -353,7 +361,7 @@ impl<'p> Checker<'p> {
                 return Type::TaskGroup;
             }
             "RegExp" if self.type_scope_item(name).is_none() => {
-                if r.type_params.is_some() {
+                if r.type_arguments.is_some() {
                     self.reject_subset(
                         RejectionSite::RegExpTypeArguments,
                         "`RegExp` is not generic",
@@ -369,7 +377,7 @@ impl<'p> Checker<'p> {
                 return Type::Error;
             }
             "Promise" if self.type_scope_item(name).is_none() => {
-                let Some(args) = &r.type_params else {
+                let Some(args) = &r.type_arguments else {
                     self.reject_subset(
                         RejectionSite::PromiseTypeArgumentMissing,
                         "`Promise` requires exactly one fulfilled-value type argument",
@@ -385,8 +393,10 @@ impl<'p> Checker<'p> {
                     );
                     return Type::Error;
                 }
-                let value = match &*args.params[0] {
-                    ast::TsType::TsArrayType(array) if matches!(&*array.elem_type, ast::TsType::TsKeywordType(keyword) if keyword.kind == ast::TsKeywordTypeKind::TsVoidKeyword) => {
+                let value = match &args.params[0] {
+                    ast::TSType::TSArrayType(array)
+                        if matches!(&array.element_type, ast::TSType::TSVoidKeyword(_)) =>
+                    {
                         Type::array(Type::Void)
                     }
                     _ => self.resolve_result_type(&args.params[0]),
@@ -394,7 +404,7 @@ impl<'p> Checker<'p> {
                 return Type::async_handle(value);
             }
             "FixedArray" if self.type_scope_item(name).is_none() => {
-                let Some(args) = &r.type_params else {
+                let Some(args) = &r.type_arguments else {
                     self.reject_subset(
                         RejectionSite::FixedArrayTypeArgumentsMissing,
                         "`FixedArray` requires element type and length arguments",
@@ -413,11 +423,12 @@ impl<'p> Checker<'p> {
                 let elem = self.resolve_type(&args.params[0]);
                 let elem_pos = self.pos(args.params[0].span());
                 let elem = self.container_argument(ContainerSlot::ArrayElement, elem, elem_pos);
-                let len = match &*args.params[1] {
-                    ast::TsType::TsLitType(ast::TsLitType {
-                        lit: ast::TsLit::Number(n),
-                        ..
-                    }) if n.value >= 0.0 && n.value.fract() == 0.0 => {
+                let len = match &args.params[1] {
+                    ast::TSType::TSLiteralType(literal) if matches!(&literal.literal, ast::TSLiteral::NumericLiteral(n) if n.value >= 0.0 && n.value.fract() == 0.0) =>
+                    {
+                        let ast::TSLiteral::NumericLiteral(n) = &literal.literal else {
+                            return Type::Error;
+                        };
                         // compiler.md §254 rule 1: C has no array with the
                         // length zero.
                         if n.value == 0.0 {
@@ -484,7 +495,7 @@ impl<'p> Checker<'p> {
                 }
             }
             "Array" => {
-                if let Some(args) = &r.type_params {
+                if let Some(args) = &r.type_arguments {
                     if args.params.len() == 1 {
                         let elem = self.resolve_type(&args.params[0]);
                         let elem_pos = self.pos(args.params[0].span());
@@ -513,7 +524,7 @@ impl<'p> Checker<'p> {
                     );
                     return Type::Error;
                 }
-                if let Some(args) = &r.type_params {
+                if let Some(args) = &r.type_arguments {
                     if let Some(first) = args.params.first() {
                         let y = self.resolve_result_type(first);
                         for argument in args.params.iter().skip(1) {
@@ -537,7 +548,7 @@ impl<'p> Checker<'p> {
         if crate::check::exception::ErrorKind::from_name(name).is_some()
             && self.type_scope_item(name).is_none()
         {
-            if r.type_params.is_some() {
+            if r.type_arguments.is_some() {
                 self.reject_subset(
                     RejectionSite::ErrorTypeArguments,
                     format!("`{name}` is not generic"),
@@ -552,7 +563,7 @@ impl<'p> Checker<'p> {
         // checker resolves its accepted, monomorphized subset directly.
         // A program declaration shadows the ambient name, as for Date.
         if (name == "Map" || name == "Set") && self.type_scope_item(name).is_none() {
-            let Some(args) = &r.type_params else {
+            let Some(args) = &r.type_arguments else {
                 self.reject_subset(
                     RejectionSite::MapTypeArgumentsMissing,
                     format!("generic reference class `{name}` requires explicit type arguments"),
@@ -617,7 +628,7 @@ impl<'p> Checker<'p> {
         // when no program declaration shadows the name — a user class
         // named `Date` wins, exactly as for `Math`.
         if name == "Date" && self.type_scope_item(name).is_none() {
-            if r.type_params.is_some() {
+            if r.type_arguments.is_some() {
                 self.reject_subset(
                     RejectionSite::DateTypeArguments,
                     "`Date` is not generic",
@@ -630,7 +641,7 @@ impl<'p> Checker<'p> {
 
         match self.type_scope_item(name) {
             Some(ScopeItem::Poisoned) => {
-                if let Some(arguments) = &r.type_params {
+                if let Some(arguments) = &r.type_arguments {
                     for argument in &arguments.params {
                         let _ = self.resolve_type(argument);
                     }
@@ -638,7 +649,7 @@ impl<'p> Checker<'p> {
                 Type::Error
             }
             Some(ScopeItem::Class(id)) => {
-                if r.type_params.is_some() {
+                if r.type_arguments.is_some() {
                     self.reject_subset(
                         RejectionSite::NonGenericClassTypeArguments,
                         format!("`{}` is not generic", name),
@@ -648,7 +659,7 @@ impl<'p> Checker<'p> {
                 Type::Class(id)
             }
             Some(ScopeItem::GenericClass(key)) => {
-                let Some(args) = &r.type_params else {
+                let Some(args) = &r.type_arguments else {
                     self.reject_subset(
                         RejectionSite::GenericClassTypeArgumentsMissing,
                         format!("generic class `{}` requires explicit type arguments", name),
@@ -678,7 +689,7 @@ impl<'p> Checker<'p> {
                             ), pos);
                         Type::Error
                     }
-                } else if r.type_params.is_some() {
+                } else if r.type_arguments.is_some() {
                     self.reject_subset(
                         RejectionSite::LiteralAliasTypeArguments,
                         format!("string-literal union alias `{name}` is not generic"),
@@ -707,8 +718,8 @@ impl<'p> Checker<'p> {
     /// Resolves a union with an `undefined` member (compiler.md §195.1).
     fn resolve_undefined_union(
         &mut self,
-        union: &ast::TsUnionType,
-        span: swc_common::Span,
+        union: &ast::TSUnionType,
+        span: oxc_span::Span,
         undefined_result: bool,
     ) -> Type {
         let pos = self.pos(span);
@@ -720,10 +731,10 @@ impl<'p> Checker<'p> {
             );
             return Type::Error;
         }
-        let has_null = union.types.iter().any(|member| {
-            matches!(&**member, ast::TsType::TsKeywordType(kw)
-                if kw.kind == ast::TsKeywordTypeKind::TsNullKeyword)
-        });
+        let has_null = union
+            .types
+            .iter()
+            .any(|member| matches!(member, ast::TSType::TSNullKeyword(_)));
         if has_null {
             self.reject_subset(
                 RejectionSite::UndefinedNullUnion,
@@ -735,10 +746,7 @@ impl<'p> Checker<'p> {
         let others: Vec<_> = union
             .types
             .iter()
-            .filter(|member| {
-                !matches!(&***member, ast::TsType::TsKeywordType(kw)
-                    if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword)
-            })
+            .filter(|member| !matches!(*member, ast::TSType::TSUndefinedKeyword(_)))
             .collect();
         let [base] = others.as_slice() else {
             self.reject_subset(
@@ -774,14 +782,10 @@ impl<'p> Checker<'p> {
                 .is_reference_shape(&self.type_handle_classes)
     }
 
-    fn resolve_union(
-        &mut self,
-        u: &ast::TsUnionOrIntersectionType,
-        undefined_result: bool,
-    ) -> Type {
+    fn resolve_union(&mut self, u: &ast::TSType, undefined_result: bool) -> Type {
         let union = match u {
-            ast::TsUnionOrIntersectionType::TsUnionType(union) => union,
-            ast::TsUnionOrIntersectionType::TsIntersectionType(i) => {
+            ast::TSType::TSUnionType(union) => union,
+            ast::TSType::TSIntersectionType(i) => {
                 let pos = self.pos(i.span);
                 self.reject_subset(
                     RejectionSite::IntersectionTypeAnnotation,
@@ -790,19 +794,11 @@ impl<'p> Checker<'p> {
                 );
                 return Type::Error;
             }
+            _ => return Type::Error,
         };
-        let is_null = |t: &ast::TsType| {
-            matches!(
-                t,
-                ast::TsType::TsKeywordType(kw) if kw.kind == ast::TsKeywordTypeKind::TsNullKeyword
-            )
-        };
-        let undefined_member = union.types.iter().find_map(|member| match &**member {
-            ast::TsType::TsKeywordType(kw)
-                if kw.kind == ast::TsKeywordTypeKind::TsUndefinedKeyword =>
-            {
-                Some(kw.span)
-            }
+        let is_null = |t: &ast::TSType| matches!(t, ast::TSType::TSNullKeyword(_));
+        let undefined_member = union.types.iter().find_map(|member| match member {
+            ast::TSType::TSUndefinedKeyword(kw) => Some(kw.span),
             _ => None,
         });
         if let Some(span) = undefined_member {
@@ -847,21 +843,18 @@ impl<'p> Checker<'p> {
         let pos = self.pos(union.span);
         let site = if union.types.iter().all(|member| {
             matches!(
-                &**member,
-                ast::TsType::TsLitType(ast::TsLitType {
-                    lit: ast::TsLit::Str(_),
-                    ..
-                })
+                member,
+                ast::TSType::TSLiteralType(literal) if matches!(literal.literal, ast::TSLiteral::StringLiteral(_))
             )
         }) {
             RejectionSite::UnionLiteralUnionAlias
-        } else if union.types.iter().any(|member| matches!(&**member, ast::TsType::TsTypeRef(reference)
-            if matches!(&reference.type_name, ast::TsEntityName::Ident(ident)
-                if !self.subst.contains_key(ident.sym.as_ref())
-                    && self.type_scope_item(ident.sym.as_ref()).is_none()
-                    && crate::ambient::sized_alias(ident.sym.as_ref()).is_none()
-                    && !crate::ambient::lib_type_name(ident.sym.as_ref())
-                    && !matches!(ident.sym.as_ref(), "FixedArray" | "Context" | "Worker" | "Inbox" | "Outbox" | "CEnum")))) {
+        } else if union.types.iter().any(|member| matches!(member, ast::TSType::TSTypeReference(reference)
+            if matches!(&reference.type_name, ast::TSTypeName::IdentifierReference(ident)
+                if !self.subst.contains_key(ident.name.as_ref())
+                    && self.type_scope_item(ident.name.as_ref()).is_none()
+                    && crate::ambient::sized_alias(ident.name.as_ref()).is_none()
+                    && !crate::ambient::lib_type_name(ident.name.as_ref())
+                    && !matches!(ident.name.as_ref(), "FixedArray" | "Context" | "Worker" | "Inbox" | "Outbox" | "CEnum")))) {
             RejectionSite::UnionUnknownTypeMember
         } else {
             RejectionSite::UnionGeneralUnionAndUndefined
@@ -870,10 +863,10 @@ impl<'p> Checker<'p> {
         Type::Error
     }
 
-    fn resolve_fn_type(&mut self, f: &ast::TsFnOrConstructorType) -> Type {
+    fn resolve_fn_type(&mut self, f: &ast::TSType) -> Type {
         let fn_ty = match f {
-            ast::TsFnOrConstructorType::TsFnType(fn_ty) => fn_ty,
-            ast::TsFnOrConstructorType::TsConstructorType(c) => {
+            ast::TSType::TSFunctionType(fn_ty) => fn_ty,
+            ast::TSType::TSConstructorType(c) => {
                 let pos = self.pos(c.span);
                 self.reject_subset(
                     RejectionSite::ConstructorTypeAnnotation,
@@ -882,59 +875,58 @@ impl<'p> Checker<'p> {
                 );
                 return Type::Error;
             }
+            _ => return Type::Error,
         };
-        if fn_ty
-            .type_params
-            .as_deref()
-            .is_some_and(|params| self.reject_reserved_type_parameter_names(params))
-        {
-            return Type::Error;
-        }
         let mut params = Vec::new();
-        for p in &fn_ty.params {
-            let optional = match p {
-                ast::TsFnParam::Ident(binding) => binding.id.optional,
-                ast::TsFnParam::Array(pattern) => pattern.optional,
-                ast::TsFnParam::Object(pattern) => pattern.optional,
-                ast::TsFnParam::Rest(_) => false,
-            };
-            if optional {
+        for parameter in super::formal_parameters(
+            fn_ty.this_param.as_deref(),
+            &fn_ty.params,
+            self.prog.allocator,
+        ) {
+            if parameter.optional {
                 self.reject_subset(
                     RejectionSite::OptionalFunctionTypeParameter,
                     "optional parameters in function types are not supported (C7)",
-                    self.pos(p.span()),
+                    self.pos(parameter.span),
                 );
                 return Type::Error;
             }
-            match p {
-                ast::TsFnParam::Ident(binding) => match &binding.type_ann {
-                    Some(ann) => params.push(self.resolve_type(&ann.type_ann)),
-                    None => {
-                        let pos = self.pos(binding.id.span);
+            match &parameter.pattern {
+                ast::BindingPattern::BindingIdentifier(binding) => {
+                    if let Some(annotation) = &parameter.type_annotation {
+                        params.push(self.resolve_type(&annotation.type_annotation));
+                    } else {
                         self.reject_subset(
                             RejectionSite::FunctionTypeParameterAnnotationMissing,
                             "function type parameters require annotations",
-                            pos,
+                            self.pos(binding.span),
                         );
                         params.push(Type::Error);
                     }
-                },
+                }
                 other => {
-                    let pos = self.pos(other.span());
                     self.reject_subset(
-                        match other {
-                            ast::TsFnParam::Rest(_) => RejectionSite::FunctionTypeRestParameter,
-                            ast::TsFnParam::Array(_) => RejectionSite::FunctionTypeArrayPattern,
-                            _ => RejectionSite::FunctionTypeObjectPattern,
+                        if matches!(other, ast::BindingPattern::ArrayPattern(_)) {
+                            RejectionSite::FunctionTypeArrayPattern
+                        } else {
+                            RejectionSite::FunctionTypeObjectPattern
                         },
                         "function type parameter form outside the decided surface",
-                        pos,
+                        self.pos(parameter.span),
                     );
                     params.push(Type::Error);
                 }
             }
         }
-        let ret = self.resolve_result_type(&fn_ty.type_ann.type_ann);
+        if let Some(rest) = &fn_ty.params.rest {
+            self.reject_subset(
+                RejectionSite::FunctionTypeRestParameter,
+                "function type parameter form outside the decided surface",
+                self.pos(rest.span),
+            );
+            params.push(Type::Error);
+        }
+        let ret = self.resolve_result_type(&fn_ty.return_type.type_annotation);
         Type::func(params, ret)
     }
 }

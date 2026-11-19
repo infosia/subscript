@@ -5,9 +5,9 @@ use crate::check::{Checker, FnCtx, ScopeItem};
 use crate::diag::Pos;
 use crate::hir::{self, ExprKind};
 use crate::types::Type;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Checks the one source operand of `new Set<K>(source)`
     /// (compiler.md §103.1). `source` is `K[]`, `FixedArray<K, N>`,
     /// `Set<K>`, or, for `Set<string>`, a `string` that yields one code
@@ -15,13 +15,13 @@ impl Checker<'_> {
     /// (compiler.md §197 rule 6). Returns `None` when the form is rejected.
     pub(super) fn check_set_source(
         &mut self,
-        argument: &ast::ExprOrSpread,
+        argument: &ast::Argument,
         checked: Option<hir::Expr>,
         key: &Type,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Option<hir::Expr> {
-        if let Some(spread) = argument.spread {
-            let spread_pos = self.pos(spread);
+        if let ast::Argument::SpreadElement(spread) = argument {
+            let spread_pos = self.pos(spread.span);
             self.reject_subset(
                 RejectionSite::SetSourceSpread,
                 "spread arguments require variadic parameters, which the language does not have",
@@ -31,7 +31,11 @@ impl Checker<'_> {
         }
         // compiler.md §336 rule 1: the Set element gives the source its array context.
         let source = checked.unwrap_or_else(|| {
-            self.check_expr(&argument.expr, Some(&Type::array(key.clone())), fx)
+            self.check_expr(
+                crate::check::argument_expression(argument),
+                Some(&Type::array(key.clone())),
+                fx,
+            )
         });
         let element = match &self.apparent_type(&source.ty) {
             Type::Error => return None,
@@ -74,16 +78,16 @@ impl Checker<'_> {
     /// (compiler.md §132 rule 2).
     pub(super) fn check_new(
         &mut self,
-        n: &ast::NewExpr,
+        n: &ast::NewExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let mut callee: &ast::Expr = &n.callee;
-        while let ast::Expr::Paren(p) = callee {
-            callee = &p.expr;
+        let mut callee: &ast::Expression = &n.callee;
+        while let ast::Expression::ParenthesizedExpression(p) = callee {
+            callee = &p.expression;
         }
-        let ast::Expr::Ident(id) = callee else {
+        let ast::Expression::Identifier(id) = callee else {
             self.reject_subset(
                 RejectionSite::ConstructorNotNamedClass,
                 "`new` requires a class name",
@@ -91,7 +95,7 @@ impl Checker<'_> {
             );
             return self.err_expr(pos);
         };
-        let name = id.sym.to_string();
+        let name = id.name.to_string();
         let ident_pos = self.pos(id.span);
         if name == "TaskGroup" && self.ambient_visible(&name, fx) {
             return self.check_task_group_new(n, fx, pos);
@@ -171,13 +175,11 @@ impl Checker<'_> {
         let mut checked = None;
         let class_id = match self.scope_item(&name, &ident_pos, fx) {
             Some(ScopeItem::Poisoned | ScopeItem::Namespace { .. } | ScopeItem::Interface(_)) => {
-                if let Some(arguments) = &n.args {
-                    self.check_poisoned_arguments(arguments, fx);
-                }
+                self.check_poisoned_arguments(&n.arguments, fx);
                 return self.err_expr(pos);
             }
             Some(ScopeItem::Class(class_id)) => {
-                if n.type_args.is_some() {
+                if n.type_arguments.is_some() {
                     self.reject_subset(
                         RejectionSite::NonGenericConstructorTypeArguments,
                         format!("`{}` is not generic", name),
@@ -193,12 +195,10 @@ impl Checker<'_> {
                     format!("type alias `{name}` used as a value"),
                     ident_pos.clone(),
                 );
-                if let Some(arguments) = &n.args {
-                    self.check_poisoned_arguments(arguments, fx);
-                }
+                self.check_poisoned_arguments(&n.arguments, fx);
                 return self.err_expr(pos);
             }
-            Some(ScopeItem::GenericClass(key)) => match &n.type_args {
+            Some(ScopeItem::GenericClass(key)) => match &n.type_arguments {
                 Some(type_args) => {
                     let arguments = self.resolve_instance_arguments(type_args);
                     if arguments.types.contains(&Type::Error) {
@@ -207,8 +207,7 @@ impl Checker<'_> {
                         // the constructor argument count do not depend on
                         // the argument types, so each still reports.
                         let _ = self.instantiate_class(&key, &arguments, ident_pos.clone());
-                        let constructor_arguments: &[ast::ExprOrSpread] =
-                            n.args.as_deref().unwrap_or(&[]);
+                        let constructor_arguments: &[ast::Argument] = n.arguments.as_slice();
                         let type_argument_count = self
                             .generic_classes
                             .get(&key)
@@ -230,8 +229,7 @@ impl Checker<'_> {
                     self.instantiate_class(&key, &arguments, ident_pos.clone())
                 }
                 None => {
-                    let constructor_arguments: &[ast::ExprOrSpread] =
-                        n.args.as_deref().unwrap_or(&[]);
+                    let constructor_arguments: &[ast::Argument] = n.arguments.as_slice();
                     let (arguments, values) = match self.infer_constructor_arguments(
                         &key,
                         constructor_arguments,
@@ -309,8 +307,7 @@ impl Checker<'_> {
         }
         self.decide_constructor_parameters(class_id);
         let params = self.class_sigs[class_id.0].ctor.clone().unwrap_or_default();
-        let empty: Vec<ast::ExprOrSpread> = Vec::new();
-        let args_ast = n.args.as_deref().unwrap_or(&empty);
+        let args_ast = n.arguments.as_slice();
         let args = self.check_args_with_arguments(
             RejectionSite::ReferenceConstructorArgumentCount,
             &params,

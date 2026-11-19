@@ -6,13 +6,13 @@
 //! bound below is a wall clock: an exponential walk cannot meet it at
 //! depth 200, whatever the host.
 //!
-//! Core principle 15: the cost of these two tests is the stack. Each one
-//! runs on the thread that libtest gives it, which holds 2,097,152 bytes
-//! in every build of Rust. One `check_program` and one `check_warnings`
-//! at depth 200 need over 917,504 and under 950,272 bytes unoptimized.
-//! The same pair needs over 262,144 and under 524,288 bytes optimized.
-//! The margins over the libtest stack are therefore 2.2 and 4.0. Method,
-//! on the x86-64 Linux host:
+//! Core principle 15: the cost of these two tests is the stack. Each test
+//! uses the unchanged libtest stack of 2,097,152 bytes. At depth 200,
+//! one `check_program` plus one `check_warnings` fails at 999,424 bytes
+//! and passes at 1,003,520 bytes in debug. In release, it fails at
+//! 770,048 bytes and passes at 774,144 bytes. The margins are therefore
+//! at least 2.08 and 2.70. Both tests also pass at 1,048,576 bytes.
+//! Method on the arm64 macOS host: binary search in 4,096-byte steps,
 //! `RUST_MIN_STACK=<n> target/<profile>/deps/nesting-* --test-threads=1`.
 //! A stack overflow ends the test binary, so the gate reads the loss as
 //! a count that fell, not as one named failure. The margin is the guard
@@ -27,9 +27,9 @@ const DEPTH: usize = 200;
 
 /// The wall-clock bound one chain must meet on a debug build.
 ///
-/// The measured times on this project's arm64 host are 5.5 ms for the
-/// `!` chain and 5.8 ms for the `-` chain, so the bound holds a margin
-/// over 30x. The shape it rejects is `2^200`, not a slow host.
+/// The measured times on this project's arm64 host are 6.8 ms for the
+/// `!` chain and 4.1 ms for the `-` chain, so the bound holds a margin
+/// over 29x. The shape it rejects is `2^200`, not a slow host.
 const BOUND: Duration = Duration::from_millis(200);
 
 /// One chain of `count` copies of `operator` over `leaf`, typed `ty`.

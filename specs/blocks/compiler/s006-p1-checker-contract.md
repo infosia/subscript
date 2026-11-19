@@ -53,3 +53,5 @@ Observable obligations only; internal design is the implementer's.
 - SWC front end pinned in `Cargo.lock` (`swc_common 5.0.1`-compatible
   family; the Cranelift 0.125.4 serde constraint —
   `specs/tracking/p0.5-mobile-link.md` — binds the choice).
+  *(Amended 2026-11-20 by §341: the front end is the `oxc` fork; the
+  `swc` crates and the `serde` pin are gone.)*

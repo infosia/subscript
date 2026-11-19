@@ -6,13 +6,10 @@ description = "Semantic checker and typed HIR for the subscript language (plan p
 
 [dependencies]
 subscript-boundary = { path = "../boundary" }
-# swc_common 5.0.1 imports `serde::__private`, which later serde 1.x releases
-# removed; the pin keeps the resolved serde at a version that still has it.
-serde = "=1.0.219"
-swc_common = "=5.0.1"
-swc_ecma_ast = "=5.1.0"
-# Forked for the EOF fix in `parse_ts_enum_member` (compiler.md §90):
-# upstream 6.0.2 calls `bump!` with no current token, a panic in debug
-# and undefined behaviour in release. Pinned by commit in `Cargo.lock`.
-swc_ecma_parser = { git = "https://github.com/infosia/swc_ecma_parser", branch = "subscript-eof-bump" }
+oxc_allocator = { git = "https://github.com/infosia/oxc", rev = "43ad6ed5043f524f78c16a2d874b5fc588942a15" }
+oxc_ast = { git = "https://github.com/infosia/oxc", rev = "43ad6ed5043f524f78c16a2d874b5fc588942a15" }
+oxc_ast_visit = { git = "https://github.com/infosia/oxc", rev = "43ad6ed5043f524f78c16a2d874b5fc588942a15" }
+oxc_parser = { git = "https://github.com/infosia/oxc", rev = "43ad6ed5043f524f78c16a2d874b5fc588942a15", default-features = false }
+oxc_semantic = { git = "https://github.com/infosia/oxc", rev = "43ad6ed5043f524f78c16a2d874b5fc588942a15" }
+oxc_span = { git = "https://github.com/infosia/oxc", rev = "43ad6ed5043f524f78c16a2d874b5fc588942a15" }
 regress = { git = "https://github.com/infosia/regress", branch = "subscript-exec-budget" }

@@ -2,8 +2,8 @@
 
 use crate::check::rejection::RejectionSite;
 
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::check::{AsyncOrigins, Checker, FnCtx, ScopeItem};
 use crate::diag::Pos;
@@ -15,31 +15,36 @@ use super::contextual_object_class;
 impl<'p> Checker<'p> {
     pub(in crate::check) fn check_truth_expr(
         &mut self,
-        expression: &ast::Expr,
-        fx: &mut FnCtx,
+        expression: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let saved_operand = std::mem::replace(&mut self.inferring_result_operand, false);
         let checked = match super::unparen_expr(expression) {
-            ast::Expr::Member(member) => self.check_member_read_inner(member, fx, false, true),
+            expression if expression.as_member_expression().is_some() => {
+                match expression.as_member_expression() {
+                    Some(member) => self.check_member_read_inner(member, fx, false, true),
+                    None => self.err_expr(self.pos(expression.span())),
+                }
+            }
             expression => self.check_expr(expression, None, fx),
         };
         self.inferring_result_operand = saved_operand;
         checked
     }
 
-    pub(in crate::check) fn ambient_visible(&self, name: &str, fx: &FnCtx) -> bool {
+    pub(in crate::check) fn ambient_visible(&self, name: &str, fx: &FnCtx<'p>) -> bool {
         !fx.owns_local_name(name) && self.peek_scope_item(name).is_none()
     }
 
     pub(in crate::check) fn ambient_namespace(
         &self,
-        obj: &ast::Expr,
-        fx: &FnCtx,
+        obj: &ast::Expression,
+        fx: &FnCtx<'p>,
     ) -> Option<&'static str> {
-        let ast::Expr::Ident(id) = obj else {
+        let ast::Expression::Identifier(id) = obj else {
             return None;
         };
-        let name = match id.sym.as_ref() {
+        let name = match id.name.as_ref() {
             "Array" => "Array",
             "Context" => "Context",
             "Math" => "Math",
@@ -58,7 +63,7 @@ impl<'p> Checker<'p> {
     }
 
     /// Returns the must-await origins carried through one checked value.
-    pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx) -> AsyncOrigins {
+    pub(crate) fn expr_async_origins(&self, expr: &hir::Expr, fx: &FnCtx<'p>) -> AsyncOrigins {
         use hir::ExprKind as K;
         match &expr.kind {
             K::TaskGroup {
@@ -139,7 +144,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn track_async_call_result(
         &mut self,
         value: hir::Expr,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         if !self.apparent_type(&value.ty).holds_async_handle() {
             return value;
@@ -196,9 +201,9 @@ impl<'p> Checker<'p> {
     /// suffix-less numeric literals (C4); it never coerces non-literals.
     pub(crate) fn check_expr(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         self.check_expr_with_header_receiver(e, ctx, fx, false)
     }
@@ -208,19 +213,19 @@ impl<'p> Checker<'p> {
     /// (compiler.md §249 rule 1).
     pub(crate) fn check_expr_as(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         ctx: Option<&Type>,
         kind: ContextKind,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         self.check_expr_with_policy(e, (ctx, kind), fx, false, false, false)
     }
 
     pub(super) fn check_expr_with_header_receiver(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         self.check_expr_with_policy(
@@ -237,8 +242,8 @@ impl<'p> Checker<'p> {
     /// its callee read, and an awaited call still reads its callee's result.
     pub(in crate::check) fn check_expr_with_result_dependency(
         &mut self,
-        e: &ast::Expr,
-        fx: &mut FnCtx,
+        e: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         self.check_expr_with_policy(e, (None, ContextKind::Contextual), fx, false, false, true)
     }
@@ -249,9 +254,9 @@ impl<'p> Checker<'p> {
     /// leaves are each `void` is `void` (§258 rule 3).
     pub(crate) fn check_expr_keeping_void(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let e = self.enter_void_leaf_place(e, super::VoidLeafPlace::VoidResult);
         let checked = self.check_expr_keeping_void_as(e, ctx, ContextKind::Contextual, fx);
@@ -262,14 +267,16 @@ impl<'p> Checker<'p> {
     /// Checks one expression that keeps a `void` type.
     pub(super) fn check_expr_keeping_void_as(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         ctx: Option<&Type>,
         kind: ContextKind,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let result_operand = matches!(
             super::unparen_expr(e),
-            ast::Expr::Call(_) | ast::Expr::Await(_) | ast::Expr::Cond(_)
+            ast::Expression::CallExpression(_)
+                | ast::Expression::AwaitExpression(_)
+                | ast::Expression::ConditionalExpression(_)
         );
         self.check_expr_with_policy(e, (ctx, kind), fx, false, true, result_operand)
     }
@@ -290,24 +297,27 @@ impl<'p> Checker<'p> {
 
     fn check_expr_with_policy(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         (ctx, kind): (Option<&Type>, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         allow_embedded_header_receiver: bool,
         keep_void: bool,
         preserve_result_operand: bool,
     ) -> hir::Expr {
         let previous_numeric = fx.descriptor_numeric_operand;
         if fx.descriptor_default.is_some() {
-            if matches!(e, ast::Expr::Bin(b) if matches!(b.op,
-                ast::BinaryOp::Add | ast::BinaryOp::Sub | ast::BinaryOp::Mul |
-                ast::BinaryOp::Div | ast::BinaryOp::Mod | ast::BinaryOp::Exp |
-                ast::BinaryOp::LShift | ast::BinaryOp::RShift | ast::BinaryOp::ZeroFillRShift |
-                ast::BinaryOp::BitOr | ast::BinaryOp::BitXor | ast::BinaryOp::BitAnd))
-                || matches!(e, ast::Expr::Unary(u) if matches!(u.op, ast::UnaryOp::Minus | ast::UnaryOp::Plus | ast::UnaryOp::Tilde))
+            if matches!(e, ast::Expression::BinaryExpression(b) if matches!(b.operator,
+                ast::BinaryOperator::Addition | ast::BinaryOperator::Subtraction | ast::BinaryOperator::Multiplication |
+                ast::BinaryOperator::Division | ast::BinaryOperator::Remainder | ast::BinaryOperator::Exponential |
+                ast::BinaryOperator::ShiftLeft | ast::BinaryOperator::ShiftRight | ast::BinaryOperator::ShiftRightZeroFill |
+                ast::BinaryOperator::BitwiseOR | ast::BinaryOperator::BitwiseXOR | ast::BinaryOperator::BitwiseAnd))
+                || matches!(e, ast::Expression::UnaryExpression(u) if matches!(u.operator, ast::UnaryOperator::UnaryNegation | ast::UnaryOperator::UnaryPlus | ast::UnaryOperator::BitwiseNot))
             {
                 fx.descriptor_numeric_operand = true;
-            } else if matches!(e, ast::Expr::Call(_) | ast::Expr::Arrow(_)) {
+            } else if matches!(
+                e,
+                ast::Expression::CallExpression(_) | ast::Expression::ArrowFunctionExpression(_)
+            ) {
                 fx.descriptor_numeric_operand = false;
             }
         }
@@ -325,6 +335,17 @@ impl<'p> Checker<'p> {
             self.check_expr_inner(e, (expected, kind), fx, allow_embedded_header_receiver);
         self.inferring_result_operand = saved_operand;
         fx.descriptor_numeric_operand = previous_numeric;
+        self.finish_expr_policy(checked, ctx, fx, allow_embedded_header_receiver, keep_void)
+    }
+
+    fn finish_expr_policy(
+        &mut self,
+        checked: hir::Expr,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx<'p>,
+        allow_embedded_header_receiver: bool,
+        keep_void: bool,
+    ) -> hir::Expr {
         if self.apparent_type(&checked.ty) == Type::TaskGroup
             && fx.frames.iter().any(|frame| frame.is_generator)
         {
@@ -373,11 +394,11 @@ impl<'p> Checker<'p> {
     /// member or its call.
     pub(crate) fn check_void_operand(
         &mut self,
-        e: &ast::Expr,
-        fx: &mut FnCtx,
+        e: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> (Vec<hir::Stmt>, Type) {
         let e = super::unparen_expr(e);
-        if let ast::Expr::OptChain(chain) = e {
+        if let ast::Expression::ChainExpression(chain) = e {
             return self.check_optional_chain_operand(chain, fx);
         }
         let checked = self.check_expr_inner(e, (None, ContextKind::Contextual), fx, false);
@@ -387,9 +408,9 @@ impl<'p> Checker<'p> {
 
     fn check_expr_inner(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         expected: (Option<&Type>, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         self.expression_work.push(None);
@@ -403,9 +424,9 @@ impl<'p> Checker<'p> {
 
     fn check_expr_inner_untracked(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         (ctx, kind): (Option<&Type>, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         allow_embedded_header_receiver: bool,
     ) -> hir::Expr {
         let pos = self.pos(e.span());
@@ -417,9 +438,73 @@ impl<'p> Checker<'p> {
         } else {
             kind
         };
-        let mut checked = match e {
-            ast::Expr::Paren(p) => self.check_expr_with_policy(
-                &p.expr,
+        // A handler can skip the ordinary finish, as a direct return does.
+        let mut early_return = false;
+        let checked = self.check_expr_form(
+            e,
+            (ctx, kind, list_candidate),
+            fx,
+            allow_embedded_header_receiver,
+            pos,
+            &mut early_return,
+        );
+        if early_return {
+            return checked;
+        }
+        self.finish_expr_form(e, ctx, checked, fx, allow_embedded_header_receiver)
+    }
+
+    fn finish_expr_form(
+        &mut self,
+        e: &ast::Expression,
+        ctx: Option<&Type>,
+        mut checked: hir::Expr,
+        fx: &mut FnCtx<'p>,
+        allow_embedded_header_receiver: bool,
+    ) -> hir::Expr {
+        // compiler.md §339 rules 1–3: a literal place reads a const's literal.
+        if self.apparent_type(&checked.ty) == Type::Str
+            && ctx.is_some_and(|ty| matches!(self.apparent_type(ty), Type::StringAlias(_)))
+            && matches!(
+                super::unparen_expr(e),
+                ast::Expression::Identifier(_) | ast::Expression::TemplateLiteral(_)
+            )
+        {
+            if let Some(text) = self
+                .literal_operand(e, fx)
+                .and_then(|value| value.as_string().map(str::to_owned))
+            {
+                checked = self.check_lit(
+                    &ast::Expression::new_string_literal(
+                        e.span(),
+                        text.as_str(),
+                        None,
+                        &oxc_ast::builder::AstBuilder::new(self.prog.allocator),
+                    ),
+                    ctx,
+                    checked.pos.clone(),
+                );
+            }
+        }
+        self.end_shared_narrowing(&checked, fx);
+        if !allow_embedded_header_receiver {
+            self.reject_embedded_header_copy(&mut checked, ctx);
+        }
+        checked
+    }
+
+    fn check_expr_form(
+        &mut self,
+        e: &ast::Expression,
+        (ctx, kind, list_candidate): (Option<&Type>, ContextKind, bool),
+        fx: &mut FnCtx<'p>,
+        allow_embedded_header_receiver: bool,
+        pos: Pos,
+        early_return: &mut bool,
+    ) -> hir::Expr {
+        match e {
+            ast::Expression::ParenthesizedExpression(p) => self.check_expr_with_policy(
+                &p.expression,
                 (
                     ctx,
                     if list_candidate {
@@ -433,171 +518,111 @@ impl<'p> Checker<'p> {
                 false,
                 true,
             ),
-            ast::Expr::Lit(lit) => self.check_lit(lit, ctx, pos),
-            ast::Expr::Tpl(tpl) => self.check_template(tpl, fx, pos),
-            ast::Expr::Ident(id) => self.check_ident(id, ctx, fx),
-            ast::Expr::This(_) => {
-                if fx
-                    .frames
-                    .last()
-                    .is_some_and(|frame| frame.is_lambda && frame.is_async)
-                {
-                    self.diags
-                        .push(crate::check::rejection::async_receiver_diagnostic(
-                            pos.clone(),
-                        ));
-                    return self.err_expr(pos);
-                }
-                if fx.descriptor_default.is_some() {
-                    self.reject_subset(
-                        RejectionSite::DescriptorDefaultThisUse,
-                        "§147 rule 3a: `this` is forbidden in a descriptor member default",
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-                if let Some(initializer) = &fx.field_initializer {
-                    let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
-                        "`this` inside a lambda is forbidden"
-                    } else if initializer.write {
-                        "a write through `this` is forbidden"
-                    } else {
-                        "`this` as a value is forbidden"
-                    };
-                    self.reject_subset(
-                        RejectionSite::FieldInitializerThisUse,
-                        format!("§147 rule 2: {reason}"),
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-                let is_lambda = fx.frames.last().is_some_and(|frame| frame.is_lambda);
-                let this_ty = fx.frames.first().and_then(|frame| frame.this_ty.clone());
-                if is_lambda {
-                    if fx.parameter_default && this_ty.is_some() {
-                        self.reject_subset(
-                            RejectionSite::ThisInParameterDefaultArrow,
-                            "a lambda in a parameter default cannot capture `this`",
-                            pos.clone(),
-                        );
-                        return self.err_expr(pos);
-                    }
-                    if let Some(Type::Class(id)) = this_ty.as_ref().map(|ty| self.apparent_type(ty))
-                    {
-                        if self.classes[id.0].is_value {
-                            self.reject_subset(
-                                    RejectionSite::ThisInValueTypeArrow,
-                                    "a lambda cannot capture a ValueType receiver; the capture is a copy",
-                                    pos.clone(),
-                                );
-                            return self.err_expr(pos);
-                        }
-                    }
-                    if this_ty.is_some() {
-                        if let Some(local) = self.lookup_local("this", &pos, fx) {
-                            return hir::Expr {
-                                pending_work: None,
-                                kind: ExprKind::Local(
-                                    "this".to_string(),
-                                    local.ty.clone(),
-                                    local.annotated,
-                                ),
-                                ty: local.ty,
-                                pos,
-                            };
-                        }
-                    }
-                }
-                match this_ty {
-                    Some(ty) => hir::Expr {
-                        pending_work: None,
-                        kind: ExprKind::This,
-                        ty,
-                        pos,
-                    },
-                    None => {
-                        let site = if is_lambda
-                            && fx
-                                .frames
-                                .first()
-                                .is_some_and(|frame| frame.static_this_class.is_some())
-                        {
-                            RejectionSite::ThisInStaticMethodArrow
-                        } else {
-                            fx.frames
-                                .last()
-                                .and_then(|frame| frame.missing_this_site)
-                                .unwrap_or(RejectionSite::ThisOutsideMethod)
-                        };
-                        self.reject_subset(
-                            site,
-                            if site == RejectionSite::ThisInStaticMethodArrow {
-                                "a static method must name its class instead of `this`; use `ClassName.member`"
-                            } else {
-                                "`this` is only available in constructors and methods"
-                            },
-                            pos.clone(),
-                        );
-                        self.err_expr(pos)
-                    }
+            lit @ (ast::Expression::NumericLiteral(_)
+            | ast::Expression::StringLiteral(_)
+            | ast::Expression::BooleanLiteral(_)
+            | ast::Expression::NullLiteral(_)
+            | ast::Expression::BigIntLiteral(_)
+            | ast::Expression::RegExpLiteral(_)) => self.check_lit(lit, ctx, pos),
+            ast::Expression::TemplateLiteral(tpl) => self.check_template(tpl, fx, pos),
+            ast::Expression::Identifier(id) => self.check_ident(id, ctx, fx),
+            ast::Expression::ThisExpression(_) => self.check_this_value(fx, pos, early_return),
+            ast::Expression::UnaryExpression(u) => self.check_unary(u, ctx, fx, pos),
+            ast::Expression::UpdateExpression(u) => self.check_update(u, fx, pos, false, None),
+            ast::Expression::BinaryExpression(b) => self.check_bin(b, ctx, fx, pos),
+            ast::Expression::LogicalExpression(b) => self.check_logical(b, ctx, fx, pos),
+            ast::Expression::AssignmentExpression(a) => self.check_assign(a, fx, pos, false, None),
+            expression if expression.as_member_expression().is_some() => {
+                match expression.as_member_expression() {
+                    Some(m) => self.check_member_read(m, fx),
+                    None => self.err_expr(pos),
                 }
             }
-            ast::Expr::Unary(u) => self.check_unary(u, ctx, fx, pos),
-            ast::Expr::Update(u) => self.check_update(u, fx, pos, false, None),
-            ast::Expr::Bin(b) => self.check_bin(b, ctx, fx, pos),
-            ast::Expr::Assign(a) => self.check_assign(a, fx, pos, false, None),
-            ast::Expr::Member(m) => self.check_member_read(m, fx),
-            ast::Expr::OptChain(chain) => self.reject_unbound_optional_chain(chain, fx, pos),
-            ast::Expr::Cond(c) => self.check_cond(c, (ctx, kind), list_candidate, fx, pos),
-            ast::Expr::Call(c) => self.check_call(c, ctx, fx, pos),
-            ast::Expr::New(n) => self.check_new(n, ctx, fx, pos),
-            ast::Expr::Arrow(a) => self.check_lambda(a, (ctx, kind), fx, pos),
-            ast::Expr::Array(a) => self.check_array_lit(a, (ctx, kind), fx, pos),
-            ast::Expr::Object(object) => {
-                match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
-                    Some(id) if self.classes[id.0].is_descriptor => {
-                        self.check_descriptor_lit(object, (id, kind), fx, pos)
-                    }
-                    Some(_) => {
-                        self.reject_subset(
-                            RejectionSite::NominalObjectLiteral,
-                            "object literals do not satisfy nominal class types",
-                            pos.clone(),
-                        );
-                        self.err_expr(pos)
-                    }
-                    _ => {
-                        // C1: the literal has no standalone type, so only a
-                        // `@Descriptor` context constructs from one.
-                        self.reject_subset(
-                            RejectionSite::ObjectLiteralWithoutDescriptorContext,
-                            "object literals are not in the decided surface",
-                            pos.clone(),
-                        );
-                        self.err_expr(pos)
-                    }
-                }
+            ast::Expression::ChainExpression(chain) => {
+                self.reject_unbound_optional_chain(chain, fx, pos)
             }
-            ast::Expr::TsAs(a) => self.check_as(a, fx, pos),
+            ast::Expression::ConditionalExpression(c) => {
+                self.check_cond(c, (ctx, kind), list_candidate, fx, pos)
+            }
+            ast::Expression::CallExpression(c) => self.check_call(c, ctx, fx, pos),
+            ast::Expression::NewExpression(n) => self.check_new(n, ctx, fx, pos),
+            ast::Expression::ArrowFunctionExpression(a) => {
+                self.check_lambda(a, (ctx, kind), fx, pos)
+            }
+            ast::Expression::ArrayExpression(a) => self.check_array_lit(a, (ctx, kind), fx, pos),
+            ast::Expression::ObjectExpression(object) => {
+                self.check_object_form(object, (ctx, kind), fx, pos)
+            }
+            ast::Expression::TSAsExpression(a) if a.type_annotation.is_const_type_reference() => {
+                self.reject_expr_form(e, pos)
+            }
+            ast::Expression::TSTypeAssertion(a) if a.type_annotation.is_const_type_reference() => {
+                self.reject_expr_form(e, pos)
+            }
+            ast::Expression::TSAsExpression(a) => self.check_as(a, fx, pos),
+            ast::Expression::PrivateInExpression(_) | ast::Expression::ImportExpression(_) => {
+                self.reject_expr_form(e, pos)
+            }
             // compiler.md §204 rule 3: `x satisfies T` is `x`, checked as
             // the initializer of a `T` local. An operand that holds an
             // empty array literal is checked with no context, as `tsc`
             // does not give `T` to that literal.
-            ast::Expr::TsSatisfies(s) => {
-                let target = self.resolve_type(&s.type_ann);
-                let context = (!holds_empty_array_literal(&s.expr)).then_some(&target);
-                let mut value = self.check_expr(&s.expr, context, fx);
-                self.require_expr_assignable(&mut value, &target, fx, "the initializer");
-                value
+            ast::Expression::TSSatisfiesExpression(s) => self.check_satisfies_expression(s, fx),
+            ast::Expression::YieldExpression(y) => self.check_yield(y, fx, pos),
+            ast::Expression::AwaitExpression(a) => self.check_await_expression(a, ctx, fx, pos),
+            other => self.reject_expr_form(other, pos),
+        }
+    }
+
+    fn check_await_expression(
+        &mut self,
+        a: &ast::AwaitExpression,
+        ctx: Option<&Type>,
+        fx: &mut FnCtx<'p>,
+        pos: Pos,
+    ) -> hir::Expr {
+        // §188.1 rule 2: an `await` result that holds a handle is
+        // an origin.
+        let value = self.check_await(a, ctx, fx, pos);
+        self.track_async_call_result(value, fx)
+    }
+
+    fn reject_expr_form(&mut self, e: &ast::Expression, pos: Pos) -> hir::Expr {
+        match e {
+            ast::Expression::TSAsExpression(a) if a.type_annotation.is_const_type_reference() => {
+                self.reject_subset(
+                    RejectionSite::ConstAssertionExpression,
+                    "expression form outside the decided surface",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
             }
-            ast::Expr::Yield(y) => self.check_yield(y, fx, pos),
-            ast::Expr::Await(a) => {
-                // §188.1 rule 2: an `await` result that holds a handle is
-                // an origin.
-                let value = self.check_await(a, ctx, fx, pos);
-                self.track_async_call_result(value, fx)
+            ast::Expression::TSTypeAssertion(a) if a.type_annotation.is_const_type_reference() => {
+                self.reject_subset(
+                    RejectionSite::ConstAssertionExpression,
+                    "expression form outside the decided surface",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
             }
-            ast::Expr::TsNonNull(t) => {
+            ast::Expression::PrivateInExpression(_) => {
+                self.reject_subset(
+                    RejectionSite::InOperator,
+                    "operator outside the decided surface",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            ast::Expression::ImportExpression(import) => {
+                let site = if Self::is_dynamic_import_call(import) {
+                    RejectionSite::DynamicImportCall
+                } else {
+                    RejectionSite::NonExpressionCalleeUnavailable
+                };
+                self.reject_subset(site, "call form outside the decided surface", pos.clone());
+                self.err_expr(pos)
+            }
+            ast::Expression::TSNonNullExpression(t) => {
                 let p = self.pos(t.span);
                 self.reject_subset(
                     RejectionSite::NonNullAssertionExpression,
@@ -606,7 +631,7 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(p)
             }
-            ast::Expr::Fn(_) => {
+            ast::Expression::FunctionExpression(_) => {
                 self.reject_subset(
                     RejectionSite::FunctionExpression,
                     "function expressions are not in the decided surface; use an arrow",
@@ -618,14 +643,23 @@ impl<'p> Checker<'p> {
                 let p = self.pos(other.span());
                 self.reject_subset(
                     match other {
-                        ast::Expr::TsTypeAssertion(_) => RejectionSite::AngleAssertionExpression,
-                        ast::Expr::TsInstantiation(_) => RejectionSite::InstantiationExpression,
-                        ast::Expr::Seq(_) => RejectionSite::CommaExpression,
-                        ast::Expr::TaggedTpl(_) => RejectionSite::TaggedTemplateExpression,
-                        ast::Expr::Class(_) => RejectionSite::ClassExpression,
-                        ast::Expr::MetaProp(_) => RejectionSite::MetaPropertyExpression,
-                        ast::Expr::PrivateName(_) => RejectionSite::PrivateNameExpression,
-                        ast::Expr::TsConstAssertion(_) => RejectionSite::ConstAssertionExpression,
+                        ast::Expression::TSTypeAssertion(_) => {
+                            RejectionSite::AngleAssertionExpression
+                        }
+                        ast::Expression::TSInstantiationExpression(_) => {
+                            RejectionSite::InstantiationExpression
+                        }
+                        ast::Expression::SequenceExpression(_) => RejectionSite::CommaExpression,
+                        ast::Expression::TaggedTemplateExpression(_) => {
+                            RejectionSite::TaggedTemplateExpression
+                        }
+                        ast::Expression::ClassExpression(_) => RejectionSite::ClassExpression,
+                        ast::Expression::ImportMeta(_) | ast::Expression::NewTarget(_) => {
+                            RejectionSite::MetaPropertyExpression
+                        }
+                        ast::Expression::PrivateInExpression(_) => {
+                            RejectionSite::PrivateNameExpression
+                        }
                         _ => RejectionSite::UnsupportedExpressionKind,
                     },
                     "expression form outside the decided surface",
@@ -633,35 +667,168 @@ impl<'p> Checker<'p> {
                 );
                 self.err_expr(p)
             }
-        };
-        // compiler.md §339 rules 1–3: a literal place reads a const's literal.
-        if self.apparent_type(&checked.ty) == Type::Str
-            && ctx.is_some_and(|ty| matches!(self.apparent_type(ty), Type::StringAlias(_)))
-            && matches!(
-                super::unparen_expr(e),
-                ast::Expr::Ident(_) | ast::Expr::Tpl(_)
-            )
+        }
+    }
+
+    fn check_this_value(
+        &mut self,
+        fx: &mut FnCtx<'p>,
+        pos: Pos,
+        early_return: &mut bool,
+    ) -> hir::Expr {
+        if fx
+            .frames
+            .last()
+            .is_some_and(|frame| frame.is_lambda && frame.is_async)
         {
-            if let Some(text) = self
-                .literal_operand(e, fx)
-                .and_then(|value| value.as_string().map(str::to_owned))
-            {
-                checked = self.check_lit(
-                    &ast::Lit::Str(ast::Str {
-                        span: e.span(),
-                        value: text.into(),
-                        raw: None,
-                    }),
-                    ctx,
-                    checked.pos.clone(),
+            self.diags
+                .push(crate::check::rejection::async_receiver_diagnostic(
+                    pos.clone(),
+                ));
+            *early_return = true;
+            return self.err_expr(pos);
+        }
+        if fx.descriptor_default.is_some() {
+            self.reject_subset(
+                RejectionSite::DescriptorDefaultThisUse,
+                "§147 rule 3a: `this` is forbidden in a descriptor member default",
+                pos.clone(),
+            );
+            *early_return = true;
+            return self.err_expr(pos);
+        }
+        if let Some(initializer) = &fx.field_initializer {
+            let reason = if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
+                "`this` inside a lambda is forbidden"
+            } else if initializer.write {
+                "a write through `this` is forbidden"
+            } else {
+                "`this` as a value is forbidden"
+            };
+            self.reject_subset(
+                RejectionSite::FieldInitializerThisUse,
+                format!("§147 rule 2: {reason}"),
+                pos.clone(),
+            );
+            *early_return = true;
+            return self.err_expr(pos);
+        }
+        let is_lambda = fx.frames.last().is_some_and(|frame| frame.is_lambda);
+        let this_ty = fx.frames.first().and_then(|frame| frame.this_ty.clone());
+        if is_lambda {
+            if fx.parameter_default && this_ty.is_some() {
+                self.reject_subset(
+                    RejectionSite::ThisInParameterDefaultArrow,
+                    "a lambda in a parameter default cannot capture `this`",
+                    pos.clone(),
                 );
+                *early_return = true;
+                return self.err_expr(pos);
+            }
+            if let Some(Type::Class(id)) = this_ty.as_ref().map(|ty| self.apparent_type(ty)) {
+                if self.classes[id.0].is_value {
+                    self.reject_subset(
+                        RejectionSite::ThisInValueTypeArrow,
+                        "a lambda cannot capture a ValueType receiver; the capture is a copy",
+                        pos.clone(),
+                    );
+                    *early_return = true;
+                    return self.err_expr(pos);
+                }
+            }
+            if this_ty.is_some() {
+                if let Some(local) = self.lookup_local("this", &pos, fx) {
+                    *early_return = true;
+                    return hir::Expr {
+                        pending_work: None,
+                        kind: ExprKind::Local(
+                            "this".to_string(),
+                            local.ty.clone(),
+                            local.annotated,
+                        ),
+                        ty: local.ty,
+                        pos,
+                    };
+                }
             }
         }
-        self.end_shared_narrowing(&checked, fx);
-        if !allow_embedded_header_receiver {
-            self.reject_embedded_header_copy(&mut checked, ctx);
+        match this_ty {
+            Some(ty) => hir::Expr {
+                pending_work: None,
+                kind: ExprKind::This,
+                ty,
+                pos,
+            },
+            None => {
+                let site = if is_lambda
+                    && fx
+                        .frames
+                        .first()
+                        .is_some_and(|frame| frame.static_this_class.is_some())
+                {
+                    RejectionSite::ThisInStaticMethodArrow
+                } else {
+                    fx.frames
+                        .last()
+                        .and_then(|frame| frame.missing_this_site)
+                        .unwrap_or(RejectionSite::ThisOutsideMethod)
+                };
+                self.reject_subset(
+                site,
+                if site == RejectionSite::ThisInStaticMethodArrow {
+                    "a static method must name its class instead of `this`; use `ClassName.member`"
+                } else {
+                    "`this` is only available in constructors and methods"
+                },
+                pos.clone(),
+            );
+                self.err_expr(pos)
+            }
         }
-        checked
+    }
+
+    fn check_object_form(
+        &mut self,
+        object: &ast::ObjectExpression,
+        (ctx, kind): (Option<&Type>, ContextKind),
+        fx: &mut FnCtx<'p>,
+        pos: Pos,
+    ) -> hir::Expr {
+        match contextual_object_class(ctx, |ty| self.apparent_type(ty)) {
+            Some(id) if self.classes[id.0].is_descriptor => {
+                self.check_descriptor_lit(object, (id, kind), fx, pos)
+            }
+            Some(_) => {
+                self.reject_subset(
+                    RejectionSite::NominalObjectLiteral,
+                    "object literals do not satisfy nominal class types",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+            _ => {
+                // C1: the literal has no standalone type, so only a
+                // `@Descriptor` context constructs from one.
+                self.reject_subset(
+                    RejectionSite::ObjectLiteralWithoutDescriptorContext,
+                    "object literals are not in the decided surface",
+                    pos.clone(),
+                );
+                self.err_expr(pos)
+            }
+        }
+    }
+
+    fn check_satisfies_expression(
+        &mut self,
+        s: &ast::TSSatisfiesExpression,
+        fx: &mut FnCtx<'p>,
+    ) -> hir::Expr {
+        let target = self.resolve_type(&s.type_annotation);
+        let context = (!holds_empty_array_literal(&s.expression)).then_some(&target);
+        let mut value = self.check_expr(&s.expression, context, fx);
+        self.require_expr_assignable(&mut value, &target, fx, "the initializer");
+        value
     }
 
     fn embedded_header_projection(&self, expr: &hir::Expr) -> Option<(ClassId, ClassId)> {
@@ -721,19 +888,24 @@ impl<'p> Checker<'p> {
 
     /// Checks an expression statement, admitting the ambient
     /// `unreachable()` only when it is the statement's direct call.
-    pub(crate) fn check_expr_stmt(&mut self, e: &ast::Expr, fx: &mut FnCtx) -> Vec<hir::Stmt> {
+    pub(crate) fn check_expr_stmt(
+        &mut self,
+        e: &ast::Expression,
+        fx: &mut FnCtx<'p>,
+    ) -> Vec<hir::Stmt> {
         let mut root = e;
-        while let ast::Expr::Paren(paren) = root {
-            root = &paren.expr;
+        while let ast::Expression::ParenthesizedExpression(paren) = root {
+            root = &paren.expression;
         }
-        if let ast::Expr::Call(call) = root {
-            if let ast::Callee::Expr(callee) = &call.callee {
-                let mut callee: &ast::Expr = callee;
-                while let ast::Expr::Paren(paren) = callee {
-                    callee = &paren.expr;
+        if let ast::Expression::CallExpression(call) = root {
+            {
+                let callee = &call.callee;
+                let mut callee: &ast::Expression = callee;
+                while let ast::Expression::ParenthesizedExpression(paren) = callee {
+                    callee = &paren.expression;
                 }
-                if let ast::Expr::Ident(ident) = callee {
-                    if ident.sym.as_ref() == "unreachable" {
+                if let ast::Expression::Identifier(ident) = callee {
+                    if ident.name.as_ref() == "unreachable" {
                         let pos = self.pos(call.span);
                         let checked = self.checked_call(call, Self::poisoned_call, |checker| {
                             checker.check_named_call(ident, call, fx, pos, true)
@@ -744,12 +916,12 @@ impl<'p> Checker<'p> {
                 }
             }
         }
-        if let ast::Expr::OptChain(chain) = root {
+        if let ast::Expression::ChainExpression(chain) = root {
             return self.check_optional_chain_statement(chain, fx);
         }
         let mut prefix = crate::check::SyntheticPrefix::default();
-        if let ast::Expr::Assign(assign) = root {
-            if let Some(logical) = super::logical_assign::LogicalAssign::of(assign.op) {
+        if let ast::Expression::AssignmentExpression(assign) = root {
+            if let Some(logical) = super::logical_assign::LogicalAssign::of(assign.operator) {
                 return self.check_logical_assign_statement(
                     assign,
                     logical,
@@ -765,7 +937,7 @@ impl<'p> Checker<'p> {
             out.push(hir::Stmt::Expr(checked));
             return out;
         }
-        if let ast::Expr::Update(update) = root {
+        if let ast::Expression::UpdateExpression(update) = root {
             let checked =
                 self.check_update(update, fx, self.pos(root.span()), true, Some(&mut prefix));
             self.end_shared_narrowing(&checked, fx);
@@ -791,9 +963,9 @@ impl<'p> Checker<'p> {
     /// (§215 rule 3).
     fn check_await(
         &mut self,
-        awaited: &ast::AwaitExpr,
+        awaited: &ast::AwaitExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         if !fx.frames.last().is_some_and(|frame| frame.is_async) {
@@ -805,11 +977,23 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
 
-        let mut operand: &ast::Expr = &awaited.arg;
-        while let ast::Expr::Paren(paren) = operand {
-            operand = &paren.expr;
+        let mut operand: &ast::Expression = &awaited.argument;
+        while let ast::Expression::ParenthesizedExpression(paren) = operand {
+            operand = &paren.expression;
         }
-        let ast::Expr::Call(call) = operand else {
+        if let ast::Expression::ImportExpression(import) = operand {
+            self.reject_subset(
+                if Self::is_dynamic_import_call(import) {
+                    RejectionSite::DynamicImportCall
+                } else {
+                    RejectionSite::AwaitNotDirectCall
+                },
+                "awaitable expressions must be direct calls",
+                pos.clone(),
+            );
+            return self.err_expr(pos);
+        }
+        let ast::Expression::CallExpression(call) = operand else {
             // §232 rule 3: a conditional or an optional call takes
             // `Promise<C>` too.
             let context = ctx.map(|value| Type::AsyncHandle(Box::new(value.clone())));
@@ -846,44 +1030,43 @@ impl<'p> Checker<'p> {
     /// that reads a context, so it passes none.
     fn check_await_call(
         &mut self,
-        operand: &ast::Expr,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        operand: &ast::Expression,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let ast::Callee::Expr(callee) = &call.callee else {
+        if matches!(call.callee, ast::Expression::Super(_)) {
             self.reject_subset(
-                if Self::is_dynamic_import_call(call) {
-                    RejectionSite::DynamicImportCall
-                } else {
-                    RejectionSite::AwaitNotDirectCall
-                },
+                RejectionSite::AwaitNotDirectCall,
                 "awaitable expressions must be direct calls",
                 pos.clone(),
             );
             return self.err_expr(pos);
-        };
-        let mut callee: &ast::Expr = callee;
-        while let ast::Expr::Paren(paren) = callee {
-            callee = &paren.expr;
+        }
+        let callee = &call.callee;
+        let mut callee: &ast::Expression = callee;
+        while let ast::Expression::ParenthesizedExpression(paren) = callee {
+            callee = &paren.expression;
         }
 
-        if let ast::Expr::Member(member) = callee {
-            let group_receiver = if let ast::Expr::Ident(id) = member.obj.as_ref() {
+        if let Some(member) = callee.as_member_expression() {
+            let view = super::member_view(member);
+            let member = &view;
+            let group_receiver = if let ast::Expression::Identifier(id) = member.object {
                 fx.scopes
                     .iter()
                     .rev()
-                    .find_map(|scope| scope.vars.get(id.sym.as_ref()))
+                    .find_map(|scope| scope.vars.get(id.name.as_ref()))
                     .is_some_and(|local| self.apparent_type(&local.ty) == Type::TaskGroup)
             } else {
                 false
             };
             let group_join = group_receiver
                 && matches!(&member.prop,
-                ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "join");
+                super::MemberKey::Ident(prop) if prop.name.as_ref() == "join");
             if group_join
-                || (self.ambient_namespace(&member.obj, fx) == Some("Promise")
-                    && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "all"))
+                || (self.ambient_namespace(member.object, fx) == Some("Promise")
+                    && matches!(&member.prop, super::MemberKey::Ident(prop) if prop.name.as_ref() == "all"))
             {
                 let handle = self.check_expr_with_result_dependency(operand, fx);
                 let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {
@@ -898,10 +1081,10 @@ impl<'p> Checker<'p> {
                     pos,
                 };
             }
-            if self.is_context_namespace(&member.obj, fx)
-                && matches!(&member.prop, ast::MemberProp::Ident(prop) if prop.sym.as_ref() == "suspend")
+            if self.is_context_namespace(member.object, fx)
+                && matches!(&member.prop, super::MemberKey::Ident(prop) if prop.name.as_ref() == "suspend")
             {
-                if call.type_args.is_some() || !call.args.is_empty() {
+                if call.type_arguments.is_some() || !call.arguments.is_empty() {
                     self.reject_subset(
                         RejectionSite::ContextSuspendArguments,
                         "`Context.suspend()` takes no type arguments or value arguments",
@@ -919,27 +1102,32 @@ impl<'p> Checker<'p> {
         }
 
         let indirect = match callee {
-            ast::Expr::Ident(id) => {
-                fx.owns_local_name(id.sym.as_ref())
+            ast::Expression::Identifier(id) => {
+                fx.owns_local_name(id.name.as_ref())
                     || matches!(
-                        self.peek_scope_item(id.sym.as_ref()),
+                        self.peek_scope_item(id.name.as_ref()),
                         Some(ScopeItem::Global(_))
                     )
             }
-            ast::Expr::Member(member) => match (&*member.obj, &member.prop) {
-                (ast::Expr::Ident(receiver), ast::MemberProp::Ident(field))
-                    if !fx.owns_local_name(receiver.sym.as_ref()) =>
-                {
-                    matches!(self.peek_scope_item(receiver.sym.as_ref()), Some(ScopeItem::Class(class))
-                        if self.class_sigs[class.0].static_fields.contains_key(field.sym.as_ref()))
+            expression if expression.as_member_expression().is_some() => {
+                if let ast::Expression::StaticMemberExpression(member) = expression {
+                    match &member.object {
+                        ast::Expression::Identifier(receiver)
+                            if !fx.owns_local_name(receiver.name.as_ref()) =>
+                        {
+                            matches!(self.peek_scope_item(receiver.name.as_ref()), Some(ScopeItem::Class(class)) if self.class_sigs[class.0].static_fields.contains_key(member.property.name.as_ref()))
+                        }
+                        _ => false,
+                    }
+                } else {
+                    false
                 }
-                _ => false,
-            },
+            }
             _ => true,
         };
-        let completion = matches!(callee, ast::Expr::Ident(id) if !fx.owns_local_name(id.sym.as_ref())
-            && self.foreign_defs.iter().any(|f| f.name == id.sym.as_ref() && f.completion_result.is_some()));
-        let standard = matches!(callee, ast::Expr::Ident(id) if !fx.owns_local_name(id.sym.as_ref()) && matches!(self.peek_scope_item(id.sym.as_ref()), Some(ScopeItem::StandardFile(_))));
+        let completion = matches!(callee, ast::Expression::Identifier(id) if !fx.owns_local_name(id.name.as_ref())
+            && self.foreign_defs.iter().any(|f| f.name == id.name.as_ref() && f.completion_result.is_some()));
+        let standard = matches!(callee, ast::Expression::Identifier(id) if !fx.owns_local_name(id.name.as_ref()) && matches!(self.peek_scope_item(id.name.as_ref()), Some(ScopeItem::StandardFile(_))));
         if indirect || completion || standard {
             let handle = self.check_expr_with_result_dependency(operand, fx);
             if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
@@ -953,7 +1141,7 @@ impl<'p> Checker<'p> {
                 };
             }
             if self.apparent_type(&handle.ty) != Type::Error {
-                let site = if matches!(callee, ast::Expr::Ident(_)) {
+                let site = if matches!(callee, ast::Expression::Identifier(_)) {
                     RejectionSite::AwaitNonHandle
                 } else {
                     RejectionSite::AwaitIndirectCall
@@ -977,26 +1165,26 @@ impl<'p> Checker<'p> {
         // Each path below awaits a user function, a generic function, an
         // instance method, a generic method, an interface method, or a
         // promise reaction that rejects its own type arguments (§231 rule 1).
-        self.mark_user_call(call, matches!(callee, ast::Expr::Member(_)));
+        self.mark_user_call(call, callee.is_member_expression());
         match callee {
-            ast::Expr::Ident(ident) => {
-                let name = ident.sym.to_string();
+            ast::Expression::Identifier(ident) => {
+                let name = ident.name.to_string();
                 let callee_pos = self.pos(ident.span);
                 let item = self.scope_item(&name, &callee_pos, fx);
                 if matches!(item, Some(ScopeItem::Poisoned))
                     || matches!(&item, Some(ScopeItem::Global(g)) if self.global_sigs.get(g).is_some_and(|s| matches!(s.state, crate::check::initializer::TypeState::Rejected)))
                 {
-                    self.check_poisoned_arguments(&call.args, fx);
+                    self.check_poisoned_arguments(&call.arguments, fx);
                     return self.err_expr(pos);
                 }
                 let mut checked = None;
                 let mut instance_result = None;
                 let (function, checked_name, rejects_type_args) = match item {
                     Some(ScopeItem::Func(function)) => {
-                        (function, name.clone(), call.type_args.is_some())
+                        (function, name.clone(), call.type_arguments.is_some())
                     }
                     Some(ScopeItem::GenericFunc(key)) => {
-                        let arguments = if let Some(type_args) = &call.type_args {
+                        let arguments = if let Some(type_args) = &call.type_arguments {
                             self.resolve_instance_arguments(type_args)
                         } else {
                             // A synchronous callee is rejected below, so
@@ -1004,7 +1192,7 @@ impl<'p> Checker<'p> {
                             let is_async = self
                                 .generic_fns
                                 .get(&key)
-                                .is_some_and(|template| template.function.is_async);
+                                .is_some_and(|template| template.function.r#async);
                             if !is_async {
                                 self.active_call_context = None;
                             }
@@ -1075,7 +1263,7 @@ impl<'p> Checker<'p> {
                 let args = self.check_args_with_arguments(
                     RejectionSite::AwaitMethodArgumentCount,
                     &sig.params,
-                    &call.args,
+                    &call.arguments,
                     fx,
                     &pos,
                     &checked_name,
@@ -1092,19 +1280,25 @@ impl<'p> Checker<'p> {
                     pos,
                 }
             }
-            ast::Expr::Member(member) => {
-                if let ast::MemberProp::Ident(method) = &member.prop {
-                    if self.rejected_static_generic_method(&member.obj, method.sym.as_ref(), fx) {
+            expression if expression.as_member_expression().is_some() => {
+                let Some(member) = expression.as_member_expression() else {
+                    return self.err_expr(pos);
+                };
+                let view = super::member_view(member);
+                let member = &view;
+                if let super::MemberKey::Ident(method) = &member.prop {
+                    if self.rejected_static_generic_method(member.object, method.name.as_ref(), fx)
+                    {
                         return self.err_expr(pos);
                     }
                 }
-                let receiver = self.check_receiver(&member.obj, fx);
+                let receiver = self.check_receiver(member.object, fx);
                 let receiver_type = self.apparent_type(&receiver.ty);
                 // §186 rule 5: `await h.then(...)` awaits the reaction handle.
-                if let (Type::AsyncHandle(_), ast::MemberProp::Ident(method)) =
+                if let (Type::AsyncHandle(_), super::MemberKey::Ident(method)) =
                     (&receiver_type, &member.prop)
                 {
-                    if matches!(method.sym.as_ref(), "then" | "catch" | "finally") {
+                    if matches!(method.name.as_ref(), "then" | "catch" | "finally") {
                         let handle = self.check_promise_reaction(
                             receiver,
                             method,
@@ -1126,19 +1320,21 @@ impl<'p> Checker<'p> {
                     }
                 }
                 let field = match (&receiver_type, &member.prop) {
-                    (Type::Class(class), ast::MemberProp::Ident(name)) => self.classes[class.0]
+                    (Type::Class(class), super::MemberKey::Ident(name)) => self.classes[class.0]
                         .fields
                         .iter()
-                        .any(|field| field.name == name.sym.as_ref()),
-                    (Type::Array(_) | Type::FixedArray(_, _), ast::MemberProp::Computed(_)) => true,
+                        .any(|field| field.name == name.name.as_ref()),
+                    (Type::Array(_) | Type::FixedArray(_, _), super::MemberKey::Computed(_)) => {
+                        true
+                    }
                     _ => false,
                 };
                 if field {
                     let callable = match &member.prop {
-                        ast::MemberProp::Ident(name) => {
+                        super::MemberKey::Ident(name) => {
                             let mut field = self.member_on(
                                 receiver,
-                                name.sym.as_ref(),
+                                name.name.as_ref(),
                                 self.pos(name.span),
                                 None,
                                 fx,
@@ -1146,12 +1342,12 @@ impl<'p> Checker<'p> {
                             self.apply_narrowing(&mut field, fx);
                             field
                         }
-                        ast::MemberProp::Computed(index) => {
-                            self.mark_operand_calls(&index.expr);
-                            let index = self.check_expr(&index.expr, Some(&Type::I32), fx);
+                        super::MemberKey::Computed(index) => {
+                            self.mark_operand_calls(&index.expression);
+                            let index = self.check_expr(&index.expression, Some(&Type::I32), fx);
                             self.check_index(receiver, index, self.pos(member.span), fx)
                         }
-                        ast::MemberProp::PrivateName(_) => return self.err_expr(pos),
+                        super::MemberKey::PrivateName(_) => return self.err_expr(pos),
                     };
                     let handle = self.check_indirect_call(callable, call, fx, self.pos(call.span));
                     if let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) {
@@ -1173,7 +1369,7 @@ impl<'p> Checker<'p> {
                     }
                     return self.err_expr(pos);
                 }
-                let ast::MemberProp::Ident(method) = &member.prop else {
+                let super::MemberKey::Ident(method) = &member.prop else {
                     self.reject_subset(
                         RejectionSite::AwaitComputedMethod,
                         "an awaited async method requires an identifier method name",
@@ -1190,7 +1386,7 @@ impl<'p> Checker<'p> {
                     return self
                         .await_interface_method(receiver, &interface, method, call, fx, pos);
                 }
-                let name = method.sym.to_string();
+                let name = method.name.to_string();
                 let method_pos = self.pos(method.span);
                 let Type::Class(class) = self.apparent_type(&receiver.ty.clone()) else {
                     if self.apparent_type(&(receiver.ty)) != Type::Error {
@@ -1215,7 +1411,7 @@ impl<'p> Checker<'p> {
                     let is_async = self.class_sigs[class.0]
                         .generic_methods
                         .get(&name)
-                        .is_some_and(|template| template.function.is_async);
+                        .is_some_and(|template| template.function.r#async);
                     if !is_async {
                         self.active_call_context = None;
                     }
@@ -1253,7 +1449,7 @@ impl<'p> Checker<'p> {
                 sig.ret = result_type.unwrap_or(sig.ret);
                 sig = self.member_signature(class, sig, fx);
                 if !sig.is_async && matches!(self.apparent_type(&sig.ret), Type::AsyncHandle(_)) {
-                    if !generic && call.type_args.is_some() {
+                    if !generic && call.type_arguments.is_some() {
                         self.reject_subset(
                             RejectionSite::AwaitMethodTypeArguments,
                             format!("method `{name}` is not generic"),
@@ -1272,7 +1468,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                if !generic && call.type_args.is_some() {
+                if !generic && call.type_arguments.is_some() {
                     self.reject_subset(
                         RejectionSite::AwaitMethodTypeArguments,
                         format!("method `{name}` is not generic"),
@@ -1282,7 +1478,7 @@ impl<'p> Checker<'p> {
                 let args = self.check_args_with_arguments(
                     RejectionSite::AwaitFunctionArgumentCount,
                     &sig.params,
-                    &call.args,
+                    &call.arguments,
                     fx,
                     &pos,
                     &name,
@@ -1317,30 +1513,26 @@ impl<'p> Checker<'p> {
 
 /// True when `e` holds an empty array literal at a position that the
 /// context of `e` reaches (compiler.md §204 rule 3).
-fn holds_empty_array_literal(e: &ast::Expr) -> bool {
+fn holds_empty_array_literal(e: &ast::Expression) -> bool {
     match e {
-        ast::Expr::Array(array) => {
-            array.elems.is_empty()
+        ast::Expression::ArrayExpression(array) => {
+            array.elements.is_empty()
                 || array
-                    .elems
+                    .elements
                     .iter()
-                    .flatten()
-                    .any(|element| holds_empty_array_literal(&element.expr))
+                    .filter_map(crate::check::array_element_expression)
+                    .any(holds_empty_array_literal)
         }
-        ast::Expr::Paren(paren) => holds_empty_array_literal(&paren.expr),
-        ast::Expr::Cond(cond) => {
-            holds_empty_array_literal(&cond.cons) || holds_empty_array_literal(&cond.alt)
+        ast::Expression::ParenthesizedExpression(paren) => holds_empty_array_literal(&paren.expression),
+        ast::Expression::ConditionalExpression(cond) => {
+            holds_empty_array_literal(&cond.consequent) || holds_empty_array_literal(&cond.alternate)
         }
-        ast::Expr::Bin(binary) => {
+        ast::Expression::BinaryExpression(binary) => {
             holds_empty_array_literal(&binary.left) || holds_empty_array_literal(&binary.right)
         }
-        ast::Expr::Object(object) => object.props.iter().any(|property| {
-            matches!(property, ast::PropOrSpread::Prop(prop)
-                if matches!(&**prop, ast::Prop::KeyValue(pair) if holds_empty_array_literal(&pair.value)))
-        }),
-        ast::Expr::Arrow(arrow) => {
-            matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body) if holds_empty_array_literal(body))
-        }
+        ast::Expression::ObjectExpression(object) => object.properties.iter().any(|property| matches!(property, ast::ObjectPropertyKind::ObjectProperty(property) if !property.method && property.kind == ast::PropertyKind::Init && !property.shorthand && holds_empty_array_literal(&property.value))),
+        ast::Expression::ArrowFunctionExpression(arrow) => arrow.body.as_expression().is_some_and(holds_empty_array_literal),
+        ast::Expression::LogicalExpression(binary) => holds_empty_array_literal(&binary.left) || holds_empty_array_literal(&binary.right),
         _ => false,
     }
 }
@@ -1351,17 +1543,23 @@ fn holds_empty_array_literal(e: &ast::Expr) -> bool {
 /// array literal; a conditional; a parenthesis; and a lambda, for its
 /// result only. An operand call takes no contextual candidate (§212 rule
 /// 1a).
-fn reads_hint(e: &ast::Expr) -> bool {
+fn reads_hint(e: &ast::Expression) -> bool {
     matches!(
         e,
-        ast::Expr::Lit(_)
-            | ast::Expr::Bin(_)
-            | ast::Expr::Unary(_)
-            | ast::Expr::Object(_)
-            | ast::Expr::Array(_)
-            | ast::Expr::Cond(_)
-            | ast::Expr::Paren(_)
-            | ast::Expr::Arrow(_)
+        ast::Expression::NumericLiteral(_)
+            | ast::Expression::StringLiteral(_)
+            | ast::Expression::BooleanLiteral(_)
+            | ast::Expression::NullLiteral(_)
+            | ast::Expression::BigIntLiteral(_)
+            | ast::Expression::RegExpLiteral(_)
+            | ast::Expression::LogicalExpression(_)
+            | ast::Expression::BinaryExpression(_)
+            | ast::Expression::UnaryExpression(_)
+            | ast::Expression::ObjectExpression(_)
+            | ast::Expression::ArrayExpression(_)
+            | ast::Expression::ConditionalExpression(_)
+            | ast::Expression::ParenthesizedExpression(_)
+            | ast::Expression::ArrowFunctionExpression(_)
     )
 }
 

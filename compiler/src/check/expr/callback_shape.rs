@@ -12,7 +12,7 @@ use crate::types::Type;
 use super::method::counted_method_message;
 use super::CallbackSpec;
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Uses §143 rule 1b for parameter types and exact project kinds for concrete callback types.
     fn callback_type_fits(&self, from: &Type, to: &Type) -> bool {
         if self.involves_type_parameter(from) || self.involves_type_parameter(to) {
@@ -117,7 +117,7 @@ impl Checker<'_> {
         checked: &hir::Expr,
         place: &Type,
         method: &str,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> bool {
         let defaulted = match &checked.kind {
             hir::ExprKind::FuncRef(symbol) => self
@@ -170,7 +170,7 @@ impl Checker<'_> {
         mut checked: hir::Expr,
         (params, ret): (&[Type], Option<&Type>),
         spec: CallbackSpec<'_>,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> hir::Expr {
         // compiler.md §320 rule 4a: groupBy fills a defaulted index.
         // Its one-parameter library type still excludes a required index.

@@ -1,8 +1,8 @@
 //! Checks assignment expressions and the places that they write.
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::check::{static_member_symbol, Checker, FnCtx, ScopeItem};
 use crate::diag::Pos;
@@ -17,35 +17,37 @@ use super::{
 impl<'p> Checker<'p> {
     pub(super) fn check_assign(
         &mut self,
-        a: &ast::AssignExpr,
-        fx: &mut FnCtx,
+        a: &ast::AssignmentExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         statement_position: bool,
         mut prefix: Option<&mut crate::check::SyntheticPrefix>,
     ) -> hir::Expr {
-        use ast::AssignOp as A;
-        if let Some(logical) = super::logical_assign::LogicalAssign::of(a.op) {
+        use ast::AssignmentOperator as A;
+        if let Some(logical) = super::logical_assign::LogicalAssign::of(a.operator) {
             return self.check_logical_assign_value(a, logical, fx, pos);
         }
         let mut length_place = None;
-        if let ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) = &a.left {
-            if matches!(&member.prop, ast::MemberProp::Ident(name) if name.sym == "length") {
+        if let Some(member) = a.left.as_member_expression() {
+            let view = super::member_view(member);
+            let member = &view;
+            if let Some(property_span) = match &member.prop {
+                super::MemberKey::Ident(name) if name.name == "length" => Some(name.span),
+                _ => None,
+            } {
                 if self.reject_static_this_member(member, fx) {
                     return self.err_expr(pos);
                 }
-                if let Some(place) = self.check_namespace_place(
-                    &member.obj,
-                    "length",
-                    self.pos(member.prop.span()),
-                    fx,
-                ) {
+                if let Some(place) =
+                    self.check_namespace_place(member.object, "length", self.pos(property_span), fx)
+                {
                     length_place = Some(place);
                 } else {
                     let receiver = self.check_write_receiver(member, fx);
                     if matches!(self.apparent_type(&receiver.ty), Type::Array(_)) {
                         if statement_position
-                            && a.op == A::Assign
-                            && matches!(&*a.right, ast::Expr::Lit(ast::Lit::Num(value)) if value.value == 0.0 && value.raw.as_ref().is_some_and(|raw| raw == "0"))
+                            && a.operator == A::Assign
+                            && matches!(&a.right, ast::Expression::NumericLiteral(value) if value.value == 0.0 && value.raw.as_ref().is_some_and(|raw| raw == "0"))
                         {
                             return hir::Expr {
                                 pending_work: None,
@@ -63,7 +65,7 @@ impl<'p> Checker<'p> {
                         self.reject_subset(
                             RejectionSite::ArrayLengthStore,
                             "only `xs.length = 0` as a statement is accepted; use `splice` or `pop` to remove elements",
-                            self.pos(member.prop.span()),
+                            self.pos(property_span),
                         );
                         return self.err_expr(pos);
                     }
@@ -71,14 +73,14 @@ impl<'p> Checker<'p> {
                         member,
                         receiver,
                         "length",
-                        self.pos(member.prop.span()),
+                        self.pos(property_span),
                         fx,
                     ));
                 }
             }
         }
-        let operation = assign_op(a.op);
-        let op = if a.op == A::Assign {
+        let operation = assign_op(a.operator);
+        let op = if a.operator == A::Assign {
             None
         } else if let Some((op, _)) = operation {
             Some(op)
@@ -95,7 +97,12 @@ impl<'p> Checker<'p> {
         };
         // §107.3: a pattern binds new names. A pattern that writes
         // existing targets carries its own reason.
-        if let ast::AssignTarget::Pat(target) = &a.left {
+        if matches!(
+            a.left,
+            ast::AssignmentTarget::ArrayAssignmentTarget(_)
+                | ast::AssignmentTarget::ObjectAssignmentTarget(_)
+        ) {
+            let target = &a.left;
             if self.reject_readonly_assignment_target(&a.left, fx) {
                 return self.err_expr(pos);
             }
@@ -103,11 +110,14 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let source = match &a.left {
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
-                PlaceSource::Ident(&binding.id)
+            ast::AssignmentTarget::AssignmentTargetIdentifier(binding) => {
+                PlaceSource::Ident(binding)
             }
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
-                PlaceSource::Member(member)
+            target if target.as_member_expression().is_some() => {
+                match target.as_member_expression() {
+                    Some(member) => PlaceSource::Member(member),
+                    None => PlaceSource::Unsupported,
+                }
             }
             _ => PlaceSource::Unsupported,
         };
@@ -496,7 +506,7 @@ impl<'p> Checker<'p> {
         &mut self,
         target: PlaceSource<'_>,
         arithmetic: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Place {
         let previous = fx
@@ -505,15 +515,19 @@ impl<'p> Checker<'p> {
             .is_some_and(|context| context.write);
         let writes_this = match &target {
             PlaceSource::Member(member) => {
-                let mut object = super::unparen_expr(&member.obj);
+                let mut object = super::unparen_expr(member.object());
                 loop {
                     object = match object {
-                        ast::Expr::Member(member) => super::unparen_expr(&member.obj),
-                        ast::Expr::TsAs(cast) => super::unparen_expr(&cast.expr),
+                        expression if expression.as_member_expression().is_some() => expression
+                            .as_member_expression()
+                            .map_or(expression, |member| super::unparen_expr(member.object())),
+                        ast::Expression::TSAsExpression(cast) => {
+                            super::unparen_expr(&cast.expression)
+                        }
                         _ => break,
                     };
                 }
-                matches!(object, ast::Expr::This(_))
+                matches!(object, ast::Expression::ThisExpression(_))
             }
             _ => false,
         };
@@ -579,12 +593,12 @@ impl<'p> Checker<'p> {
     fn check_assign_target_inner(
         &mut self,
         target: PlaceSource<'_>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Place {
         match target {
             PlaceSource::Ident(ident) => {
-                let name = ident.sym.to_string();
+                let name = ident.name.to_string();
                 let ident_pos = self.pos(ident.span);
                 if let Some(local) = self.lookup_local_for_write(&name, &ident_pos, fx) {
                     if !local.mutable {
@@ -657,18 +671,26 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_write_receiver(&mut self, member: &ast::MemberExpr, fx: &mut FnCtx) -> hir::Expr {
+    fn check_write_receiver(
+        &mut self,
+        member: &ast::MemberExpression,
+        fx: &mut FnCtx<'p>,
+    ) -> hir::Expr {
+        let view = super::member_view(member);
+        let member = &view;
         // Resolve a readonly target through the enclosing method receiver.
         // The modifier check retains the arrow frame and rejects the write.
-        let enclosing_this = if matches!(super::unparen_expr(&member.obj), ast::Expr::This(_))
-            && fx
-                .frames
-                .last()
-                .is_some_and(|frame| frame.is_lambda && frame.this_ty.is_none())
+        let enclosing_this = if matches!(
+            super::unparen_expr(member.object),
+            ast::Expression::ThisExpression(_)
+        ) && fx
+            .frames
+            .last()
+            .is_some_and(|frame| frame.is_lambda && frame.this_ty.is_none())
         {
             fx.frames.iter().rev().find_map(|frame| frame.this_ty.clone()).filter(|ty| {
-                matches!((self.apparent_type(ty), &member.prop), (Type::Class(class), ast::MemberProp::Ident(name))
-                    if self.is_readonly_field(class, name.sym.as_ref()))
+                matches!((self.apparent_type(ty), &member.prop), (Type::Class(class), super::MemberKey::Ident(name))
+                    if self.is_readonly_field(class, name.name.as_ref()))
             })
         } else {
             None
@@ -677,75 +699,79 @@ impl<'p> Checker<'p> {
             if let Some(frame) = fx.frames.last_mut() {
                 frame.this_ty = Some(ty);
             }
-            let receiver = self.check_receiver(&member.obj, fx);
+            let receiver = self.check_receiver(member.object, fx);
             if let Some(frame) = fx.frames.last_mut() {
                 frame.this_ty = None;
             }
             receiver
         } else {
-            self.check_receiver(&member.obj, fx)
+            self.check_receiver(member.object, fx)
         }
     }
 
     fn reject_readonly_assignment_target(
         &mut self,
-        target: &ast::AssignTarget,
-        fx: &mut FnCtx,
+        target: &ast::AssignmentTarget,
+        fx: &mut FnCtx<'p>,
     ) -> bool {
-        fn collect<'a>(pattern: &'a ast::Pat, members: &mut Vec<&'a ast::MemberExpr>) {
-            match pattern {
-                ast::Pat::Expr(expression) => {
-                    if let ast::Expr::Member(member) = super::unparen_expr(expression) {
-                        members.push(member);
+        fn collect<'s, 'a>(
+            target: &'s ast::AssignmentTarget<'a>,
+            members: &mut Vec<&'s ast::MemberExpression<'a>>,
+        ) {
+            if let Some(member) = target.as_member_expression() {
+                members.push(member);
+                return;
+            }
+            match target {
+                ast::AssignmentTarget::ArrayAssignmentTarget(array) => {
+                    for element in array.elements.iter().flatten() {
+                        collect_default(element, members);
+                    }
+                    if let Some(rest) = &array.rest {
+                        collect(&rest.target, members);
                     }
                 }
-                ast::Pat::Array(array) => {
-                    for element in array.elems.iter().flatten() {
-                        collect(element, members);
-                    }
-                }
-                ast::Pat::Object(object) => {
-                    for property in &object.props {
-                        match property {
-                            ast::ObjectPatProp::KeyValue(property) => {
-                                collect(&property.value, members)
-                            }
-                            ast::ObjectPatProp::Rest(rest) => collect(&rest.arg, members),
-                            ast::ObjectPatProp::Assign(_) => {}
+                ast::AssignmentTarget::ObjectAssignmentTarget(object) => {
+                    for property in &object.properties {
+                        if let ast::AssignmentTargetProperty::AssignmentTargetPropertyProperty(
+                            property,
+                        ) = property
+                        {
+                            collect_default(&property.binding, members);
                         }
                     }
+                    if let Some(rest) = &object.rest {
+                        collect(&rest.target, members);
+                    }
                 }
-                ast::Pat::Assign(assignment) => collect(&assignment.left, members),
-                ast::Pat::Rest(rest) => collect(&rest.arg, members),
-                ast::Pat::Ident(_) | ast::Pat::Invalid(_) => {}
+                _ => {}
             }
         }
-        let pattern;
+        fn collect_default<'s, 'a>(
+            target: &'s ast::AssignmentTargetMaybeDefault<'a>,
+            members: &mut Vec<&'s ast::MemberExpression<'a>>,
+        ) {
+            if let ast::AssignmentTargetMaybeDefault::AssignmentTargetWithDefault(default) = target
+            {
+                collect(&default.binding, members);
+            } else if let Some(target) = target.as_assignment_target() {
+                collect(target, members);
+            }
+        }
         let mut members = Vec::new();
-        match target {
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
-                members.push(member)
-            }
-            ast::AssignTarget::Pat(target) => {
-                pattern = match target {
-                    ast::AssignTargetPat::Array(array) => ast::Pat::Array(array.clone()),
-                    ast::AssignTargetPat::Object(object) => ast::Pat::Object(object.clone()),
-                    ast::AssignTargetPat::Invalid(_) => return false,
-                };
-                collect(&pattern, &mut members);
-            }
-            _ => return false,
-        }
+        collect(target, &mut members);
         for member in members {
-            let ast::MemberProp::Ident(name) = &member.prop else {
+            let view = super::member_view(member);
+            let member = &view;
+            let super::MemberKey::Ident(name) = &member.prop else {
                 continue;
             };
             let receiver = self.check_write_receiver(member, fx);
             if let Type::Class(class) = self.apparent_type(&receiver.ty) {
                 if self.reject_readonly_field_write(
                     class,
-                    name.sym.as_ref(),
-                    matches!(&*member.obj, ast::Expr::This(_)),
+                    name.name.as_ref(),
+                    matches!(member.object, ast::Expression::ThisExpression(_)),
                     fx,
                     self.pos(name.span),
                 ) {
@@ -756,13 +782,15 @@ impl<'p> Checker<'p> {
         false
     }
 
-    fn check_member_place(&mut self, m: &ast::MemberExpr, fx: &mut FnCtx) -> Place {
+    fn check_member_place(&mut self, m: &ast::MemberExpression, fx: &mut FnCtx<'p>) -> Place {
+        let view = super::member_view(m);
+        let m = &view;
         let pos = self.pos(m.span);
         if self.reject_static_this_member(m, fx) {
             return Place::Field(self.err_expr(pos));
         }
         match &m.prop {
-            ast::MemberProp::Computed(c) => {
+            super::MemberKey::Computed(c) => {
                 let obj = self.check_write_receiver(m, fx);
                 let index_context = match &self.apparent_type(&obj.ty) {
                     Type::Class(id) => self.classes[id.0]
@@ -780,8 +808,8 @@ impl<'p> Checker<'p> {
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = false;
                 }
-                self.mark_operand_calls(&c.expr);
-                let mut index = self.check_expr(&c.expr, Some(&index_context), fx);
+                self.mark_operand_calls(&c.expression);
+                let mut index = self.check_expr(&c.expression, Some(&index_context), fx);
                 if let Some(context) = &mut fx.field_initializer {
                     context.write = previous;
                 }
@@ -803,17 +831,18 @@ impl<'p> Checker<'p> {
                 }
                 Place::Index(self.check_index(obj, index, pos, fx))
             }
-            ast::MemberProp::Ident(prop) => {
-                let name = prop.sym.to_string();
+            super::MemberKey::Ident(prop) => {
+                let name = prop.name.to_string();
                 let prop_pos = self.pos(prop.span);
-                if let Some(place) = self.check_namespace_place(&m.obj, &name, prop_pos.clone(), fx)
+                if let Some(place) =
+                    self.check_namespace_place(m.object, &name, prop_pos.clone(), fx)
                 {
                     return place;
                 }
                 let obj = self.check_write_receiver(m, fx);
                 self.check_named_member_place(m, obj, &name, prop_pos, fx)
             }
-            ast::MemberProp::PrivateName(prop) => {
+            super::MemberKey::PrivateName(prop) => {
                 self.reject_unlowered_private_name(prop);
                 Place::Field(self.err_expr(pos))
             }
@@ -822,12 +851,14 @@ impl<'p> Checker<'p> {
 
     fn check_named_member_place(
         &mut self,
-        m: &ast::MemberExpr,
+        m: &ast::MemberExpression,
         obj: hir::Expr,
         name: &str,
         prop_pos: Pos,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Place {
+        let view = super::member_view(m);
+        let m = &view;
         if let Type::Class(id) = &self.apparent_type(&obj.ty) {
             if self.classes[id.0]
                 .fields
@@ -838,7 +869,7 @@ impl<'p> Checker<'p> {
                     obj,
                     name,
                     prop_pos,
-                    Some(matches!(&*m.obj, ast::Expr::This(_))),
+                    Some(matches!(m.object, ast::Expression::ThisExpression(_))),
                     fx,
                 ));
             }
@@ -875,22 +906,22 @@ impl<'p> Checker<'p> {
             obj,
             name,
             prop_pos,
-            Some(matches!(&*m.obj, ast::Expr::This(_))),
+            Some(matches!(m.object, ast::Expression::ThisExpression(_))),
             fx,
         ))
     }
 
     fn check_namespace_place(
         &mut self,
-        obj: &ast::Expr,
+        obj: &ast::Expression,
         prop: &str,
         prop_pos: Pos,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Option<Place> {
-        let ast::Expr::Ident(ident) = obj else {
+        let ast::Expression::Identifier(ident) = obj else {
             return None;
         };
-        let name = ident.sym.to_string();
+        let name = ident.name.to_string();
         if fx.owns_local_name(&name) {
             return None;
         }
@@ -972,12 +1003,12 @@ enum NumericOrBooleanLiteral {
     Boolean(bool),
 }
 
-fn numeric_or_boolean_literal(source: &ast::Expr) -> Option<NumericOrBooleanLiteral> {
+fn numeric_or_boolean_literal(source: &ast::Expression) -> Option<NumericOrBooleanLiteral> {
     match super::unparen_expr(source) {
-        ast::Expr::Lit(ast::Lit::Num(n)) => Some(NumericOrBooleanLiteral::Number(n.value)),
-        ast::Expr::Lit(ast::Lit::Bool(b)) => Some(NumericOrBooleanLiteral::Boolean(b.value)),
-        ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => {
-            match numeric_or_boolean_literal(&u.arg)? {
+        ast::Expression::NumericLiteral(n) => Some(NumericOrBooleanLiteral::Number(n.value)),
+        ast::Expression::BooleanLiteral(b) => Some(NumericOrBooleanLiteral::Boolean(b.value)),
+        ast::Expression::UnaryExpression(u) if u.operator == ast::UnaryOperator::UnaryNegation => {
+            match numeric_or_boolean_literal(&u.argument)? {
                 NumericOrBooleanLiteral::Number(n) => Some(NumericOrBooleanLiteral::Number(-n)),
                 _ => None,
             }
@@ -986,16 +1017,19 @@ fn numeric_or_boolean_literal(source: &ast::Expr) -> Option<NumericOrBooleanLite
     }
 }
 
-fn numeric_or_boolean_literal_spelling(source: &ast::Expr) -> Option<String> {
+fn numeric_or_boolean_literal_spelling(source: &ast::Expression) -> Option<String> {
     match super::unparen_expr(source) {
-        ast::Expr::Lit(ast::Lit::Num(n)) => Some(
+        ast::Expression::NumericLiteral(n) => Some(
             n.raw
                 .as_ref()
                 .map_or_else(|| n.value.to_string(), |raw| raw.to_string()),
         ),
-        ast::Expr::Lit(ast::Lit::Bool(b)) => Some(b.value.to_string()),
-        ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => {
-            Some(format!("-{}", numeric_or_boolean_literal_spelling(&u.arg)?))
+        ast::Expression::BooleanLiteral(b) => Some(b.value.to_string()),
+        ast::Expression::UnaryExpression(u) if u.operator == ast::UnaryOperator::UnaryNegation => {
+            Some(format!(
+                "-{}",
+                numeric_or_boolean_literal_spelling(&u.argument)?
+            ))
         }
         _ => None,
     }

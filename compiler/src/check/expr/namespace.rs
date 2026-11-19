@@ -1,8 +1,8 @@
 //! Checks the receiver and the Math, Number, Date, RegExp, and Worker namespaces.
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::check::{static_member_symbol, Checker, FnCtx, ParamSig, ScopeItem};
 use crate::diag::Pos;
@@ -14,7 +14,11 @@ use super::regex_literal;
 impl<'p> Checker<'p> {
     /// Checks a receiver expression and enforces C7: member access on a
     /// nullable value requires prior narrowing.
-    pub(super) fn check_receiver(&mut self, obj: &ast::Expr, fx: &mut FnCtx) -> hir::Expr {
+    pub(super) fn check_receiver(
+        &mut self,
+        obj: &ast::Expression,
+        fx: &mut FnCtx<'p>,
+    ) -> hir::Expr {
         let mut checked = self.check_expr_with_header_receiver(obj, None, fx, true);
         self.apply_narrowing(&mut checked, fx);
         if let Type::Nullable(_, _) = self.apparent_type(&checked.ty) {
@@ -48,16 +52,16 @@ impl<'p> Checker<'p> {
     /// `for_write` marks an assignment-target position.
     pub(super) fn check_namespace_member(
         &mut self,
-        obj: &ast::Expr,
+        obj: &ast::Expression,
         prop: &str,
         prop_pos: Pos,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         for_write: bool,
     ) -> Option<hir::Expr> {
-        let ast::Expr::Ident(id) = obj else {
+        let ast::Expression::Identifier(id) = obj else {
             return None;
         };
-        let name = id.sym.to_string();
+        let name = id.name.to_string();
         // A local scope owns the name against each type name.
         if fx.owns_local_name(&name) {
             return None;
@@ -356,14 +360,14 @@ impl<'p> Checker<'p> {
     /// True when `obj` is the ambient `Math` namespace (stdlib.md §1):
     /// the identifier `Math` with no local binding and no program
     /// declaration shadowing it.
-    pub(super) fn is_math_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+    pub(super) fn is_math_namespace(&self, obj: &ast::Expression, fx: &FnCtx<'p>) -> bool {
         self.ambient_namespace(obj, fx) == Some("Math")
     }
 
     /// True when `obj` is the ambient `Context` namespace (Q6/Q7):
     /// the identifier `Context` with no local binding and no program
     /// declaration shadowing it.
-    pub(super) fn is_context_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+    pub(super) fn is_context_namespace(&self, obj: &ast::Expression, fx: &FnCtx<'p>) -> bool {
         self.ambient_namespace(obj, fx) == Some("Context")
     }
 
@@ -411,17 +415,17 @@ impl<'p> Checker<'p> {
     pub(super) fn check_math_call(
         &mut self,
         f: MathFn,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         if let Some(folded) = self.check_math_fold(f, c, fx, &pos) {
             return folded;
         }
         let arity = f.arity();
-        if c.args.len() != arity {
+        if c.arguments.len() != arity {
             if f == MathFn::Hypot
-                && c.args.len() > 2
+                && c.arguments.len() > 2
                 && self.reject_api_form(
                     "Math",
                     "hypot with more than two arguments",
@@ -444,7 +448,7 @@ impl<'p> Checker<'p> {
                     f.name(),
                     arity,
                     argument_type,
-                    c.args.len()
+                    c.arguments.len()
                 ),
                 pos.clone(),
             );
@@ -461,7 +465,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(
             RejectionSite::MathMethodArgumentCount,
             &params,
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             &format!("Math.{}", f.name()),
@@ -482,7 +486,7 @@ impl<'p> Checker<'p> {
     }
 
     /// True when `obj` is the unshadowed ambient `Number` namespace.
-    pub(super) fn is_number_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+    pub(super) fn is_number_namespace(&self, obj: &ast::Expression, fx: &FnCtx<'p>) -> bool {
         self.ambient_namespace(obj, fx) == Some("Number")
     }
 
@@ -527,11 +531,14 @@ impl<'p> Checker<'p> {
     pub(super) fn check_number_predicate_call(
         &mut self,
         f: NumFn,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        if let Some(spread) = c.args.iter().find_map(|argument| argument.spread) {
+        if let Some(spread) = c.arguments.iter().find_map(|argument| match argument {
+            ast::Argument::SpreadElement(spread) => Some(spread.span),
+            _ => None,
+        }) {
             let spread_pos = self.pos(spread);
             self.reject_subset(
                 RejectionSite::CallSpread,
@@ -540,13 +547,13 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(spread_pos);
         }
-        if c.args.len() != 1 {
+        if c.arguments.len() != 1 {
             self.reject_subset(
                 RejectionSite::NumberPredicateCount,
                 format!(
                     "`Number.{}` takes exactly 1 f64 argument, got {} (Q25)",
                     f.name(),
-                    c.args.len()
+                    c.arguments.len()
                 ),
                 pos.clone(),
             );
@@ -555,7 +562,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(
             RejectionSite::NumberPredicateArgumentCount,
             &[ParamSig::positional(Type::F64)],
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             &format!("Number.{}", f.name()),
@@ -578,8 +585,8 @@ impl<'p> Checker<'p> {
     pub(super) fn check_number_global_call(
         &mut self,
         f: NumFn,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         call_name: &str,
     ) -> hir::Expr {
@@ -598,8 +605,8 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
-        if c.args.len() != params.len() {
-            if f == NumFn::ParseInt && c.args.len() == 1 && call_name == "parseInt" {
+        if c.arguments.len() != params.len() {
+            if f == NumFn::ParseInt && c.arguments.len() == 1 && call_name == "parseInt" {
                 self.reject_api_form("global", "parseInt(value)", "parseInt(value)", pos.clone());
             } else {
                 self.reject_subset(
@@ -608,7 +615,7 @@ impl<'p> Checker<'p> {
                         "`{}` takes exactly {} argument(s), got {} (Q25)",
                         call_name,
                         params.len(),
-                        c.args.len()
+                        c.arguments.len()
                     ),
                     pos.clone(),
                 );
@@ -618,7 +625,7 @@ impl<'p> Checker<'p> {
         let args = self.check_args(
             RejectionSite::GlobalNumberArgumentCount,
             &params,
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             call_name,
@@ -639,25 +646,25 @@ impl<'p> Checker<'p> {
     /// and no program declaration shadows it (same rule as `Math`).
     /// Consulted by both member access and `new Date(…)` so shadowing
     /// behaves identically in every position.
-    pub(super) fn date_is_ambient(&self, fx: &FnCtx) -> bool {
+    pub(super) fn date_is_ambient(&self, fx: &FnCtx<'p>) -> bool {
         self.ambient_visible("Date", fx)
     }
 
     /// True when `Map` / `Set` resolves to the ambient generic reference
     /// class rather than a local or program declaration.
-    pub(super) fn assoc_is_ambient(&self, name: &str, fx: &FnCtx) -> bool {
+    pub(super) fn assoc_is_ambient(&self, name: &str, fx: &FnCtx<'p>) -> bool {
         self.ambient_visible(name, fx)
     }
 
     /// True when `RegExp` resolves to the ambient constructor rather
     /// than a local or program declaration.
-    pub(super) fn regexp_is_ambient(&self, fx: &FnCtx) -> bool {
+    pub(super) fn regexp_is_ambient(&self, fx: &FnCtx<'p>) -> bool {
         self.ambient_visible("RegExp", fx)
     }
 
     /// True when `Worker` resolves to Q35's ambient static namespace rather
     /// than a local or program declaration.
-    pub(super) fn worker_is_ambient(&self, fx: &FnCtx) -> bool {
+    pub(super) fn worker_is_ambient(&self, fx: &FnCtx<'p>) -> bool {
         self.ambient_visible("Worker", fx)
     }
 
@@ -727,42 +734,44 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_worker_spawn(
         &mut self,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        if c.args.len() != 1
-            || c.args
+        if c.arguments.len() != 1
+            || c.arguments
                 .first()
-                .is_some_and(|argument| argument.spread.is_some())
+                .is_some_and(|argument| matches!(argument, ast::Argument::SpreadElement(_)))
         {
             self.reject_subset(
-                if c.args.len() == 1 && c.args[0].spread.is_some() {
+                if c.arguments.len() == 1
+                    && matches!(&c.arguments[0], ast::Argument::SpreadElement(_))
+                {
                     RejectionSite::WorkerSpawnSpread
                 } else {
                     RejectionSite::WorkerSpawnArgumentCount
                 },
                 format!(
                     "`Worker.spawn` expects one directly named entry function, got {} argument(s)",
-                    c.args.len()
+                    c.arguments.len()
                 ),
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
-        let argument = &c.args[0].expr;
-        let mut entry_expr: &ast::Expr = argument;
-        while let ast::Expr::Paren(paren) = entry_expr {
-            entry_expr = &paren.expr;
+        let argument = crate::check::argument_expression(&c.arguments[0]);
+        let mut entry_expr: &ast::Expression = argument;
+        while let ast::Expression::ParenthesizedExpression(paren) = entry_expr {
+            entry_expr = &paren.expression;
         }
-        let ast::Expr::Ident(ident) = entry_expr else {
+        let ast::Expression::Identifier(ident) = entry_expr else {
             self.reject_subset(RejectionSite::WorkerEntryNotNamedFunction, "`Worker.spawn` entry must be a directly named module-level function; lambdas and other values are not worker entries", self.pos(argument.span()));
             return self.err_expr(pos);
         };
-        if fx.owns_local_name(ident.sym.as_ref()) {
+        if fx.owns_local_name(ident.name.as_ref()) {
             let ident_pos = self.pos(ident.span);
             if self
-                .lookup_local(ident.sym.as_ref(), &ident_pos, fx)
+                .lookup_local(ident.name.as_ref(), &ident_pos, fx)
                 .is_some_and(|local| matches!(self.apparent_type(&local.ty), Type::Error))
             {
                 return self.err_expr(pos);
@@ -771,9 +780,9 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         let entry_pos = self.pos(ident.span);
-        let item = self.scope_item(ident.sym.as_ref(), &entry_pos, fx);
+        let item = self.scope_item(ident.name.as_ref(), &entry_pos, fx);
         if matches!(item, Some(ScopeItem::Poisoned)) {
-            self.check_poisoned_arguments(&c.args, fx);
+            self.check_poisoned_arguments(&c.arguments, fx);
             return self.err_expr(pos);
         }
         let Some(ScopeItem::Func(function)) = item else {
@@ -816,7 +825,7 @@ impl<'p> Checker<'p> {
             return self.err_expr(pos);
         }
         // compiler.md §339 rule 6: explicit message arguments supply omitted endpoints.
-        let explicit = if let Some(type_args) = &c.type_args {
+        let explicit = if let Some(type_args) = &c.type_arguments {
             if type_args.params.len() != 2 {
                 self.reject_subset(
                     RejectionSite::WorkerSpawnTypeArgumentCount,
@@ -969,11 +978,11 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_regex_new(
         &mut self,
-        n: &ast::NewExpr,
-        fx: &mut FnCtx,
+        n: &ast::NewExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        if n.type_args.is_some() {
+        if n.type_arguments.is_some() {
             self.reject_subset(
                 RejectionSite::RegexConstructorTypeArguments,
                 "`RegExp` is not generic",
@@ -996,8 +1005,7 @@ impl<'p> Checker<'p> {
                 has_default: true,
             },
         ];
-        let empty: Vec<ast::ExprOrSpread> = Vec::new();
-        let args_ast = n.args.as_deref().unwrap_or(&empty);
+        let args_ast = n.arguments.as_slice();
         let mut args = self.check_args(
             RejectionSite::RegexConstructorArgumentCount,
             &params,
@@ -1029,8 +1037,8 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
@@ -1038,7 +1046,7 @@ impl<'p> Checker<'p> {
             let checked = self.check_args(
                 RejectionSite::RegexTestArgumentCount,
                 &[],
-                &c.args,
+                &c.arguments,
                 fx,
                 &pos,
                 name,
@@ -1084,7 +1092,7 @@ impl<'p> Checker<'p> {
         let checked = self.check_args(
             RejectionSite::RegexExecArgumentCount,
             &params,
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             name,
@@ -1111,20 +1119,21 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
         let literal_without_global = name == "replaceAll"
-            && c.args.first().is_some_and(|arg| {
-                regex_literal(&arg.expr).is_some_and(|regex| !regex.flags.as_ref().contains('g'))
+            && c.arguments.first().is_some_and(|arg| {
+                regex_literal(crate::check::argument_expression(arg))
+                    .is_some_and(|regex| !regex.regex.flags.contains(ast::RegExpFlags::G))
             });
         if literal_without_global {
-            let diagnostic_pos = c
-                .args
-                .first()
-                .map_or_else(|| pos.clone(), |arg| self.pos(arg.expr.span()));
+            let diagnostic_pos = c.arguments.first().map_or_else(
+                || pos.clone(),
+                |arg| self.pos(crate::check::argument_expression(arg).span()),
+            );
             self.reject_subset(
                 RejectionSite::ReplaceAllRegexNotGlobal,
                 "`string.replaceAll` with a RegExp literal requires the `g` flag",
@@ -1136,11 +1145,16 @@ impl<'p> Checker<'p> {
         } else {
             1
         };
-        if !(c.args.len() == arity || (name == "split" && c.args.len() == 2))
-            || c.args.iter().any(|arg| arg.spread.is_some())
+        if !(c.arguments.len() == arity || (name == "split" && c.arguments.len() == 2))
+            || c.arguments
+                .iter()
+                .any(|arg| matches!(arg, ast::Argument::SpreadElement(_)))
         {
             self.reject_subset(
-                if c.args.iter().any(|arg| arg.spread.is_some()) {
+                if c.arguments
+                    .iter()
+                    .any(|arg| matches!(arg, ast::Argument::SpreadElement(_)))
+                {
                     RejectionSite::StringPatternSpreadArity
                 } else {
                     RejectionSite::StringStaticMethodArgumentCount
@@ -1152,15 +1166,15 @@ impl<'p> Checker<'p> {
                     } else {
                         arity.to_string()
                     },
-                    c.args.len()
+                    c.arguments.len()
                 ),
                 pos.clone(),
             );
         }
-        let mut checked = Vec::with_capacity(c.args.len());
-        for (index, arg) in c.args.iter().enumerate() {
-            if arg.spread.is_some() {
-                let spread_pos = self.pos(arg.spread.unwrap_or_default());
+        let mut checked = Vec::with_capacity(c.arguments.len());
+        for (index, arg) in c.arguments.iter().enumerate() {
+            if let ast::Argument::SpreadElement(spread) = arg {
+                let spread_pos = self.pos(spread.span);
                 self.reject_subset(
                     RejectionSite::StringPatternSpread,
                     "spread arguments require variadic parameters, which the language does not have",
@@ -1174,7 +1188,7 @@ impl<'p> Checker<'p> {
                 Type::Str
             };
             let context = (index == 1).then_some(&second_type);
-            let mut value = self.check_expr(&arg.expr, context, fx);
+            let mut value = self.check_expr(crate::check::argument_expression(arg), context, fx);
             if index == 1 {
                 self.require_expr_assignable(
                     &mut value,
@@ -1271,11 +1285,11 @@ impl<'p> Checker<'p> {
     /// True when `obj` is the ambient `Date` namespace (stdlib.md §3):
     /// the identifier `Date` with no local binding and no program
     /// declaration shadowing it (same rule as `Math`).
-    pub(super) fn is_date_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
-        let ast::Expr::Ident(id) = obj else {
+    pub(super) fn is_date_namespace(&self, obj: &ast::Expression, fx: &FnCtx<'p>) -> bool {
+        let ast::Expression::Identifier(id) = obj else {
             return false;
         };
-        id.sym.as_ref() == "Date" && self.date_is_ambient(fx)
+        id.name.as_ref() == "Date" && self.date_is_ambient(fx)
     }
 
     /// A `Date` namespace member outside a call position (stdlib.md §3):
@@ -1312,8 +1326,8 @@ impl<'p> Checker<'p> {
     pub(super) fn check_date_static_call(
         &mut self,
         name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> Option<hir::Expr> {
         match name {
@@ -1332,7 +1346,7 @@ impl<'p> Checker<'p> {
                 let mut args = self.check_args(
                     RejectionSite::DateUtcArgumentCount,
                     &params,
-                    &c.args,
+                    &c.arguments,
                     fx,
                     &pos,
                     "Date.UTC",
@@ -1362,7 +1376,7 @@ impl<'p> Checker<'p> {
                 let args = self.check_args(
                     RejectionSite::DateNowArgumentCount,
                     &[],
-                    &c.args,
+                    &c.arguments,
                     fx,
                     &pos,
                     "Date.now",
@@ -1387,17 +1401,16 @@ impl<'p> Checker<'p> {
     /// current/local time and are out of subset (Q20).
     pub(super) fn check_date_new(
         &mut self,
-        n: &ast::NewExpr,
-        fx: &mut FnCtx,
+        n: &ast::NewExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let empty: Vec<ast::ExprOrSpread> = Vec::new();
-        let args_ast = n.args.as_deref().unwrap_or(&empty);
+        let args_ast = n.arguments.as_slice();
         match args_ast.len() {
             1 => {
                 let arg = &args_ast[0];
-                if let Some(spread) = arg.spread {
-                    let spread_pos = self.pos(spread);
+                if let ast::Argument::SpreadElement(spread) = arg {
+                    let spread_pos = self.pos(spread.span);
                     self.reject_subset(
                         RejectionSite::DateNewSpread,
                         "spread arguments require variadic parameters, which the language does not have",
@@ -1405,7 +1418,8 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let mut value = self.check_expr(&arg.expr, Some(&Type::I64), fx);
+                let mut value =
+                    self.check_expr(crate::check::argument_expression(arg), Some(&Type::I64), fx);
                 if self.apparent_type(&(value.ty)) == Type::Date {
                     value.ty = Type::I64;
                 } else {
@@ -1448,8 +1462,8 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         name: &str,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
@@ -1457,7 +1471,7 @@ impl<'p> Checker<'p> {
             self.check_args(
                 RejectionSite::NumberConversionArgumentCount,
                 &[],
-                &c.args,
+                &c.arguments,
                 fx,
                 &pos,
                 name,
@@ -1473,7 +1487,7 @@ impl<'p> Checker<'p> {
             self.check_args(
                 RejectionSite::BigIntConversionArgumentCount,
                 &[],
-                &c.args,
+                &c.arguments,
                 fx,
                 &pos,
                 name,

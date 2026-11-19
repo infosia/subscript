@@ -1,7 +1,7 @@
 //! Calls with a fixed argument list of any length: `push`, `Math.max`, and
 //! `Math.min` (compiler.md §201).
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use crate::check::rejection::RejectionSite;
 use crate::check::{Checker, FnCtx, ParamSig, SyntheticUse};
@@ -21,11 +21,11 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         elem: Type,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let Some(mut args) = self.check_push_arguments(&elem, &c.args, fx) else {
+        let Some(mut args) = self.check_push_arguments(&elem, &c.arguments, fx) else {
             return self.err_expr(pos);
         };
         match args.len() {
@@ -45,13 +45,14 @@ impl<'p> Checker<'p> {
     fn check_push_arguments(
         &mut self,
         elem: &Type,
-        args: &[ast::ExprOrSpread],
-        fx: &mut FnCtx,
+        args: &[ast::Argument],
+        fx: &mut FnCtx<'p>,
     ) -> Option<Vec<hir::Expr>> {
         let mut checked = Vec::with_capacity(args.len());
         let mut spread = false;
         for argument in args {
-            if let Some(span) = argument.spread {
+            if let ast::Argument::SpreadElement(element) = argument {
+                let span = element.span;
                 let spread_pos = self.pos(span);
                 self.reject_subset(
                     RejectionSite::CallSpread,
@@ -61,7 +62,8 @@ impl<'p> Checker<'p> {
                 spread = true;
                 continue;
             }
-            let mut value = self.check_expr(&argument.expr, Some(elem), fx);
+            let mut value =
+                self.check_expr(crate::check::argument_expression(argument), Some(elem), fx);
             self.require_expr_assignable(&mut value, elem, fx, "the argument");
             if self.transfers_async_origins(elem) {
                 let origins = self.expr_async_origins(&value, fx);
@@ -81,7 +83,7 @@ impl<'p> Checker<'p> {
         &mut self,
         recv: hir::Expr,
         args: Vec<hir::Expr>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let mut effects = Vec::new();
@@ -138,19 +140,22 @@ impl<'p> Checker<'p> {
     pub(super) fn check_math_fold(
         &mut self,
         f: MathFn,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<hir::Expr> {
-        let spread = c.args.iter().any(|argument| argument.spread.is_some());
-        if !matches!(f, MathFn::Max | MathFn::Min) || (c.args.len() == 2 && !spread) {
+        let spread = c
+            .arguments
+            .iter()
+            .any(|argument| matches!(argument, ast::Argument::SpreadElement(_)));
+        if !matches!(f, MathFn::Max | MathFn::Min) || (c.arguments.len() == 2 && !spread) {
             return None;
         }
-        let params = vec![ParamSig::positional(Type::F64); c.args.len()];
+        let params = vec![ParamSig::positional(Type::F64); c.arguments.len()];
         let args = self.check_args(
             RejectionSite::MathMethodArgumentCount,
             &params,
-            &c.args,
+            &c.arguments,
             fx,
             pos,
             &format!("Math.{}", f.name()),

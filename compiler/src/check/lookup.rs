@@ -8,7 +8,12 @@ impl<'p> Checker<'p> {
     /// file's top-level scope, then the global ambient scope (mirror
     /// declarations, §12.2). A type-only import binding reports S100 once
     /// per use site and resolves poisoned (compiler.md §134 rule 2).
-    pub(crate) fn scope_item(&mut self, name: &str, pos: &Pos, fx: &FnCtx) -> Option<ScopeItem> {
+    pub(crate) fn scope_item(
+        &mut self,
+        name: &str,
+        pos: &Pos,
+        fx: &FnCtx<'p>,
+    ) -> Option<ScopeItem> {
         if self
             .rejected_local_names
             .iter()
@@ -69,7 +74,7 @@ impl<'p> Checker<'p> {
         name: &str,
         item: Option<&ScopeItem>,
         pos: &Pos,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) {
         if !matches!(
             item,
@@ -143,7 +148,7 @@ impl<'p> Checker<'p> {
     /// `T | undefined` (§195.2 rule 1), the result of a function with the
     /// result `void` (§250), and an absence comparison (§43). Each other
     /// place rejects it.
-    pub(crate) fn is_undefined_token(&self, e: &ast::Expr, fx: &FnCtx) -> bool {
+    pub(crate) fn is_undefined_token(&self, e: &ast::Expression, fx: &FnCtx) -> bool {
         super::expr::is_undefined_name(e) && !self.binds_name("undefined", fx)
     }
 
@@ -178,7 +183,12 @@ impl<'p> Checker<'p> {
     /// Looks a name up in the local scope stack. A hit that crosses a
     /// lambda boundary is a capture: it is recorded on every crossed
     /// lambda frame and must refer to a `const` binding (C5).
-    pub(crate) fn lookup_local(&mut self, name: &str, pos: &Pos, fx: &mut FnCtx) -> Option<Local> {
+    pub(crate) fn lookup_local(
+        &mut self,
+        name: &str,
+        pos: &Pos,
+        fx: &mut FnCtx<'p>,
+    ) -> Option<Local> {
         self.lookup_local_access(name, pos, fx, true)
     }
 
@@ -187,7 +197,7 @@ impl<'p> Checker<'p> {
         &mut self,
         name: &str,
         pos: &Pos,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Option<Local> {
         self.lookup_local_access(name, pos, fx, false)
     }
@@ -196,7 +206,7 @@ impl<'p> Checker<'p> {
         &mut self,
         name: &str,
         pos: &Pos,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         for_read: bool,
     ) -> Option<Local> {
         let mut crossed = 0usize;

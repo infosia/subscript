@@ -49,7 +49,7 @@ impl<'p> Checker<'p> {
     /// not satisfy its constraint.
     fn apply_type_parameter_constraints(
         &mut self,
-        declaration: Option<&ast::TsTypeParamDecl>,
+        declaration: Option<&ast::TSTypeParameterDeclaration>,
         args: &[Type],
         root: bool,
         positions: &[Pos],
@@ -76,10 +76,10 @@ impl<'p> Checker<'p> {
                     && !self.involves_type_parameter(argument)
                 {
                     self.subst.insert(
-                        parameter.name.sym.to_string(),
+                        parameter.name.name.to_string(),
                         Type::ConstrainedInstance(Box::new(crate::types::ConstrainedInstance {
-                            identity: parameter.name.span.lo.0,
-                            name: parameter.name.sym.to_string(),
+                            identity: parameter.name.span.start,
+                            name: parameter.name.name.to_string(),
                             constraint: Some(constraint),
                             instance: argument.instance_type(),
                         })),
@@ -104,7 +104,7 @@ impl<'p> Checker<'p> {
             let constraint_name = self.type_name(&constraint);
             self.reject_subset(if matches!((&self.apparent_type(argument), &self.apparent_type(&constraint)), (Type::Class(_), Type::Class(_))) { RejectionSite::GenericConstraintIdentity } else { RejectionSite::GenericConstraintMismatch }, format!(
                     "type argument `{argument_name}` does not satisfy the constraint `{constraint_name}` of `{}`",
-                    parameter.name.sym
+                    parameter.name.name
                 ), position);
         }
         if root {
@@ -115,7 +115,7 @@ impl<'p> Checker<'p> {
                         RejectionSite::GenericConstraintCycle,
                         format!(
                             "type parameter `{}` has a circular constraint",
-                            parameter.name.sym
+                            parameter.name.name
                         ),
                         self.pos(parameter.span),
                     );
@@ -281,7 +281,7 @@ impl<'p> Checker<'p> {
         &mut self,
         file: usize,
         type_params: &[String],
-        declaration: Option<&ast::TsTypeParamDecl>,
+        declaration: Option<&ast::TSTypeParameterDeclaration>,
         args: &[Type],
         positions: &[Pos],
         pos: &Pos,
@@ -347,7 +347,7 @@ impl<'p> Checker<'p> {
             self.check_constraints_at_site(
                 template.file,
                 &template.type_params,
-                template.function.type_params.as_deref(),
+                template.function.type_parameters.as_deref(),
                 args,
                 positions,
                 &pos,
@@ -365,7 +365,7 @@ impl<'p> Checker<'p> {
         let root = std::mem::take(&mut self.opaque_root);
         let diagnostics = self.diags.len();
         let satisfied = self.apply_type_parameter_constraints(
-            template.function.type_params.as_deref(),
+            template.function.type_parameters.as_deref(),
             args,
             root,
             positions,
@@ -468,7 +468,7 @@ impl<'p> Checker<'p> {
             self.check_constraints_at_site(
                 template.file,
                 &template.type_params,
-                template.function.type_params.as_deref(),
+                template.function.type_parameters.as_deref(),
                 args,
                 positions,
                 &pos,
@@ -486,7 +486,7 @@ impl<'p> Checker<'p> {
         let root = std::mem::take(&mut self.opaque_root);
         let diagnostics = self.diags.len();
         let satisfied = self.apply_type_parameter_constraints(
-            template.function.type_params.as_deref(),
+            template.function.type_parameters.as_deref(),
             args,
             root,
             positions,
@@ -605,7 +605,7 @@ impl<'p> Checker<'p> {
             self.check_constraints_at_site(
                 template.file,
                 &template.type_params,
-                template.class.type_params.as_deref(),
+                template.class.type_parameters.as_deref(),
                 args,
                 positions,
                 &pos,
@@ -638,7 +638,7 @@ impl<'p> Checker<'p> {
         let root = std::mem::take(&mut self.opaque_root);
         let diagnostics = self.diags.len();
         let satisfied = self.apply_type_parameter_constraints(
-            template.class.type_params.as_deref(),
+            template.class.type_parameters.as_deref(),
             args,
             root,
             positions,
@@ -661,7 +661,7 @@ impl<'p> Checker<'p> {
         &mut self,
         key: &str,
         name: &str,
-        template: &GenericClass,
+        template: &GenericClass<'p>,
         args: &[Type],
     ) -> ClassId {
         let id = self.new_class(
@@ -688,7 +688,7 @@ impl<'p> Checker<'p> {
     }
 
     /// Resolves the members of instance `id` and checks or queues its body.
-    fn complete_instance(&mut self, id: ClassId, template: &GenericClass, check_body: bool) {
+    fn complete_instance(&mut self, id: ClassId, template: &GenericClass<'p>, check_body: bool) {
         self.resolve_class_shape(id, &template.class, template.declared);
         if check_body && (!self.signatures_resolved || self.deciding_type) {
             self.pending_instance_bodies
@@ -725,7 +725,7 @@ impl<'p> Checker<'p> {
                 .collect();
             let diagnostics = self.diags.len();
             let satisfied = self.apply_type_parameter_constraints(
-                template.class.type_params.as_deref(),
+                template.class.type_parameters.as_deref(),
                 &pending.types,
                 pending.root,
                 &pending.positions,
@@ -776,7 +776,7 @@ impl<'p> Checker<'p> {
             let diagnostics = self.diags.len();
             // compiler.md §335 rule 1b: deferred bodies restore only their own constraints.
             self.apply_type_parameter_constraints(
-                template.class.type_params.as_deref(),
+                template.class.type_parameters.as_deref(),
                 &args,
                 false,
                 &[],
@@ -816,20 +816,25 @@ impl<'p> Checker<'p> {
         }
         let mut total = 0;
         let mut required = 0;
-        for member in &template.class.body {
-            let ast::ClassMember::Constructor(ctor) = member else {
+        for member in &template.class.body.body {
+            let ast::ClassElement::MethodDefinition(ctor) = member else {
                 continue;
             };
+            if ctor.kind != ast::MethodDefinitionKind::Constructor {
+                continue;
+            }
             // The shape keeps the last constructor.
             total = 0;
             required = 0;
-            for parameter in &ctor.params {
-                if let ast::ParamOrTsParamProp::Param(parameter) = parameter {
-                    total += 1;
-                    if !matches!(parameter.pat, ast::Pat::Assign(_)) {
-                        required = total;
-                    }
+            for parameter in &ctor.value.params.items {
+                total += 1;
+                if parameter.initializer.is_none() {
+                    required = total;
                 }
+            }
+            if ctor.value.params.rest.is_some() {
+                total += 1;
+                required = total;
             }
         }
         Some((total, required))

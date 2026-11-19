@@ -4,11 +4,11 @@ use super::{Checker, FactSet, FnCtx, Local, NarrowingFacts};
 use crate::check::rejection::RejectionSite;
 use crate::hir::{self, ExprKind};
 use crate::types::Type;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 use std::collections::HashSet;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     fn begin_loop_transaction(&mut self) {
         self.class_ids.begin();
         self.fn_sigs.begin();
@@ -93,10 +93,10 @@ impl Checker<'_> {
     /// Uses normal flow at each back edge for the induction (§315 rules 1–4).
     fn check_inductive_loop(
         &mut self,
-        span: swc_common::Span,
-        fx: &mut FnCtx,
+        span: oxc_span::Span,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
-        check: impl Fn(&mut Self, &mut FnCtx, &mut Vec<hir::Stmt>, &NarrowingFacts) -> bool,
+        check: impl Fn(&mut Self, &mut FnCtx<'p>, &mut Vec<hir::Stmt>, &NarrowingFacts) -> bool,
     ) {
         let assumed: NarrowingFacts = fx
             .narrowed
@@ -188,7 +188,7 @@ impl Checker<'_> {
         check(self, fx, out, &Default::default());
     }
 
-    fn restore_loop_finally_causes(span: swc_common::Span, fx: &mut FnCtx) {
+    fn restore_loop_finally_causes(span: oxc_span::Span, fx: &mut FnCtx) {
         let back = fx.failed_loop_finally_causes.borrow().get(&span).cloned();
         if let Some(back) = back {
             fx.merge_finally_causes(&back.finally_ended, &back.facts);
@@ -196,8 +196,8 @@ impl Checker<'_> {
     }
 
     fn loop_back_edges_hold(
-        span: swc_common::Span,
-        fx: &mut FnCtx,
+        span: oxc_span::Span,
+        fx: &mut FnCtx<'p>,
         assumed: &NarrowingFacts,
         falls_through: bool,
     ) -> bool {
@@ -222,7 +222,11 @@ impl Checker<'_> {
         })
     }
 
-    fn record_loop_back_edge(span: swc_common::Span, fx: &mut FnCtx, edges: Vec<super::LoopEdge>) {
+    fn record_loop_back_edge(
+        span: oxc_span::Span,
+        fx: &mut FnCtx<'p>,
+        edges: Vec<super::LoopEdge>,
+    ) {
         let Some(first) = edges.first() else {
             return;
         };
@@ -243,7 +247,7 @@ impl Checker<'_> {
         );
     }
 
-    pub(super) fn record_loop_edge(&self, fx: &mut FnCtx, is_continue: bool) {
+    pub(super) fn record_loop_edge(&self, fx: &mut FnCtx<'p>, is_continue: bool) {
         if !fx.flow_reachable {
             return;
         }
@@ -274,7 +278,7 @@ impl Checker<'_> {
         }
     }
 
-    pub(super) fn flow_edge_leaving_scopes(fx: &FnCtx, scope_depth: usize) -> super::LoopEdge {
+    pub(super) fn flow_edge_leaving_scopes(fx: &FnCtx<'p>, scope_depth: usize) -> super::LoopEdge {
         let mut edge = super::LoopEdge {
             facts: fx.narrowed.clone(),
             notes: fx.ended_shared_narrowing.clone(),
@@ -332,7 +336,7 @@ impl Checker<'_> {
         edge
     }
 
-    fn join_loop_exits(fx: &mut FnCtx, false_exit: Option<super::LoopEdge>) {
+    fn join_loop_exits(fx: &mut FnCtx<'p>, false_exit: Option<super::LoopEdge>) {
         fx.loop_ended_narrowing.pop();
         let mut exits = fx
             .loop_break_facts
@@ -342,7 +346,7 @@ impl Checker<'_> {
         Self::join_flow_edges(fx, exits);
     }
 
-    pub(super) fn join_flow_edges(fx: &mut FnCtx, mut edges: Vec<super::LoopEdge>) {
+    pub(super) fn join_flow_edges(fx: &mut FnCtx<'p>, mut edges: Vec<super::LoopEdge>) {
         fx.finally_ended_narrowing = FnCtx::joined_finally_causes(
             edges.iter().map(|edge| (&edge.facts, &edge.finally_ended)),
         );
@@ -374,8 +378,8 @@ impl Checker<'_> {
 
     pub(super) fn check_while(
         &mut self,
-        w: &ast::WhileStmt,
-        fx: &mut FnCtx,
+        w: &ast::WhileStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         self.check_inductive_loop(w.span, fx, out, |checker, fx, out, assumed| {
@@ -385,8 +389,8 @@ impl Checker<'_> {
 
     fn check_while_pass(
         &mut self,
-        w: &ast::WhileStmt,
-        fx: &mut FnCtx,
+        w: &ast::WhileStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
         assumed: &super::NarrowingFacts,
     ) -> bool {
@@ -440,8 +444,8 @@ impl Checker<'_> {
     /// `continue`.
     pub(super) fn check_do_while(
         &mut self,
-        d: &ast::DoWhileStmt,
-        fx: &mut FnCtx,
+        d: &ast::DoWhileStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         let pos = self.pos(d.span);
@@ -487,10 +491,15 @@ impl Checker<'_> {
         out.push(hir::Stmt::DoWhile { body, cond, pos });
     }
 
-    pub(super) fn check_for(&mut self, f: &ast::ForStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
+    pub(super) fn check_for(
+        &mut self,
+        f: &ast::ForStatement,
+        fx: &mut FnCtx<'p>,
+        out: &mut Vec<hir::Stmt>,
+    ) {
         fx.scopes.push(Default::default());
         let init = match &f.init {
-            Some(ast::VarDeclOrExpr::VarDecl(v)) => {
+            Some(ast::ForStatementInit::VariableDeclaration(v)) => {
                 let (init_out, prefix) = fx.with_synthetic_owner(
                     super::SyntheticOwnerKind::ForInit(self.pos(v.span)),
                     |fx| {
@@ -506,10 +515,10 @@ impl Checker<'_> {
                 out.extend(init_out);
                 init
             }
-            Some(ast::VarDeclOrExpr::Expr(e)) => {
+            Some(e) => {
                 let (checked, prefix) = fx.with_synthetic_owner(
                     super::SyntheticOwnerKind::ForInit(self.pos(e.span())),
-                    |fx| self.check_expr(e, None, fx),
+                    |fx| self.check_expr(e.to_expression(), None, fx),
                 );
                 out.extend(prefix);
                 Some(Box::new(hir::Stmt::Expr(checked)))
@@ -525,8 +534,8 @@ impl Checker<'_> {
 
     fn check_for_pass(
         &mut self,
-        f: &ast::ForStmt,
-        fx: &mut FnCtx,
+        f: &ast::ForStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
         assumed: &super::NarrowingFacts,
         init: Option<Box<hir::Stmt>>,
@@ -690,12 +699,12 @@ impl Checker<'_> {
     /// this exact subject position.
     pub(super) fn check_for_of(
         &mut self,
-        f: &ast::ForOfStmt,
-        fx: &mut FnCtx,
+        f: &ast::ForOfStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         let pos = self.pos(f.span);
-        if f.is_await {
+        if f.r#await {
             self.reject_subset(RejectionSite::AsyncForOf, "`for await…of` requires the Promise object/iterator surface, which is not in the language", pos);
             return;
         }
@@ -757,7 +766,7 @@ impl Checker<'_> {
             // A pattern binds the element into checker-generated storage and
             // reads its names out of that (§107.2).
             let name = match &pattern {
-                super::pattern::Pattern::Name(binding) => binding.id.sym.to_string(),
+                super::pattern::Pattern::Name(binding) => binding.name.to_string(),
                 _ => {
                     let id = checker.next_pattern_id;
                     checker.next_pattern_id += 1;

@@ -2,7 +2,7 @@
 use super::{FinallyEndedFacts, FnCtx, NarrowingFacts};
 use crate::hir;
 
-impl FnCtx {
+impl<'p> FnCtx<'p> {
     pub(super) fn finally_ended_path(&self, key: &str) -> bool {
         self.finally_ended_narrowing
             .contains(&(key.to_owned(), self.path_scope(key)))

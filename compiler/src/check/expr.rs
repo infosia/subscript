@@ -16,15 +16,19 @@ mod function_list;
 pub(crate) use entry::ContextKind;
 pub(super) mod lambda;
 pub(super) mod literal;
+mod logical;
 mod logical_assign;
 mod member;
+mod member_view;
+use member_view::{member_view, MemberKey};
 mod method;
 mod multi_argument;
 mod namespace;
 mod operator;
 mod self_call;
+mod unary;
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use crate::diag::Pos;
 use crate::hir::{self, BinOp, Callee, ExprKind};
@@ -33,8 +37,8 @@ use crate::types::{ClassId, Type};
 use super::{static_member_symbol, Checker};
 
 enum PlaceSource<'a> {
-    Ident(&'a ast::Ident),
-    Member(&'a ast::MemberExpr),
+    Ident(&'a ast::IdentifierReference<'a>),
+    Member(&'a ast::MemberExpression<'a>),
     Unsupported,
 }
 
@@ -61,11 +65,11 @@ enum Place {
 
 enum OptionalStep<'a> {
     Member {
-        member: &'a ast::MemberExpr,
+        member: &'a ast::MemberExpression<'a>,
         tested: bool,
     },
     Call {
-        call: &'a ast::OptCall,
+        call: &'a ast::CallExpression<'a>,
         tested: bool,
     },
 }
@@ -210,11 +214,13 @@ fn is_place_expr(expr: &hir::Expr) -> bool {
 
 /// True for literals that can adopt a contextual type: numeric literals
 /// (C4) and string literals in a Q32 alias context.
-fn literalish(e: &ast::Expr) -> bool {
+fn literalish(e: &ast::Expression) -> bool {
     match e {
-        ast::Expr::Lit(ast::Lit::Num(_) | ast::Lit::Str(_)) => true,
-        ast::Expr::Paren(p) => literalish(&p.expr),
-        ast::Expr::Unary(u) if u.op == ast::UnaryOp::Minus => literalish(&u.arg),
+        ast::Expression::NumericLiteral(_) | ast::Expression::StringLiteral(_) => true,
+        ast::Expression::ParenthesizedExpression(p) => literalish(&p.expression),
+        ast::Expression::UnaryExpression(u) if u.operator == ast::UnaryOperator::UnaryNegation => {
+            literalish(&u.argument)
+        }
         _ => false,
     }
 }
@@ -223,97 +229,130 @@ fn literalish(e: &ast::Expr) -> bool {
 /// not. The identifier is the token of C7 only with no binding of that
 /// name in scope: `Checker::is_undefined_token` decides (compiler.md §253
 /// rule 1).
-pub(super) fn is_undefined_name(e: &ast::Expr) -> bool {
+pub(super) fn is_undefined_name(e: &ast::Expression) -> bool {
     match e {
-        ast::Expr::Ident(id) => id.sym.as_ref() == "undefined",
-        ast::Expr::Paren(paren) => is_undefined_name(&paren.expr),
+        ast::Expression::Identifier(id) => id.name.as_ref() == "undefined",
+        ast::Expression::ParenthesizedExpression(paren) => is_undefined_name(&paren.expression),
         _ => false,
     }
 }
 
-pub(super) fn unparen_expr(mut e: &ast::Expr) -> &ast::Expr {
-    while let ast::Expr::Paren(paren) = e {
-        e = &paren.expr;
+pub(super) fn unparen_expr<'s, 'a>(mut e: &'s ast::Expression<'a>) -> &'s ast::Expression<'a> {
+    while let ast::Expression::ParenthesizedExpression(paren) = e {
+        e = &paren.expression;
     }
     e
 }
 
 fn flatten_optional_chain<'a>(
-    chain: &'a ast::OptChainExpr,
+    chain: &'a ast::ChainExpression<'a>,
     steps: &mut Vec<OptionalStep<'a>>,
-) -> &'a ast::Expr {
-    match chain.base.as_ref() {
-        ast::OptChainBase::Member(member) => {
-            let root = flatten_optional_operand(&member.obj, steps);
-            steps.push(OptionalStep::Member {
-                member,
-                tested: chain.optional,
-            });
-            root
-        }
-        ast::OptChainBase::Call(call) => {
-            let root = flatten_optional_operand(&call.callee, steps);
+) -> Result<&'a ast::Expression<'a>, oxc_span::Span> {
+    match &chain.expression {
+        ast::ChainElement::CallExpression(call) => {
+            let root = flatten_optional_operand(&call.callee, steps)?;
             steps.push(OptionalStep::Call {
                 call,
-                tested: chain.optional,
+                tested: call.optional,
             });
-            root
+            Ok(root)
+        }
+        ast::ChainElement::TSNonNullExpression(nonnull) => Err(nonnull.span),
+        member => {
+            let member = member.to_member_expression();
+            let root = flatten_optional_operand(member.object(), steps)?;
+            steps.push(OptionalStep::Member {
+                member,
+                tested: member.optional(),
+            });
+            Ok(root)
         }
     }
 }
 
 fn flatten_optional_operand<'a>(
-    expression: &'a ast::Expr,
+    expression: &'a ast::Expression<'a>,
     steps: &mut Vec<OptionalStep<'a>>,
-) -> &'a ast::Expr {
+) -> Result<&'a ast::Expression<'a>, oxc_span::Span> {
+    let expression = unparen_expr(expression);
+    match expression {
+        ast::Expression::ChainExpression(chain) => flatten_optional_chain(chain, steps),
+        ast::Expression::CallExpression(call) if has_optional_step(expression) => {
+            let root = flatten_optional_operand(&call.callee, steps)?;
+            steps.push(OptionalStep::Call {
+                call,
+                tested: call.optional,
+            });
+            Ok(root)
+        }
+        ast::Expression::TSNonNullExpression(nonnull) if has_optional_step(expression) => {
+            Err(nonnull.span)
+        }
+        expression
+            if expression.as_member_expression().is_some() && has_optional_step(expression) =>
+        {
+            if let Some(member) = expression.as_member_expression() {
+                let root = flatten_optional_operand(member.object(), steps)?;
+                steps.push(OptionalStep::Member {
+                    member,
+                    tested: member.optional(),
+                });
+                Ok(root)
+            } else {
+                Ok(expression)
+            }
+        }
+        other => Ok(other),
+    }
+}
+
+fn has_optional_step(expression: &ast::Expression<'_>) -> bool {
     match unparen_expr(expression) {
-        ast::Expr::OptChain(chain) => flatten_optional_chain(chain, steps),
-        other => other,
+        ast::Expression::ChainExpression(_) => true,
+        ast::Expression::CallExpression(call) => call.optional || has_optional_step(&call.callee),
+        ast::Expression::TSNonNullExpression(nonnull) => has_optional_step(&nonnull.expression),
+        expression => expression
+            .as_member_expression()
+            .is_some_and(|member| member.optional() || has_optional_step(member.object())),
     }
 }
 
-fn opt_call_as_call(call: &ast::OptCall) -> ast::CallExpr {
-    ast::CallExpr {
-        span: call.span,
-        ctxt: call.ctxt,
-        callee: ast::Callee::Expr(call.callee.clone()),
-        args: call.args.clone(),
-        type_args: call.type_args.clone(),
-    }
+fn opt_call_as_call<'s, 'a>(call: &'s ast::CallExpression<'a>) -> &'s ast::CallExpression<'a> {
+    call
 }
 
-fn assign_op(op: ast::AssignOp) -> Option<(BinOp, &'static str)> {
-    use ast::AssignOp as A;
+fn assign_op(op: ast::AssignmentOperator) -> Option<(BinOp, &'static str)> {
+    use ast::AssignmentOperator as A;
     Some(match op {
-        A::AddAssign => (BinOp::Add, "+="),
-        A::SubAssign => (BinOp::Sub, "-="),
-        A::MulAssign => (BinOp::Mul, "*="),
-        A::DivAssign => (BinOp::Div, "/="),
-        A::ModAssign => (BinOp::Rem, "%="),
-        A::BitAndAssign => (BinOp::BitAnd, "&="),
-        A::BitOrAssign => (BinOp::BitOr, "|="),
-        A::BitXorAssign => (BinOp::BitXor, "^="),
-        A::LShiftAssign => (BinOp::Shl, "<<="),
-        A::RShiftAssign => (BinOp::Shr, ">>="),
-        A::ZeroFillRShiftAssign => (BinOp::UShr, ">>>="),
+        A::Addition => (BinOp::Add, "+="),
+        A::Subtraction => (BinOp::Sub, "-="),
+        A::Multiplication => (BinOp::Mul, "*="),
+        A::Division => (BinOp::Div, "/="),
+        A::Remainder => (BinOp::Rem, "%="),
+        A::BitwiseAnd => (BinOp::BitAnd, "&="),
+        A::BitwiseOR => (BinOp::BitOr, "|="),
+        A::BitwiseXOR => (BinOp::BitXor, "^="),
+        A::ShiftLeft => (BinOp::Shl, "<<="),
+        A::ShiftRight => (BinOp::Shr, ">>="),
+        A::ShiftRightZeroFill => (BinOp::UShr, ">>>="),
         _ => return None,
     })
 }
 
-fn assign_binary_op(op: BinOp) -> Option<ast::BinaryOp> {
-    use ast::BinaryOp as B;
+fn assign_binary_op(op: BinOp) -> Option<ast::BinaryOperator> {
+    use ast::BinaryOperator as B;
     Some(match op {
-        BinOp::Add => B::Add,
-        BinOp::Sub => B::Sub,
-        BinOp::Mul => B::Mul,
-        BinOp::Div => B::Div,
-        BinOp::Rem => B::Mod,
-        BinOp::BitAnd => B::BitAnd,
-        BinOp::BitOr => B::BitOr,
-        BinOp::BitXor => B::BitXor,
-        BinOp::Shl => B::LShift,
-        BinOp::Shr => B::RShift,
-        BinOp::UShr => B::ZeroFillRShift,
+        BinOp::Add => B::Addition,
+        BinOp::Sub => B::Subtraction,
+        BinOp::Mul => B::Multiplication,
+        BinOp::Div => B::Division,
+        BinOp::Rem => B::Remainder,
+        BinOp::BitAnd => B::BitwiseAnd,
+        BinOp::BitOr => B::BitwiseOR,
+        BinOp::BitXor => B::BitwiseXOR,
+        BinOp::Shl => B::ShiftLeft,
+        BinOp::Shr => B::ShiftRight,
+        BinOp::UShr => B::ShiftRightZeroFill,
         _ => return None,
     })
 }
@@ -330,14 +369,14 @@ struct BinResult {
 }
 
 enum WriteExpression<'a> {
-    Assign(&'a ast::AssignExpr),
-    Update(&'a ast::UpdateExpr),
+    Assign(&'a ast::AssignmentExpression<'a>),
+    Update(&'a ast::UpdateExpression<'a>),
 }
 
 fn write_spelling(write: WriteExpression<'_>, target: &str) -> String {
     match write {
         WriteExpression::Update(update) => {
-            let operator = if update.op == ast::UpdateOp::PlusPlus {
+            let operator = if update.operator == ast::UpdateOperator::Increment {
                 "++"
             } else {
                 "--"
@@ -349,14 +388,14 @@ fn write_spelling(write: WriteExpression<'_>, target: &str) -> String {
             }
         }
         WriteExpression::Assign(assign) => {
-            let (operator, value) = if assign.op == ast::AssignOp::Assign {
+            let (operator, value) = if assign.operator == ast::AssignmentOperator::Assign {
                 ("=", "v".to_string())
             } else {
                 (
-                    assign_op(assign.op)
+                    assign_op(assign.operator)
                         .map(|(_, operator)| operator)
                         .or_else(|| {
-                            logical_assign::LogicalAssign::of(assign.op)
+                            logical_assign::LogicalAssign::of(assign.operator)
                                 .map(logical_assign::LogicalAssign::spelling)
                         })
                         .unwrap_or("="),
@@ -368,15 +407,15 @@ fn write_spelling(write: WriteExpression<'_>, target: &str) -> String {
     }
 }
 
-fn diagnostic_expr_spelling(expression: &ast::Expr) -> String {
+fn diagnostic_expr_spelling(expression: &ast::Expression) -> String {
     match unparen_expr(expression) {
-        ast::Expr::Ident(identifier) => identifier.sym.to_string(),
-        ast::Expr::Lit(ast::Lit::Num(number)) => number
+        ast::Expression::Identifier(identifier) => identifier.name.to_string(),
+        ast::Expression::NumericLiteral(number) => number
             .raw
             .as_deref()
             .map_or_else(|| number.value.to_string(), ToString::to_string),
-        ast::Expr::Lit(ast::Lit::Bool(boolean)) => boolean.value.to_string(),
-        ast::Expr::Lit(ast::Lit::Null(_)) => "null".to_string(),
+        ast::Expression::BooleanLiteral(boolean) => boolean.value.to_string(),
+        ast::Expression::NullLiteral(_) => "null".to_string(),
         _ => "v".to_string(),
     }
 }
@@ -400,8 +439,8 @@ fn contextual_object_class(
 
 #[derive(Clone, Copy)]
 enum DescriptorProp<'a> {
-    Expr(&'a ast::Expr),
-    Shorthand(&'a ast::Ident),
+    Expr(&'a ast::Expression<'a>),
+    Shorthand(&'a ast::IdentifierReference<'a>),
 }
 
 #[derive(Clone, Copy)]
@@ -485,10 +524,10 @@ impl CallbackSpec<'static> {
     }
 }
 
-fn regex_literal(e: &ast::Expr) -> Option<&ast::Regex> {
+fn regex_literal<'a>(e: &'a ast::Expression<'a>) -> Option<&'a ast::RegExpLiteral<'a>> {
     match e {
-        ast::Expr::Lit(ast::Lit::Regex(regex)) => Some(regex),
-        ast::Expr::Paren(paren) => regex_literal(&paren.expr),
+        ast::Expression::RegExpLiteral(regex) => Some(regex),
+        ast::Expression::ParenthesizedExpression(paren) => regex_literal(&paren.expression),
         _ => None,
     }
 }
@@ -574,6 +613,63 @@ mod tests {
         let mut expression = expression.clone();
         normalize(&mut expression);
         expression
+    }
+
+    // Cost: less than 0.01 s in debug; no code generation.
+    #[test]
+    fn optional_chains_keep_non_null_assertions_rejected() {
+        let prefix = "class Value { v: i32 = 1; } class Holder { x: Value | null = null; } ";
+        for body in ["return a?.x! ?? b;", "a?.x!; return b;"] {
+            let source =
+                format!("{prefix}function read(a: Holder | null, b: Value): Value {{ {body} }}");
+            let diagnostics = check_program(&[SourceFile::new("test.ts", source)])
+                .expect_err("the assertion must stay rejected");
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|diagnostic| diagnostic.message.contains("the `!` assertion")),
+                "{diagnostics:?}"
+            );
+        }
+        check_program(&[SourceFile::new(
+            "test.ts",
+            format!(
+                "{prefix}function read(a: Holder | null, b: Value): Value {{ return a?.x ?? b; }}"
+            ),
+        )])
+        .expect("the chain without an assertion must check");
+    }
+
+    // Cost: less than 0.01 s in debug; no code generation.
+    #[test]
+    fn arrow_parameter_initializers_keep_their_values_and_type_checks() {
+        let module = check_program(&[SourceFile::new("test.ts", "export function main(): void { const f = (x: i32 = 7): i32 => x; const y: i32 = f(); }")]).expect("the default must check");
+        let main = module
+            .functions
+            .iter()
+            .find(|function| function.name == "main")
+            .expect("main");
+        let crate::hir::Stmt::Let { init, .. } = &main.body[0] else {
+            panic!("lambda binding");
+        };
+        let crate::hir::ExprKind::Lambda { params, .. } = &init.kind else {
+            panic!("lambda");
+        };
+        assert!(matches!(
+            params[0].default.as_ref().map(|value| &value.kind),
+            Some(crate::hir::ExprKind::Int(7))
+        ));
+        let diagnostics = check_program(&[SourceFile::new(
+            "test.ts",
+            "const f = (x: i32 = 'bad'): i32 => x;",
+        )])
+        .expect_err("the initializer must take its parameter type");
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic
+                .message
+                .contains("the default value expects `i32`, got `string`")),
+            "{diagnostics:?}"
+        );
     }
 
     #[test]

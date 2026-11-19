@@ -11,7 +11,7 @@ impl Checker<'_> {
     }
 }
 
-impl Scope {
+impl Scope<'_> {
     /// Inserts a local and updates the names for diagnostic suppression.
     pub(super) fn insert_local(&mut self, name: String, local: Local, rejected: bool) {
         if rejected {

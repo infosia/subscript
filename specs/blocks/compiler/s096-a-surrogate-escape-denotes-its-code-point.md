@@ -145,6 +145,9 @@ it away, resetting the cursor and pushing the raw characters when
 
 Fork, `https://github.com/infosia/swc_ecma_parser`, branch
 `subscript-eof-bump`:
+*(Amended 2026-11-20 by §341 rules 4a and 4b: the parser is `oxc`. The
+front end joins a pair from the `oxc` value encoding, and a lone
+surrogate diagnostic is at the start of the literal.)*
 
 1. A high surrogate escape immediately followed by a low surrogate
    escape becomes the one code point that pair encodes. `Str.value`

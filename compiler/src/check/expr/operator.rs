@@ -4,12 +4,12 @@ use crate::check::narrowing_fact::FactSet;
 
 use crate::check::rejection::RejectionSite;
 use crate::check::string_operand::StringOperand;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
-use crate::check::{static_member_symbol, Checker, FnCtx, ScopeItem};
+use crate::check::{static_member_symbol, Checker, FnCtx};
 use crate::diag::Pos;
-use crate::hir::{self, BinOp, Callee, ExprKind, UnOp};
+use crate::hir::{self, BinOp, Callee, ExprKind};
 use crate::types::Type;
 
 use super::{
@@ -19,154 +19,6 @@ use super::{
 };
 
 impl<'p> Checker<'p> {
-    pub(super) fn check_unary(
-        &mut self,
-        u: &ast::UnaryExpr,
-        ctx: Option<&Type>,
-        fx: &mut FnCtx,
-        pos: Pos,
-    ) -> hir::Expr {
-        match u.op {
-            ast::UnaryOp::Minus => {
-                // Fold `-literal` so the negative value is range-checked
-                // against the contextual type (C4).
-                let mut arg: &ast::Expr = &u.arg;
-                while let ast::Expr::Paren(p) = arg {
-                    arg = &p.expr;
-                }
-                if let ast::Expr::Lit(ast::Lit::Num(n)) = arg {
-                    return self.check_num_lit(n, true, ctx, pos);
-                }
-                self.mark_operand_calls(&u.arg);
-                let operand = self.check_expr(&u.arg, ctx, fx);
-                let apparent = self.apparent_type(&operand.ty);
-                let parameter = self.instance_restriction(
-                    crate::check::opaque::InstanceRestriction::UnaryNumeric,
-                    &operand.ty,
-                ) && !matches!(apparent, Type::Nullable(_, _));
-                if !parameter && apparent == Type::F16 {
-                    self.reject_subset(
-                        RejectionSite::HalfFloatUnary,
-                        "arithmetic on `f16` is not supported; compute via `as f32`",
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-                if !parameter && !apparent.is_numeric() && !matches!(apparent, Type::Error) {
-                    let name = self.type_name(&operand.ty);
-                    self.reject_subset(
-                        RejectionSite::UnaryNumericCoercion,
-                        format!("unary `-` requires a numeric operand, got `{}`", name),
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-                let ty = if parameter {
-                    Type::GenericNumber
-                } else {
-                    operand.ty.clone()
-                };
-                hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::Unary {
-                        op: UnOp::Neg,
-                        operand: Box::new(operand),
-                    },
-                    ty,
-                    pos,
-                }
-            }
-            ast::UnaryOp::Bang => {
-                let operand = self.check_expr(&u.arg, None, fx);
-                if !self.instance_restriction(
-                    crate::check::opaque::InstanceRestriction::BooleanContext,
-                    &operand.ty,
-                ) && !matches!(self.apparent_type(&operand.ty), Type::Bool | Type::Error)
-                {
-                    let name = self.type_name(&operand.ty);
-                    self.reject_subset(
-                        RejectionSite::LogicalNotNonBoolean,
-                        format!("`!` requires a boolean operand, got `{}`", name),
-                        pos.clone(),
-                    );
-                }
-                hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::Unary {
-                        op: UnOp::Not,
-                        operand: Box::new(operand),
-                    },
-                    ty: Type::Bool,
-                    pos,
-                }
-            }
-            ast::UnaryOp::Tilde => {
-                self.mark_operand_calls(&u.arg);
-                let operand = self.check_expr(&u.arg, ctx, fx);
-                let apparent = self.apparent_type(&operand.ty);
-                let parameter = self.instance_restriction(
-                    crate::check::opaque::InstanceRestriction::UnaryNumeric,
-                    &operand.ty,
-                ) && !matches!(apparent, Type::Nullable(_, _));
-                if !parameter && !apparent.is_integer() && !matches!(apparent, Type::Error) {
-                    let name = self.type_name(&operand.ty);
-                    self.reject_subset(
-                        RejectionSite::BitwiseIntegerOperand,
-                        format!("`~` requires an integer operand, got `{}`", name),
-                        pos.clone(),
-                    );
-                    return self.err_expr(pos);
-                }
-                let ty = if parameter {
-                    Type::GenericNumber
-                } else {
-                    operand.ty.clone()
-                };
-                hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::Unary {
-                        op: UnOp::BitNot,
-                        operand: Box::new(operand),
-                    },
-                    ty,
-                    pos,
-                }
-            }
-            ast::UnaryOp::TypeOf
-                if matches!(super::unparen_expr(&u.arg), ast::Expr::Ident(id)
-                    if !fx.owns_local_name(id.sym.as_ref()) && matches!(self.type_scope_item(id.sym.as_ref()), Some(ScopeItem::Namespace { .. }))) =>
-            {
-                self.check_expr(&u.arg, None, fx)
-            }
-            ast::UnaryOp::Delete => {
-                self.reject_subset(
-                    RejectionSite::DeleteProperty,
-                    "the `delete` operator is not in the language; use `Context.free`",
-                    pos.clone(),
-                );
-                self.err_expr(pos)
-            }
-            _ => {
-                self.reject_subset(
-                    match u.op {
-                        ast::UnaryOp::TypeOf => {
-                            if matches!(super::unparen_expr(&u.arg), ast::Expr::Lit(_)) {
-                                RejectionSite::TypeofLiteral
-                            } else {
-                                RejectionSite::TypeofOperator
-                            }
-                        }
-                        ast::UnaryOp::Void => RejectionSite::VoidOperator,
-                        _ => RejectionSite::UnaryPlusOperator,
-                    },
-                    "unary operator outside the decided surface",
-                    pos.clone(),
-                );
-                self.err_expr(pos)
-            }
-        }
-    }
-
     pub(super) fn stabilize_compound_operand(
         &mut self,
         expr: hir::Expr,
@@ -199,15 +51,22 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_update(
         &mut self,
-        u: &ast::UpdateExpr,
-        fx: &mut FnCtx,
+        u: &ast::UpdateExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         statement_position: bool,
         mut prefix: Option<&mut crate::check::SyntheticPrefix>,
     ) -> hir::Expr {
-        let source = match unparen_expr(&u.arg) {
-            ast::Expr::Ident(ident) => PlaceSource::Ident(ident),
-            ast::Expr::Member(member) => PlaceSource::Member(member),
+        let source = match &u.argument {
+            ast::SimpleAssignmentTarget::AssignmentTargetIdentifier(ident) => {
+                PlaceSource::Ident(ident)
+            }
+            expression if expression.as_member_expression().is_some() => {
+                match expression.as_member_expression() {
+                    Some(member) => PlaceSource::Member(member),
+                    None => PlaceSource::Unsupported,
+                }
+            }
             _ => PlaceSource::Unsupported,
         };
         let place = self.check_assign_target(source, true, fx, &pos);
@@ -268,7 +127,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let op = if u.op == ast::UpdateOp::PlusPlus {
+        let op = if u.operator == ast::UpdateOperator::Increment {
             BinOp::Add
         } else {
             BinOp::Sub
@@ -454,87 +313,26 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_bin(
         &mut self,
-        b: &ast::BinExpr,
+        b: &ast::BinaryExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        use ast::BinaryOp as B;
-        let void_leaves = self.void_leaf_place.take();
-        if matches!(b.op, B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq) {
+        use ast::BinaryOperator as B;
+        self.void_leaf_place.take();
+        if matches!(
+            b.operator,
+            B::Equality | B::Inequality | B::StrictEquality | B::StrictInequality
+        ) {
             if let Some(presence) = self.check_absence_presence_comparison(b, fx, pos.clone()) {
                 return presence;
             }
         }
-        match b.op {
-            B::LogicalAnd | B::LogicalOr => {
-                // §232 rules 1 and 4: each operand of `||` and the right
-                // operand of `&&` keep the context.
-                let left_ctx = (b.op == B::LogicalOr)
-                    .then(|| self.operand_context(&b.left, ctx))
-                    .flatten();
-                let left = self.check_expr(&b.left, left_ctx.as_ref(), fx);
-                let right_ctx = self.operand_context(&b.right, ctx);
-                let right = self.check_logical_right(&left, b, right_ctx.as_ref(), void_leaves, fx);
-                // compiler.md §300 rules 1 and 2: only the left operand
-                // is a truth test when the right operand is discarded.
-                let discarded_right = void_leaves == Some(super::VoidLeafPlace::Statement);
-                let sides: &[&hir::Expr] = if discarded_right {
-                    &[&left]
-                } else {
-                    &[&left, &right]
-                };
-                for side in sides {
-                    if !self.instance_restriction(
-                        crate::check::opaque::InstanceRestriction::BooleanContext,
-                        &side.ty,
-                    ) && !matches!(self.apparent_type(&side.ty), Type::Bool | Type::Error)
-                    {
-                        let name = self.type_name(&side.ty);
-                        self.reject_subset(
-                            RejectionSite::LogicalNonBooleanOperand,
-                            format!("logical operators require booleans, got `{}`", name),
-                            side.pos.clone(),
-                        );
-                    }
-                }
-                let ty = if discarded_right {
-                    Type::Void
-                } else if self.involves_type_parameter(&left.ty)
-                    || self.involves_type_parameter(&right.ty)
-                {
-                    if b.op == B::LogicalAnd
-                        && self.apparent_type(&(right.ty)) == Type::Bool
-                        && !matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
-                    {
-                        Type::Bool
-                    } else {
-                        self.generic_union(&left.ty, &right.ty)
-                    }
-                } else {
-                    Type::Bool
-                };
-                let op = if b.op == B::LogicalAnd {
-                    BinOp::And
-                } else {
-                    BinOp::Or
-                };
-                hir::Expr {
-                    pending_work: None,
-                    kind: ExprKind::Binary {
-                        op,
-                        left: Box::new(left),
-                        right: Box::new(right),
-                    },
-                    ty,
-                    pos,
-                }
-            }
-            B::NullishCoalescing => self.check_nullish(b, ctx, fx, pos),
-            B::InstanceOf => self.check_instanceof(b, fx, pos),
-            B::In | B::Exp => {
+        match b.operator {
+            B::Instanceof => self.check_instanceof(b, fx, pos),
+            B::In | B::Exponential => {
                 self.reject_subset(
-                    if b.op == B::In {
+                    if b.operator == B::In {
                         RejectionSite::InOperator
                     } else {
                         RejectionSite::ExponentOperator
@@ -545,7 +343,10 @@ impl<'p> Checker<'p> {
                 self.err_expr(pos)
             }
             _ => {
-                let arith = matches!(b.op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
+                let arith = matches!(
+                    b.operator,
+                    B::Addition | B::Subtraction | B::Multiplication | B::Division | B::Remainder
+                );
                 let outer: Option<Type> = if arith { ctx.cloned() } else { None };
                 if outer.is_some() {
                     self.mark_operand_calls(&b.left);
@@ -553,26 +354,26 @@ impl<'p> Checker<'p> {
                 }
                 let (mut left, mut right) = if literalish(&b.left) && !literalish(&b.right) {
                     let r = self.check_expr(&b.right, outer.as_ref(), fx);
-                    let c = self.binary_literal_context(&r.ty, b.op).or(outer);
+                    let c = self.binary_literal_context(&r.ty, b.operator).or(outer);
                     (self.check_expr(&b.left, c.as_ref(), fx), r)
                 } else {
                     let left = self.check_expr(&b.left, outer.as_ref(), fx);
                     let c = if literalish(&b.right) {
-                        self.binary_literal_context(&left.ty, b.op).or(outer)
+                        self.binary_literal_context(&left.ty, b.operator).or(outer)
                     } else {
                         outer
                     };
                     let right = self.check_expr(&b.right, c.as_ref(), fx);
                     (left, right)
                 };
-                if matches!(b.op, B::EqEqEq | B::NotEqEq) {
+                if matches!(b.operator, B::StrictEquality | B::StrictInequality) {
                     if let (Some(l), Some(r)) =
                         (self.operand_spelling(&left), self.operand_spelling(&right))
                     {
                         if l != r {
                             let literal = self.apparent_type(&left.ty) == Type::Null
                                 || self.apparent_type(&right.ty) == Type::Null;
-                            self.reject_strict_across_spellings(b.op, literal, pos.clone());
+                            self.reject_strict_across_spellings(b.operator, literal, pos.clone());
                             // §195.3 rule 4: a comparison with the `null` literal
                             // stays an absence test, so narrowing reports nothing more.
                             if !literal {
@@ -581,7 +382,10 @@ impl<'p> Checker<'p> {
                         }
                     }
                 }
-                if matches!(b.op, B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq) {
+                if matches!(
+                    b.operator,
+                    B::Equality | B::Inequality | B::StrictEquality | B::StrictInequality
+                ) {
                     if self.apparent_type(&right.ty) == Type::Null {
                         self.restore_nullable_storage(&mut left);
                     }
@@ -595,7 +399,7 @@ impl<'p> Checker<'p> {
                 self.convert_string_operand(
                     &mut left,
                     StringOperand::Binary {
-                        op: b.op,
+                        op: b.operator,
                         other: &mut right,
                         literal: right_literal.as_deref(),
                         compound: false,
@@ -605,14 +409,14 @@ impl<'p> Checker<'p> {
                 self.convert_string_operand(
                     &mut right,
                     StringOperand::Binary {
-                        op: b.op,
+                        op: b.operator,
                         other: &mut left,
                         literal: left_literal.as_deref(),
                         compound: false,
                         left: false,
                     },
                 );
-                self.bin_result(b.op, left, right, pos, BinUse::Expression)
+                self.bin_result(b.operator, left, right, pos, BinUse::Expression)
                     .expr
             }
         }
@@ -642,8 +446,8 @@ impl<'p> Checker<'p> {
 
     pub(super) fn reject_unbound_optional_chain(
         &mut self,
-        chain: &ast::OptChainExpr,
-        fx: &mut FnCtx,
+        chain: &ast::ChainExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let plan = self.check_optional_plan(chain, fx);
@@ -661,8 +465,8 @@ impl<'p> Checker<'p> {
     /// its call (compiler.md §237 rule 2).
     pub(super) fn check_optional_chain_operand(
         &mut self,
-        chain: &ast::OptChainExpr,
-        fx: &mut FnCtx,
+        chain: &ast::ChainExpression,
+        fx: &mut FnCtx<'p>,
     ) -> (Vec<hir::Stmt>, Type) {
         let pos = self.pos(chain.span);
         let plan = self.check_optional_plan(chain, fx);
@@ -675,8 +479,8 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_optional_chain_statement(
         &mut self,
-        chain: &ast::OptChainExpr,
-        fx: &mut FnCtx,
+        chain: &ast::ChainExpression,
+        fx: &mut FnCtx<'p>,
     ) -> Vec<hir::Stmt> {
         let leaf = self.check_optional_chain_leaf(chain, fx);
         self.void_leaf_statements(leaf)
@@ -685,8 +489,8 @@ impl<'p> Checker<'p> {
     /// compiler.md §339 rule 7: null tests guard a discarded call leaf.
     pub(super) fn check_optional_chain_leaf(
         &mut self,
-        chain: &ast::OptChainExpr,
-        fx: &mut FnCtx,
+        chain: &ast::ChainExpression,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let pos = self.pos(chain.span);
         let plan = self.check_optional_plan(chain, fx);
@@ -730,10 +534,29 @@ impl<'p> Checker<'p> {
         body
     }
 
-    fn check_optional_plan(&mut self, chain: &ast::OptChainExpr, fx: &mut FnCtx) -> OptionalPlan {
+    fn check_optional_plan(
+        &mut self,
+        chain: &ast::ChainExpression,
+        fx: &mut FnCtx<'p>,
+    ) -> OptionalPlan {
         let call_context = self.optional_chain_context.take();
         let mut steps = Vec::new();
-        let root = flatten_optional_chain(chain, &mut steps);
+        let root = match flatten_optional_chain(chain, &mut steps) {
+            Ok(root) => root,
+            Err(span) => {
+                let pos = self.pos(span);
+                self.reject_subset(
+                    RejectionSite::NonNullAssertionExpression,
+                    "the `!` assertion is not in the decided surface; narrow with a null check",
+                    pos.clone(),
+                );
+                return OptionalPlan {
+                    tests: Vec::new(),
+                    value: self.err_expr(pos),
+                    ends_in_call: false,
+                };
+            }
+        };
         if matches!(steps.first(), Some(OptionalStep::Member { .. }))
             && self.reject_caught_property(root, fx)
         {
@@ -759,7 +582,9 @@ impl<'p> Checker<'p> {
         while index < steps.len() {
             match &steps[index] {
                 OptionalStep::Member { member, tested } => {
-                    if *tested && matches!(member.prop, ast::MemberProp::Computed(_)) {
+                    let view = super::member_view(member);
+                    let member = &view;
+                    if *tested && matches!(member.prop, super::MemberKey::Computed(_)) {
                         self.reject_subset(RejectionSite::OptionalComputedMember, "an optional chain cannot use `?.[i]`; narrow the receiver and use `[i]`", self.pos(member.span));
                         return OptionalPlan {
                             tests,
@@ -802,7 +627,7 @@ impl<'p> Checker<'p> {
                                 ends_in_call: false,
                             };
                         }
-                        let ast::MemberProp::Ident(property) = &member.prop else {
+                        let super::MemberKey::Ident(property) = &member.prop else {
                             current = self.check_optional_member(current, member, fx);
                             index += 1;
                             ends_in_call = false;
@@ -811,9 +636,9 @@ impl<'p> Checker<'p> {
                         let call = opt_call_as_call(call);
                         let call_pos = self.pos(call.span);
                         let ctx = call_context.as_ref().filter(|_| index + 2 == steps.len());
-                        current = self.with_optional_call_context(&call, ctx, |checker| {
-                            checker.checked_call(&call, Self::poisoned_call, |checker| {
-                                checker.check_method_call_on(current, property, &call, fx, call_pos)
+                        current = self.with_optional_call_context(call, ctx, |checker| {
+                            checker.checked_call(call, Self::poisoned_call, |checker| {
+                                checker.check_method_call_on(current, property, call, fx, call_pos)
                             })
                         });
                         index += 2;
@@ -841,8 +666,8 @@ impl<'p> Checker<'p> {
                     }
                     let call = opt_call_as_call(call);
                     let call_pos = self.pos(call.span);
-                    current = self.checked_call(&call, Self::poisoned_call, |checker| {
-                        checker.check_indirect_call(current, &call, fx, call_pos)
+                    current = self.checked_call(call, Self::poisoned_call, |checker| {
+                        checker.check_indirect_call(current, call, fx, call_pos)
                     });
                     self.end_shared_narrowing(&current, fx);
                     index += 1;
@@ -861,18 +686,20 @@ impl<'p> Checker<'p> {
     fn check_optional_member(
         &mut self,
         receiver: hir::Expr,
-        member: &ast::MemberExpr,
-        fx: &mut FnCtx,
+        member: &ast::MemberExpression,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
+        let view = super::member_view(member);
+        let member = &view;
         match &member.prop {
-            ast::MemberProp::Ident(property) => self.member_on(
+            super::MemberKey::Ident(property) => self.member_on(
                 receiver,
-                property.sym.as_ref(),
+                property.name.as_ref(),
                 self.pos(property.span),
                 None,
                 fx,
             ),
-            ast::MemberProp::Computed(property) => {
+            super::MemberKey::Computed(property) => {
                 let index_context = match &self.apparent_type(&receiver.ty) {
                     Type::Class(id) => self.classes[id.0]
                         .index_signature
@@ -881,11 +708,11 @@ impl<'p> Checker<'p> {
                         .unwrap_or(Type::I32),
                     _ => Type::I32,
                 };
-                self.mark_operand_calls(&property.expr);
-                let index = self.check_expr(&property.expr, Some(&index_context), fx);
+                self.mark_operand_calls(&property.expression);
+                let index = self.check_expr(&property.expression, Some(&index_context), fx);
                 self.check_index(receiver, index, self.pos(member.span), fx)
             }
-            ast::MemberProp::PrivateName(_) => {
+            super::MemberKey::PrivateName(_) => {
                 let pos = self.pos(member.span);
                 self.reject_subset(
                     RejectionSite::OptionalPrivateMember,
@@ -897,17 +724,17 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn check_nullish(
+    pub(super) fn check_nullish(
         &mut self,
-        binary: &ast::BinExpr,
+        binary: &ast::LogicalExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         // §232 rule 1: the left operand of `??` keeps the context.
         let left_ctx = self.operand_context(&binary.left, ctx);
         let left_ast = unparen_expr(&binary.left);
-        if let ast::Expr::OptChain(chain) = left_ast {
+        if let ast::Expression::ChainExpression(chain) = left_ast {
             self.optional_chain_context = left_ctx;
             let plan = self.check_optional_plan(chain, fx);
             return self.finish_nullish_plan(plan, &binary.right, fx, pos);
@@ -915,7 +742,7 @@ impl<'p> Checker<'p> {
         let left_ctx = self.nullish_left_context(left_ctx.as_ref());
         let mut left = self.check_expr(&binary.left, left_ctx.as_ref(), fx);
         self.restore_nullable_storage(&mut left);
-        if matches!(left_ast, ast::Expr::Bin(binary) if binary.op == ast::BinaryOp::NullishCoalescing)
+        if matches!(left_ast, ast::Expression::LogicalExpression(binary) if binary.operator == ast::LogicalOperator::Coalesce)
             && !matches!(self.apparent_type(&left.ty), Type::Nullable(_, _))
             && self.allows_nullable(&left.ty)
         {
@@ -931,13 +758,13 @@ impl<'p> Checker<'p> {
             let fallback = unparen_expr(&binary.right);
             let saved = self.nullish_fallback_call.take();
             self.nullish_fallback_call = match fallback {
-                ast::Expr::Call(call) if call.type_args.is_none() => {
+                ast::Expression::CallExpression(call) if call.type_arguments.is_none() => {
                     ctx.cloned().map(|context| (call.span, context))
                 }
                 _ => None,
             };
             let right_ctx = match fallback {
-                ast::Expr::Array(array) if array.elems.is_empty() => ctx,
+                ast::Expression::ArrayExpression(array) if array.elements.is_empty() => ctx,
                 _ => None,
             };
             let right = self.check_expr(&binary.right, right_ctx, fx);
@@ -986,8 +813,8 @@ impl<'p> Checker<'p> {
     fn finish_nullish_plan(
         &mut self,
         mut plan: OptionalPlan,
-        right_ast: &ast::Expr,
-        fx: &mut FnCtx,
+        right_ast: &ast::Expression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         if self.apparent_type(&(plan.value.ty)) == Type::Error {
@@ -1021,7 +848,7 @@ impl<'p> Checker<'p> {
         &mut self,
         inner: &Type,
         right: &mut hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         what: &str,
     ) -> Type {
         if right.ty == *inner {
@@ -1071,7 +898,7 @@ impl<'p> Checker<'p> {
         &mut self,
         operand: hir::Expr,
         inner: Type,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, hir::Expr) {
         let pos = operand.pos.clone();
         if is_place_expr(&operand) {
@@ -1178,8 +1005,8 @@ impl<'p> Checker<'p> {
     /// Checks the sole legal `undefined` appearance (§43).
     fn check_absence_presence_comparison(
         &mut self,
-        binary: &ast::BinExpr,
-        fx: &mut FnCtx,
+        binary: &ast::BinaryExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> Option<hir::Expr> {
         let left_undefined = self.is_undefined_token(&binary.left, fx);
@@ -1189,9 +1016,9 @@ impl<'p> Checker<'p> {
         }
 
         let undefined_source = if left_undefined {
-            &*binary.left
+            &binary.left
         } else {
-            &*binary.right
+            &binary.right
         };
         if left_undefined && right_undefined {
             self.reject_subset(
@@ -1206,12 +1033,17 @@ impl<'p> Checker<'p> {
         }
 
         let member_source = if left_undefined {
-            &*binary.right
+            &binary.right
         } else {
-            &*binary.left
+            &binary.left
         };
         let checked = match unparen_expr(member_source) {
-            ast::Expr::Member(member) => self.check_member_read_inner(member, fx, true, false),
+            expression if expression.as_member_expression().is_some() => {
+                match expression.as_member_expression() {
+                    Some(member) => self.check_member_read_inner(member, fx, true, false),
+                    None => self.err_expr(pos.clone()),
+                }
+            }
             other => self.check_expr(other, None, fx),
         };
         if !self.is_absence_capable_member_expr(&checked) {
@@ -1228,7 +1060,10 @@ impl<'p> Checker<'p> {
             pending_work: None,
             kind: ExprKind::AbsenceTest {
                 value: Box::new(checked),
-                negated: matches!(binary.op, ast::BinaryOp::NotEq | ast::BinaryOp::NotEqEq),
+                negated: matches!(
+                    binary.operator,
+                    ast::BinaryOperator::Inequality | ast::BinaryOperator::StrictInequality
+                ),
             },
             ty: Type::Bool,
             pos,
@@ -1240,7 +1075,7 @@ impl<'p> Checker<'p> {
     /// `null`.
     fn check_undefined_absence_comparison(
         &mut self,
-        binary: &ast::BinExpr,
+        binary: &ast::BinaryExpression,
         mut checked: hir::Expr,
         token_left: bool,
         token_pos: Pos,
@@ -1259,11 +1094,14 @@ impl<'p> Checker<'p> {
             }
         };
         if spelling == crate::types::Absence::Null
-            && matches!(binary.op, ast::BinaryOp::EqEqEq | ast::BinaryOp::NotEqEq)
+            && matches!(
+                binary.operator,
+                ast::BinaryOperator::StrictEquality | ast::BinaryOperator::StrictInequality
+            )
         {
             // §195.3 rule 4: the comparison stays an absence test, so
             // narrowing reports nothing more.
-            self.reject_strict_across_spellings(binary.op, true, pos.clone());
+            self.reject_strict_across_spellings(binary.operator, true, pos.clone());
         }
         let token = hir::Expr {
             pending_work: None,
@@ -1276,7 +1114,7 @@ impl<'p> Checker<'p> {
         } else {
             (checked, token)
         };
-        self.bin_result(binary.op, left, right, pos, BinUse::Expression)
+        self.bin_result(binary.operator, left, right, pos, BinUse::Expression)
             .expr
     }
 
@@ -1293,8 +1131,8 @@ impl<'p> Checker<'p> {
     /// Rejects `===` or `!==` across spellings (compiler.md §195.3 rule 2).
     /// The message names the loose operator only when one operand is the
     /// `null` literal or the `undefined` token (`literal`).
-    fn reject_strict_across_spellings(&mut self, op: ast::BinaryOp, literal: bool, pos: Pos) {
-        let (strict, loose) = if op == ast::BinaryOp::EqEqEq {
+    fn reject_strict_across_spellings(&mut self, op: ast::BinaryOperator, literal: bool, pos: Pos) {
+        let (strict, loose) = if op == ast::BinaryOperator::StrictEquality {
             ("===", "==")
         } else {
             ("!==", "!=")
@@ -1311,8 +1149,10 @@ impl<'p> Checker<'p> {
         );
     }
 
-    fn binary_literal_context(&self, ty: &Type, op: ast::BinaryOp) -> Option<Type> {
-        if matches!(self.apparent_type(ty), Type::StringAlias(_)) && op == ast::BinaryOp::Add {
+    fn binary_literal_context(&self, ty: &Type, op: ast::BinaryOperator) -> Option<Type> {
+        if matches!(self.apparent_type(ty), Type::StringAlias(_))
+            && op == ast::BinaryOperator::Addition
+        {
             None
         } else {
             self.literal_context(ty)
@@ -1321,18 +1161,18 @@ impl<'p> Checker<'p> {
 
     pub(super) fn bin_result(
         &mut self,
-        op: ast::BinaryOp,
+        op: ast::BinaryOperator,
         mut left: hir::Expr,
         mut right: hir::Expr,
         pos: Pos,
         use_kind: BinUse,
     ) -> BinResult {
-        use ast::BinaryOp as B;
+        use ast::BinaryOperator as B;
         let equality_operator = match op {
-            B::EqEq => Some("=="),
-            B::NotEq => Some("!="),
-            B::EqEqEq => Some("==="),
-            B::NotEqEq => Some("!=="),
+            B::Equality => Some("=="),
+            B::Inequality => Some("!="),
+            B::StrictEquality => Some("==="),
+            B::StrictInequality => Some("!=="),
             _ => None,
         };
         let compound = use_kind == BinUse::CompoundAssignment;
@@ -1396,7 +1236,10 @@ impl<'p> Checker<'p> {
             BinUse::CompoundAssignment => matches!(lt, Type::Error),
         };
         let mixed_numeric = numeric(&lt) && numeric(&rt) && lt != rt;
-        let arithmetic = matches!(op, B::Add | B::Sub | B::Mul | B::Div | B::Mod);
+        let arithmetic = matches!(
+            op,
+            B::Addition | B::Subtraction | B::Multiplication | B::Division | B::Remainder
+        );
         let left_storage_only = lt == Type::F16
             && !self.instance_restriction(
                 crate::check::opaque::InstanceRestriction::SizedNumeric,
@@ -1434,7 +1277,7 @@ impl<'p> Checker<'p> {
             pos: pos.clone(),
         };
         let (hop, ty, ok) = match op {
-            B::Add => {
+            B::Addition => {
                 if (parameter
                     && (lt == Type::Str || rt == Type::Str)
                     && self.instance_restriction(
@@ -1451,11 +1294,11 @@ impl<'p> Checker<'p> {
                     (BinOp::Add, Type::Error, suppress_error)
                 }
             }
-            B::Sub | B::Mul | B::Div | B::Mod => {
+            B::Subtraction | B::Multiplication | B::Division | B::Remainder => {
                 let hop = match op {
-                    B::Sub => BinOp::Sub,
-                    B::Mul => BinOp::Mul,
-                    B::Div => BinOp::Div,
+                    B::Subtraction => BinOp::Sub,
+                    B::Multiplication => BinOp::Mul,
+                    B::Division => BinOp::Div,
                     _ => BinOp::Rem,
                 };
                 if numeric_pair {
@@ -1464,11 +1307,11 @@ impl<'p> Checker<'p> {
                     (hop, Type::Error, suppress_error)
                 }
             }
-            B::Lt | B::LtEq | B::Gt | B::GtEq => {
+            B::LessThan | B::LessEqualThan | B::GreaterThan | B::GreaterEqualThan => {
                 let hop = match op {
-                    B::Lt => BinOp::Lt,
-                    B::LtEq => BinOp::Le,
-                    B::Gt => BinOp::Gt,
+                    B::LessThan => BinOp::Lt,
+                    B::LessEqualThan => BinOp::Le,
+                    B::GreaterThan => BinOp::Gt,
                     _ => BinOp::Ge,
                 };
                 let comparable = numeric_pair || (matches!(lt, Type::Enum(_)) && lt == rt);
@@ -1499,9 +1342,9 @@ impl<'p> Checker<'p> {
                                     && matches!(lt, Type::Str | Type::Bool)))),
                 )
             }
-            B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq => {
+            B::Equality | B::Inequality | B::StrictEquality | B::StrictInequality => {
                 let content = Type::compares_string_content(&lt, &rt);
-                let hop = match (matches!(op, B::EqEq | B::EqEqEq), content) {
+                let hop = match (matches!(op, B::Equality | B::StrictEquality), content) {
                     (true, true) => BinOp::StrEq,
                     (false, true) => BinOp::StrNe,
                     (true, false) => BinOp::Eq,
@@ -1539,13 +1382,18 @@ impl<'p> Checker<'p> {
                     },
                 )
             }
-            B::BitAnd | B::BitOr | B::BitXor | B::LShift | B::RShift | B::ZeroFillRShift => {
+            B::BitwiseAnd
+            | B::BitwiseOR
+            | B::BitwiseXOR
+            | B::ShiftLeft
+            | B::ShiftRight
+            | B::ShiftRightZeroFill => {
                 let hop = match op {
-                    B::BitAnd => BinOp::BitAnd,
-                    B::BitOr => BinOp::BitOr,
-                    B::BitXor => BinOp::BitXor,
-                    B::LShift => BinOp::Shl,
-                    B::RShift => BinOp::Shr,
+                    B::BitwiseAnd => BinOp::BitAnd,
+                    B::BitwiseOR => BinOp::BitOr,
+                    B::BitwiseXOR => BinOp::BitXor,
+                    B::ShiftLeft => BinOp::Shl,
+                    B::ShiftRight => BinOp::Shr,
                     _ => BinOp::UShr,
                 };
                 if integer_pair {
@@ -1573,17 +1421,17 @@ impl<'p> Checker<'p> {
         }
         if use_kind == BinUse::CompoundAssignment && !mixed_numeric {
             let operator = match op {
-                B::Add => "+=",
-                B::Sub => "-=",
-                B::Mul => "*=",
-                B::Div => "/=",
-                B::Mod => "%=",
-                B::BitAnd => "&=",
-                B::BitOr => "|=",
-                B::BitXor => "^=",
-                B::LShift => "<<=",
-                B::RShift => ">>=",
-                B::ZeroFillRShift => ">>>=",
+                B::Addition => "+=",
+                B::Subtraction => "-=",
+                B::Multiplication => "*=",
+                B::Division => "/=",
+                B::Remainder => "%=",
+                B::BitwiseAnd => "&=",
+                B::BitwiseOR => "|=",
+                B::BitwiseXOR => "^=",
+                B::ShiftLeft => "<<=",
+                B::ShiftRight => ">>=",
+                B::ShiftRightZeroFill => ">>>=",
                 _ => "compound assignment",
             };
             self.reject_subset(
@@ -1613,7 +1461,14 @@ impl<'p> Checker<'p> {
             && rt == Type::Date
             && matches!(
                 op,
-                B::EqEq | B::NotEq | B::EqEqEq | B::NotEqEq | B::Lt | B::LtEq | B::Gt | B::GtEq
+                B::Equality
+                    | B::Inequality
+                    | B::StrictEquality
+                    | B::StrictInequality
+                    | B::LessThan
+                    | B::LessEqualThan
+                    | B::GreaterThan
+                    | B::GreaterEqualThan
             )
         {
             self.reject_api_form(
@@ -1637,7 +1492,12 @@ impl<'p> Checker<'p> {
                 format!("comparison `{operator}`")
             } else if matches!(
                 op,
-                B::BitAnd | B::BitOr | B::BitXor | B::LShift | B::RShift | B::ZeroFillRShift
+                B::BitwiseAnd
+                    | B::BitwiseOR
+                    | B::BitwiseXOR
+                    | B::ShiftLeft
+                    | B::ShiftRight
+                    | B::ShiftRightZeroFill
             ) {
                 "bitwise".to_string()
             } else {
@@ -1663,7 +1523,7 @@ impl<'p> Checker<'p> {
                     } else if (matches!(lt, Type::Enum(_)) && rt.is_numeric())
                         || (matches!(rt, Type::Enum(_)) && lt.is_numeric())
                         || matches!((&lt, &rt), (Type::Enum(_), Type::Enum(_)))
-                        || (op == B::Add && (lt == Type::Str || rt == Type::Str))
+                        || (op == B::Addition && (lt == Type::Str || rt == Type::Str))
                     {
                         RejectionSite::BinaryEnumOperand
                     } else {
@@ -1671,18 +1531,24 @@ impl<'p> Checker<'p> {
                     }
                 } else if lt == Type::Str
                     && rt == Type::Str
-                    && matches!(op, B::Lt | B::LtEq | B::Gt | B::GtEq)
+                    && matches!(
+                        op,
+                        B::LessThan | B::LessEqualThan | B::GreaterThan | B::GreaterEqualThan
+                    )
                 {
                     RejectionSite::StringRelationalOperand
                 } else if lt == Type::Str || rt == Type::Str {
-                    if op == B::Add {
+                    if op == B::Addition {
                         RejectionSite::BinaryStringOperand
                     } else {
                         RejectionSite::BinaryInvalidOperand
                     }
                 } else if lt == Type::Bool
                     && rt == Type::Bool
-                    && matches!(op, B::Lt | B::LtEq | B::Gt | B::GtEq)
+                    && matches!(
+                        op,
+                        B::LessThan | B::LessEqualThan | B::GreaterThan | B::GreaterEqualThan
+                    )
                 {
                     RejectionSite::BooleanRelationalOperand
                 } else if equality_operator.is_some()
@@ -1694,7 +1560,7 @@ impl<'p> Checker<'p> {
                 },
                 equality_operator.map_or_else(
                     || {
-                        let fix = if op == B::Add {
+                        let fix = if op == B::Addition {
                             self.null_test_fix(&[&lt, &rt])
                         } else {
                             ""
@@ -1717,17 +1583,17 @@ impl<'p> Checker<'p> {
     /// is false (compiler.md §133). In a statement place the operand is a
     /// statement place (§300 rule 1). A kill inside the operand ends a fact
     /// (§124). Statement paths join as an `if` (§300 rule 5a).
-    fn check_logical_right(
+    pub(super) fn check_logical_right(
         &mut self,
         left: &hir::Expr,
-        b: &ast::BinExpr,
+        b: &ast::LogicalExpression,
         ctx: Option<&Type>,
         void_leaves: Option<super::VoidLeafPlace>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let mut note_paths = fx.narrowing_note_paths();
         let (when_true, when_false) = self.narrowing_paths(left, fx);
-        let (extra, skipped_extra) = if b.op == ast::BinaryOp::LogicalAnd {
+        let (extra, skipped_extra) = if b.operator == ast::LogicalOperator::And {
             (when_true, when_false)
         } else {
             (when_false, when_true)
@@ -1783,8 +1649,8 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_yield(
         &mut self,
-        y: &ast::YieldExpr,
-        fx: &mut FnCtx,
+        y: &ast::YieldExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let (in_generator, known_yield) = fx
@@ -1812,7 +1678,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        let arg = match &y.arg {
+        let arg = match &y.argument {
             Some(arg) => {
                 let mut e = self.check_expr(arg, known_yield.as_ref(), fx);
                 match &known_yield {
@@ -1849,21 +1715,33 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(super) fn check_as(&mut self, a: &ast::TsAsExpr, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
-        let target = self.resolve_type(&a.type_ann);
+    pub(super) fn check_as(
+        &mut self,
+        a: &ast::TSAsExpression,
+        fx: &mut FnCtx<'p>,
+        pos: Pos,
+    ) -> hir::Expr {
+        let target = self.resolve_type(&a.type_annotation);
         // compiler.md §313 rule 2: an assertion supplies lambda context.
-        let context = match super::unparen_expr(&a.expr) {
-            ast::Expr::Arrow(_) => Some(&target),
-            ast::Expr::Array(array)
-                if array.elems.iter().flatten().any(|element| {
-                    matches!(super::unparen_expr(&element.expr), ast::Expr::Arrow(_))
-                }) =>
+        let context = match super::unparen_expr(&a.expression) {
+            ast::Expression::ArrowFunctionExpression(_) => Some(&target),
+            ast::Expression::ArrayExpression(array)
+                if array
+                    .elements
+                    .iter()
+                    .filter_map(crate::check::array_element_expression)
+                    .any(|element| {
+                        matches!(
+                            super::unparen_expr(element),
+                            ast::Expression::ArrowFunctionExpression(_)
+                        )
+                    }) =>
             {
                 Some(&target)
             }
             _ => None,
         };
-        let mut inner = self.check_expr(&a.expr, context, fx);
+        let mut inner = self.check_expr(&a.expression, context, fx);
         if self.convert_string_operand(&mut inner, StringOperand::Assertion(&target)) {
             return inner;
         }

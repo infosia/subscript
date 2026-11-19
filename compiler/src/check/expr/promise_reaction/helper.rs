@@ -262,7 +262,7 @@ impl Body<'_> {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Returns the symbol of the helper for one reaction at `value` and
     /// `result`, and builds it on first use.
     pub(super) fn promise_helper(

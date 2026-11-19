@@ -1,6 +1,6 @@
 //! Checks the logical assignments `??=`, `||=`, and `&&=` (compiler.md §199).
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use crate::check::rejection::RejectionSite;
 use crate::check::{static_member_symbol, Checker, FnCtx, SyntheticPrefix};
@@ -23,11 +23,11 @@ pub(super) enum LogicalAssign {
 
 impl LogicalAssign {
     /// Selects the logical assignment that `op` spells, if any.
-    pub(super) fn of(op: ast::AssignOp) -> Option<Self> {
+    pub(super) fn of(op: ast::AssignmentOperator) -> Option<Self> {
         match op {
-            ast::AssignOp::NullishAssign => Some(Self::Nullish),
-            ast::AssignOp::OrAssign => Some(Self::Or),
-            ast::AssignOp::AndAssign => Some(Self::And),
+            ast::AssignmentOperator::LogicalNullish => Some(Self::Nullish),
+            ast::AssignmentOperator::LogicalOr => Some(Self::Or),
+            ast::AssignmentOperator::LogicalAnd => Some(Self::And),
             _ => None,
         }
     }
@@ -53,9 +53,9 @@ impl<'p> Checker<'p> {
     /// Checks a logical assignment in value position (§199.1 rule 5).
     pub(super) fn check_logical_assign_value(
         &mut self,
-        a: &ast::AssignExpr,
+        a: &ast::AssignmentExpression,
         op: LogicalAssign,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         match self.check_logical_assign(a, op, fx, pos.clone(), None) {
@@ -68,9 +68,9 @@ impl<'p> Checker<'p> {
     /// that bind a non-place receiver or index come first (§82.1 rule 3).
     pub(super) fn check_logical_assign_statement(
         &mut self,
-        a: &ast::AssignExpr,
+        a: &ast::AssignmentExpression,
         op: LogicalAssign,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> Vec<hir::Stmt> {
         let mut prefix = SyntheticPrefix::default();
@@ -85,18 +85,21 @@ impl<'p> Checker<'p> {
 
     fn check_logical_assign(
         &mut self,
-        a: &ast::AssignExpr,
+        a: &ast::AssignmentExpression,
         op: LogicalAssign,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         mut prefix: Option<&mut SyntheticPrefix>,
     ) -> Checked {
         let source = match &a.left {
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Ident(binding)) => {
-                PlaceSource::Ident(&binding.id)
+            ast::AssignmentTarget::AssignmentTargetIdentifier(binding) => {
+                PlaceSource::Ident(binding)
             }
-            ast::AssignTarget::Simple(ast::SimpleAssignTarget::Member(member)) => {
-                PlaceSource::Member(member)
+            target if target.as_member_expression().is_some() => {
+                match target.as_member_expression() {
+                    Some(member) => PlaceSource::Member(member),
+                    None => PlaceSource::Unsupported,
+                }
             }
             _ => PlaceSource::Unsupported,
         };
@@ -118,7 +121,7 @@ impl<'p> Checker<'p> {
 
     /// Rejects an accessor or index-signature write in value position, as
     /// the plain assignment is rejected (§58.1 rule 7, §65.1 rule 7).
-    fn reject_call_write_value(&mut self, a: &ast::AssignExpr, place: &Place, pos: Pos) {
+    fn reject_call_write_value(&mut self, a: &ast::AssignmentExpression, place: &Place, pos: Pos) {
         let (site, target) = match place {
             Place::IndexSignature { .. } => (
                 RejectionSite::IndexAssignmentExpressionValue,
@@ -147,10 +150,10 @@ impl<'p> Checker<'p> {
     /// field, or an array element.
     fn check_logical_place(
         &mut self,
-        a: &ast::AssignExpr,
+        a: &ast::AssignmentExpression,
         op: LogicalAssign,
         target: hir::Expr,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         prefix: &mut Option<&mut SyntheticPrefix>,
     ) -> hir::Expr {
@@ -239,7 +242,7 @@ impl<'p> Checker<'p> {
         value: &mut hir::Expr,
         inner: &Type,
         storage: &Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<Type> {
         if self.apparent_type(&value.ty) == Type::Error {
             return None;
@@ -261,11 +264,11 @@ impl<'p> Checker<'p> {
     /// A right operand that does not convert fails as `p = v` fails.
     fn check_logical_boolean_value(
         &mut self,
-        a: &ast::AssignExpr,
+        a: &ast::AssignmentExpression,
         left: &hir::Expr,
         target_ty: &Type,
         op: LogicalAssign,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Option<hir::Expr> {
         let mut value = self.check_expr(&a.right, Some(target_ty), fx);
         if self.apparent_type(&value.ty) == Type::Error {
@@ -309,7 +312,7 @@ impl<'p> Checker<'p> {
         target: hir::Expr,
         op: LogicalAssign,
         prefix: &mut Option<&mut SyntheticPrefix>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, hir::Expr) {
         match &target.kind {
             ExprKind::Field { .. } | ExprKind::Index { .. } => {
@@ -328,7 +331,7 @@ impl<'p> Checker<'p> {
         projection: hir::Expr,
         op: LogicalAssign,
         prefix: &mut Option<&mut SyntheticPrefix>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, hir::Expr) {
         let mut first = projection.clone();
         let mut again = projection;
@@ -366,7 +369,7 @@ impl<'p> Checker<'p> {
         receiver: hir::Expr,
         op: LogicalAssign,
         prefix: &mut Option<&mut SyntheticPrefix>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, hir::Expr) {
         let value_typed = self.is_value_class(&receiver.ty)
             || matches!(self.apparent_type(&receiver.ty), Type::FixedArray(..));
@@ -391,7 +394,7 @@ impl<'p> Checker<'p> {
         label: &str,
         op: LogicalAssign,
         prefix: &mut Option<&mut SyntheticPrefix>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, hir::Expr) {
         if is_place_expr(&operand) {
             return (operand.clone(), operand);
@@ -417,7 +420,7 @@ impl<'p> Checker<'p> {
         operand: hir::Expr,
         label: &str,
         role: crate::check::SyntheticUse,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, hir::Expr) {
         let id = self.next_compound_local_id;
         self.next_compound_local_id += 1;
@@ -477,10 +480,10 @@ impl<'p> Checker<'p> {
     /// when the assignment runs (§82.1 rules 1 and 4).
     fn check_logical_call_write(
         &mut self,
-        a: &ast::AssignExpr,
+        a: &ast::AssignmentExpression,
         op: LogicalAssign,
         place: Place,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         prefix: &mut SyntheticPrefix,
     ) -> Checked {

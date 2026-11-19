@@ -1,17 +1,17 @@
 //! Counts body checks for compiler.md §140 acceptance 4.
 
+use oxc_span::Span;
 use std::cell::Cell;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use swc_common::Span;
 
 thread_local! {
     static CHECKS: Cell<usize> = const { Cell::new(0) };
-    static LOOP_CHECKS: RefCell<BTreeMap<swc_common::BytePos, usize>> = const { RefCell::new(BTreeMap::new()) };
+    static LOOP_CHECKS: RefCell<BTreeMap<u32, usize>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 pub(super) fn record_loop(span: Span) {
-    LOOP_CHECKS.with(|checks| *checks.borrow_mut().entry(span.lo).or_default() += 1);
+    LOOP_CHECKS.with(|checks| *checks.borrow_mut().entry(span.start).or_default() += 1);
 }
 
 /// §315 acceptance 7: count checks, independently of machine speed.

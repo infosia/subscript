@@ -3,45 +3,49 @@ use super::*;
 
 /// An earlier name is checked as an ordinary const capture until forward links are known.
 #[derive(Clone)]
-pub(crate) struct EarlierRead {
+pub(crate) struct EarlierRead<'p> {
     pub pos: Pos,
-    pub member: Member,
+    pub member: Member<'p>,
     pub nested: bool,
     pub decided_result: bool,
     pub rejection_site: RejectionSite,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct Member {
+pub(crate) struct Member<'p> {
     pub name: String,
-    pub span: swc_common::Span,
+    pub span: oxc_span::Span,
     pub id: hir::LambdaId,
     pub group: hir::LambdaId,
     pub signature: Option<crate::types::FuncType>,
-    pub params: Vec<ParamSig>,
+    pub params: Vec<ParamSig<'p>>,
     pub is_async: bool,
     pub ready: bool,
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Reserve candidate runs; checked name references select their groups (§293 rule 1).
-    pub(super) fn form_lambda_groups(&mut self, statements: &[ast::Stmt], fx: &mut FnCtx) {
-        let mut runs = Vec::<Vec<(&ast::BindingIdent, &ast::ArrowExpr)>>::new();
+    pub(super) fn form_lambda_groups(&mut self, statements: &[ast::Statement], fx: &mut FnCtx<'p>) {
+        let mut runs = Vec::<Vec<(&ast::BindingIdentifier, &ast::ArrowFunctionExpression)>>::new();
         let mut run = Vec::new();
         for statement in statements {
             let declarations = match statement {
-                ast::Stmt::Decl(ast::Decl::Var(v)) if v.kind == ast::VarDeclKind::Const => {
-                    Some(&v.decls)
+                ast::Statement::VariableDeclaration(v)
+                    if v.kind == ast::VariableDeclarationKind::Const =>
+                {
+                    Some(&v.declarations)
                 }
                 _ => None,
             };
             if let Some(declarations) = declarations {
                 for d in declarations {
-                    if let (ast::Pat::Ident(binding), Some(ast::Expr::Arrow(arrow))) =
-                        (&d.name, d.init.as_deref().map(expr::unparen_expr))
+                    if let (
+                        ast::BindingPattern::BindingIdentifier(binding),
+                        Some(ast::Expression::ArrowFunctionExpression(arrow)),
+                    ) = (&d.id, d.init.as_ref().map(expr::unparen_expr))
                     {
-                        if binding.type_ann.is_none() {
-                            run.push((binding, arrow));
+                        if d.type_annotation.is_none() {
+                            run.push((binding.as_ref(), arrow.as_ref()));
                             continue;
                         }
                     }
@@ -65,24 +69,38 @@ impl Checker<'_> {
                 // Resolve reserved signatures with the same borrow context as
                 // ordinary lambdas, including candidates that remain ungrouped.
                 let saved_group_parameters = self.task_group_parameters;
-                self.task_group_parameters = !arrow.is_async
-                    && !arrow.is_generator
-                    && !fx.frames.iter().any(|frame| frame.is_generator);
-                let params: Vec<_> = arrow
+                self.task_group_parameters =
+                    !arrow.r#async && !fx.frames.iter().any(|frame| frame.is_generator);
+                let mut params: Vec<_> = arrow
                     .params
+                    .items
                     .iter()
                     .map(|p| self.resolve_param_pat(p))
                     .collect();
+                if let Some(rest) = &arrow.params.rest {
+                    self.reject_subset(
+                        RejectionSite::RestParameter,
+                        "parameter pattern outside the decided surface",
+                        self.pos(rest.span),
+                    );
+                    params.push(ParamSig {
+                        annotated: false,
+                        name: String::new(),
+                        state: TypeState::Rejected,
+                        initializer: None,
+                        has_default: false,
+                    });
+                }
                 self.task_group_parameters = saved_group_parameters;
                 let result = arrow
                     .return_type
                     .as_ref()
-                    .map(|a| self.resolve_result_type(&a.type_ann))
-                    .or_else(|| match &*arrow.body {
-                        ast::BlockStmtOrExpr::BlockStmt(block)
-                            if !expr::lambda::returns_matching(&block.stmts, |_| true) =>
+                    .map(|a| self.resolve_result_type(&a.type_annotation))
+                    .or_else(|| match &arrow.body {
+                        ast::ArrowFunctionBody::FunctionBody(block)
+                            if !expr::lambda::returns_matching(&block.statements, |_| true) =>
                         {
-                            Some(if arrow.is_async {
+                            Some(if arrow.r#async {
                                 Type::async_handle(Type::Void)
                             } else {
                                 Type::Void
@@ -96,13 +114,13 @@ impl Checker<'_> {
                     callback_typedef: None,
                 });
                 members.push(Member {
-                    name: binding.id.sym.to_string(),
+                    name: binding.name.to_string(),
                     span: arrow.span,
                     id,
                     group,
                     signature,
                     params,
-                    is_async: arrow.is_async,
+                    is_async: arrow.r#async,
                     ready: false,
                 });
             }
@@ -116,9 +134,9 @@ impl Checker<'_> {
 
     pub(super) fn prepare_lambda_group(
         &mut self,
-        span: swc_common::Span,
-        fx: &mut FnCtx,
-    ) -> Option<Member> {
+        span: oxc_span::Span,
+        fx: &mut FnCtx<'p>,
+    ) -> Option<Member<'p>> {
         let scope = fx
             .scopes
             .iter()
@@ -141,7 +159,11 @@ impl Checker<'_> {
         members.into_iter().find(|member| member.span == span)
     }
 
-    pub(super) fn lambda_group_member(&self, span: swc_common::Span, fx: &FnCtx) -> Option<Member> {
+    pub(super) fn lambda_group_member(
+        &self,
+        span: oxc_span::Span,
+        fx: &FnCtx<'p>,
+    ) -> Option<Member<'p>> {
         fx.scopes
             .iter()
             .rev()
@@ -151,7 +173,12 @@ impl Checker<'_> {
             .cloned()
     }
 
-    fn group_read(&mut self, name: &str, fx: &FnCtx, pos: &Pos) -> Option<Result<Member, ()>> {
+    fn group_read(
+        &mut self,
+        name: &str,
+        fx: &FnCtx<'p>,
+        pos: &Pos,
+    ) -> Option<Result<Member<'p>, ()>> {
         let mut crossed = false;
         for scope in fx.scopes.iter().rev() {
             if scope.owns(name) {
@@ -209,7 +236,7 @@ impl Checker<'_> {
     pub(super) fn check_group_value(
         &mut self,
         name: &str,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         pos: &Pos,
     ) -> Option<hir::Expr> {
         let member = match self.group_read(name, fx, pos)? {
@@ -227,12 +254,12 @@ impl Checker<'_> {
 
     pub(super) fn check_group_call(
         &mut self,
-        name: &ast::Ident,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        name: &ast::IdentifierReference,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<hir::Expr> {
-        let member = match self.group_read(name.sym.as_ref(), fx, pos)? {
+        let member = match self.group_read(name.name.as_ref(), fx, pos)? {
             Ok(member) => member,
             Err(()) => return Some(self.err_expr(pos.clone())),
         };
@@ -241,14 +268,14 @@ impl Checker<'_> {
         let args = self.check_args_with_arguments(
             RejectionSite::SourceFunctionArgumentCount,
             &member.params,
-            &call.args,
+            &call.arguments,
             fx,
             pos,
-            name.sym.as_ref(),
+            name.name.as_ref(),
             None,
             false,
         );
-        let defaults = (call.args.len() < member.params.len()).then(|| hir::LambdaDefaults {
+        let defaults = (call.arguments.len() < member.params.len()).then(|| hir::LambdaDefaults {
             id: member.id,
             params: Vec::new(),
         });
@@ -576,7 +603,7 @@ pub(super) fn normalize(module: &mut hir::Module) {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Complete forward-member defaults before initialization-effect analysis (§293, §291).
     pub(super) fn finish_group_defaults(&mut self) {
         fn gather(

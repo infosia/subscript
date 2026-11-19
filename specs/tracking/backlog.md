@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§340. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§341. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -81,6 +81,7 @@ No item is open in this group.
 - Tests: §337.5 item 1, §338.5 items 1–5.
 - Diagnostics: §339.5 item 1.
 - Gate and runner: §340.5 items 1–4.
+- Front end: §341.5 items 1–5.
 
 ## 7. Process and tooling
 

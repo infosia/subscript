@@ -32,7 +32,7 @@ impl<'p> Checker<'p> {
     /// Records edges before substitution, then resolves each argument (§140 rule 1).
     pub(super) fn resolve_instance_arguments(
         &mut self,
-        arguments: &ast::TsTypeParamInstantiation,
+        arguments: &ast::TSTypeParameterInstantiation,
     ) -> InstanceArguments {
         let edges = arguments
             .params
@@ -61,7 +61,7 @@ impl<'p> Checker<'p> {
                 .iter()
                 .map(|ty| {
                     let span = ty.span();
-                    self.pos(swc_common::Span::new(span.hi, span.hi))
+                    self.pos(oxc_span::Span::new(span.end, span.end))
                 })
                 .collect(),
             edges,
@@ -71,83 +71,76 @@ impl<'p> Checker<'p> {
     /// Visits every type form; rejected forms cannot request an instance (§140 rule 4).
     fn record_parameter_edges(
         &self,
-        ty: &ast::TsType,
+        ty: &ast::TSType,
         expanding: bool,
         edges: &mut Vec<ParameterEdge>,
     ) {
-        let visit = |ty: &ast::TsType, edges: &mut Vec<ParameterEdge>| {
+        let visit = |ty: &ast::TSType, edges: &mut Vec<ParameterEdge>| {
             self.record_parameter_edges(ty, true, edges)
         };
         match ty {
-            ast::TsType::TsTypeRef(reference) => {
-                if let ast::TsEntityName::Ident(name) = &reference.type_name {
+            ast::TSType::TSParenthesizedType(parenthesized) => {
+                self.record_parameter_edges(&parenthesized.type_annotation, expanding, edges)
+            }
+            ast::TSType::TSTypeReference(reference) => {
+                if let ast::TSTypeName::IdentifierReference(name) = &reference.type_name {
                     if let Some(source) = self.instance_chain.last().and_then(|request| {
                         request
                             .parameters
                             .iter()
-                            .position(|parameter| parameter == name.sym.as_ref())
+                            .position(|parameter| parameter == name.name.as_ref())
                     }) {
                         edges.push(ParameterEdge { source, expanding });
                     }
                 }
-                if let Some(arguments) = &reference.type_params {
+                if let Some(arguments) = &reference.type_arguments {
                     for ty in &arguments.params {
                         visit(ty, edges);
                     }
                 }
             }
-            ast::TsType::TsArrayType(array) => visit(&array.elem_type, edges),
-            ast::TsType::TsParenthesizedType(parenthesized) => {
-                self.record_parameter_edges(&parenthesized.type_ann, expanding, edges)
-            }
-            ast::TsType::TsUnionOrIntersectionType(union) => {
-                let types = match union {
-                    ast::TsUnionOrIntersectionType::TsUnionType(union) => &union.types,
-                    ast::TsUnionOrIntersectionType::TsIntersectionType(intersection) => {
-                        &intersection.types
-                    }
-                };
-                for ty in types {
+            ast::TSType::TSArrayType(array) => visit(&array.element_type, edges),
+
+            ast::TSType::TSUnionType(union) => {
+                for ty in &union.types {
                     visit(ty, edges);
                 }
             }
-            ast::TsType::TsFnOrConstructorType(function) => {
+            ast::TSType::TSIntersectionType(intersection) => {
+                for ty in &intersection.types {
+                    visit(ty, edges);
+                }
+            }
+            function @ (ast::TSType::TSFunctionType(_) | ast::TSType::TSConstructorType(_)) => {
+                if let ast::TSType::TSFunctionType(function) = function {
+                    if let Some(this) = &function.this_param {
+                        if let Some(annotation) = &this.type_annotation {
+                            visit(&annotation.type_annotation, edges);
+                        }
+                    }
+                }
                 let (params, annotation) = match function {
-                    ast::TsFnOrConstructorType::TsFnType(function) => {
-                        (&function.params, &function.type_ann)
+                    ast::TSType::TSFunctionType(function) => {
+                        (&function.params, &function.return_type)
                     }
-                    ast::TsFnOrConstructorType::TsConstructorType(function) => {
-                        (&function.params, &function.type_ann)
+                    ast::TSType::TSConstructorType(function) => {
+                        (&function.params, &function.return_type)
                     }
+                    _ => return,
                 };
-                visit(&annotation.type_ann, edges);
-                for param in params {
-                    let annotation = match param {
-                        ast::TsFnParam::Ident(binding) => &binding.type_ann,
-                        ast::TsFnParam::Array(pattern) => &pattern.type_ann,
-                        ast::TsFnParam::Rest(pattern) => &pattern.type_ann,
-                        ast::TsFnParam::Object(pattern) => &pattern.type_ann,
-                    };
-                    if let Some(annotation) = annotation {
-                        visit(&annotation.type_ann, edges);
+                visit(&annotation.type_annotation, edges);
+                for param in &params.items {
+                    if let Some(annotation) = &param.type_annotation {
+                        visit(&annotation.type_annotation, edges);
+                    }
+                }
+                if let Some(rest) = &params.rest {
+                    if let Some(annotation) = &rest.type_annotation {
+                        visit(&annotation.type_annotation, edges);
                     }
                 }
             }
-            ast::TsType::TsKeywordType(_)
-            | ast::TsType::TsThisType(_)
-            | ast::TsType::TsTypeQuery(_)
-            | ast::TsType::TsTypeLit(_)
-            | ast::TsType::TsTupleType(_)
-            | ast::TsType::TsOptionalType(_)
-            | ast::TsType::TsRestType(_)
-            | ast::TsType::TsConditionalType(_)
-            | ast::TsType::TsInferType(_)
-            | ast::TsType::TsTypeOperator(_)
-            | ast::TsType::TsIndexedAccessType(_)
-            | ast::TsType::TsMappedType(_)
-            | ast::TsType::TsLitType(_)
-            | ast::TsType::TsTypePredicate(_)
-            | ast::TsType::TsImportType(_) => {}
+            _ => {}
         }
     }
 

@@ -113,8 +113,9 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_allocator::CloneIn;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::diag::{Diagnostic, Pos, RuleCode};
 use crate::hir;
@@ -130,58 +131,143 @@ fn normalize_module_specifier(specifier: &str) -> String {
         .to_string()
 }
 
-fn module_decl(item: &ast::ModuleItem) -> Option<&ast::Decl> {
+// Declaration names belong to oxc function and class nodes (compiler.md §341 rule 5).
+trait DeclarationName {
+    fn declaration_name(&self) -> &str;
+    fn declaration_name_span(&self) -> oxc_span::Span;
+}
+impl DeclarationName for ast::Function<'_> {
+    fn declaration_name(&self) -> &str {
+        self.id.as_ref().map_or("", |id| id.name.as_str())
+    }
+    fn declaration_name_span(&self) -> oxc_span::Span {
+        self.id
+            .as_ref()
+            .map_or(oxc_span::Span::new(0, 0), |id| id.span)
+    }
+}
+impl DeclarationName for ast::Class<'_> {
+    fn declaration_name(&self) -> &str {
+        self.id.as_ref().map_or("", |id| id.name.as_str())
+    }
+    fn declaration_name_span(&self) -> oxc_span::Span {
+        self.id
+            .as_ref()
+            .map_or(oxc_span::Span::new(0, 0), |id| id.span)
+    }
+}
+
+/// Reads either an ordinary argument or the expression of a spread argument.
+fn argument_expression<'s, 'a>(argument: &'s ast::Argument<'a>) -> &'s ast::Expression<'a> {
+    match argument {
+        ast::Argument::SpreadElement(spread) => &spread.argument,
+        expression => expression.to_expression(),
+    }
+}
+
+fn array_element_expression<'s, 'a>(
+    element: &'s ast::ArrayExpressionElement<'a>,
+) -> Option<&'s ast::Expression<'a>> {
+    match element {
+        ast::ArrayExpressionElement::Elision(_) => None,
+        ast::ArrayExpressionElement::SpreadElement(spread) => Some(&spread.argument),
+        expression => Some(expression.to_expression()),
+    }
+}
+
+/// The ordinary parameters, including the explicitly named `this` parameter (compiler.md §341 rule 5).
+fn function_parameters<'a>(
+    function: &ast::Function<'_>,
+    allocator: &'a oxc_allocator::Allocator,
+) -> oxc_allocator::Vec<'a, ast::FormalParameter<'a>> {
+    formal_parameters(function.this_param.as_deref(), &function.params, allocator)
+}
+
+fn formal_parameters<'a>(
+    this_param: Option<&ast::TSThisParameter<'_>>,
+    source: &ast::FormalParameters<'_>,
+    allocator: &'a oxc_allocator::Allocator,
+) -> oxc_allocator::Vec<'a, ast::FormalParameter<'a>> {
+    let builder = oxc_ast::builder::AstBuilder::new(allocator);
+    let mut parameters = oxc_allocator::Vec::new_in(&allocator);
+    if let Some(this) = this_param {
+        parameters.push(ast::FormalParameter::new(
+            this.span,
+            oxc_allocator::Vec::new_in(&allocator),
+            ast::BindingPattern::BindingIdentifier(ast::BindingIdentifier::boxed(
+                this.this_span,
+                "this",
+                &builder,
+            )),
+            this.type_annotation.clone_in(allocator),
+            None,
+            false,
+            None,
+            false,
+            false,
+            &builder,
+        ));
+    }
+    parameters.extend(
+        source
+            .items
+            .iter()
+            .map(|parameter| parameter.clone_in(allocator)),
+    );
+    parameters
+}
+
+fn function_parameter_count(function: &ast::Function<'_>) -> usize {
+    function.params.items.len()
+        + usize::from(function.params.rest.is_some())
+        + usize::from(function.this_param.is_some())
+}
+
+fn module_decl<'b, 'a>(item: &'b ast::Statement<'a>) -> Option<&'b ast::Declaration<'a>> {
     match item {
-        ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => Some(decl),
-        ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => Some(&export.decl),
-        _ => None,
+        ast::Statement::ExportDeclaration(export) => Some(&export.declaration),
+        item => item.as_declaration(),
     }
 }
 
-fn parameter_name_from_pat(pat: &ast::Pat) -> Option<&str> {
+fn parameter_name_from_pat<'b>(pat: &'b ast::BindingPattern<'_>) -> Option<&'b str> {
     match pat {
-        ast::Pat::Ident(binding) => Some(binding.id.sym.as_ref()),
-        ast::Pat::Assign(assign) => parameter_name_from_pat(&assign.left),
+        ast::BindingPattern::BindingIdentifier(binding) => Some(binding.name.as_str()),
+        ast::BindingPattern::AssignmentPattern(assign) => parameter_name_from_pat(&assign.left),
         _ => None,
     }
 }
 
-fn type_reference_name(ty: Option<&ast::TsType>) -> Option<&str> {
-    let ast::TsType::TsTypeRef(reference) = ty? else {
+fn type_reference_name<'b>(ty: Option<&'b ast::TSType<'_>>) -> Option<&'b str> {
+    let ast::TSType::TSTypeReference(reference) = ty? else {
         return None;
     };
-    let ast::TsEntityName::Ident(ident) = &reference.type_name else {
+    let ast::TSTypeName::IdentifierReference(ident) = &reference.type_name else {
         return None;
     };
-    Some(ident.sym.as_ref())
+    Some(ident.name.as_str())
 }
 
-fn is_dispose_method_key(key: &ast::PropName) -> bool {
-    let ast::PropName::Computed(computed) = key else {
+fn is_dispose_method_key(key: &ast::PropertyKey<'_>) -> bool {
+    let Some(expression) = key.as_expression() else {
         return false;
     };
-    let mut expression = computed.expr.as_ref();
-    while let ast::Expr::Paren(paren) = expression {
-        expression = &paren.expr;
+    let mut expression = expression;
+    while let ast::Expression::ParenthesizedExpression(paren) = expression {
+        expression = &paren.expression;
     }
-    let ast::Expr::Member(member) = expression else {
+    let ast::Expression::StaticMemberExpression(member) = expression else {
         return false;
     };
-    let ast::Expr::Ident(symbol) = member.obj.as_ref() else {
+    let ast::Expression::Identifier(symbol) = &member.object else {
         return false;
     };
-    let ast::MemberProp::Ident(dispose) = &member.prop else {
-        return false;
-    };
-    symbol.sym.as_ref() == "Symbol" && dispose.sym.as_ref() == "dispose"
+    symbol.name == "Symbol" && member.property.name == "dispose"
 }
 
-/// Extracts the declaration-ordered members of the one program type-alias
-/// form admitted by Q32.
-fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
-    let ast::TsType::TsUnionOrIntersectionType(ast::TsUnionOrIntersectionType::TsUnionType(union)) =
-        ty
-    else {
+/// The declaration-ordered string literal members of Q32.
+fn string_alias_members(ty: &ast::TSType<'_>) -> Option<Vec<String>> {
+    let ast::TSType::TSUnionType(union) = ty else {
         return None;
     };
     if union.types.len() < 2 {
@@ -190,33 +276,32 @@ fn string_alias_members(ty: &ast::TsType) -> Option<Vec<String>> {
     union
         .types
         .iter()
-        .map(|member| match &**member {
-            ast::TsType::TsLitType(ast::TsLitType {
-                lit: ast::TsLit::Str(value),
-                ..
-            }) => Some(value.value.to_string()),
+        .map(|member| match member {
+            ast::TSType::TSLiteralType(literal) => match &literal.literal {
+                ast::TSLiteral::StringLiteral(value) => Some(value.value.to_string()),
+                _ => None,
+            },
             _ => None,
         })
         .collect()
 }
 
-/// Returns the object-literal mapping from the one wire-mapped alias form
-/// (§50.1).
-fn wire_alias_literal(ty: &ast::TsType) -> Option<&ast::TsTypeLit> {
-    let ast::TsType::TsTypeRef(reference) = ty else {
+/// The object mapping in a wire-mapped alias (compiler.md §50).
+fn wire_alias_literal<'b, 'a>(ty: &'b ast::TSType<'a>) -> Option<&'b ast::TSTypeLiteral<'a>> {
+    let ast::TSType::TSTypeReference(reference) = ty else {
         return None;
     };
-    let ast::TsEntityName::Ident(name) = &reference.type_name else {
+    let ast::TSTypeName::IdentifierReference(name) = &reference.type_name else {
         return None;
     };
-    if name.sym.as_ref() != "CEnum" {
+    if name.name != "CEnum" {
         return None;
     }
-    let arguments = reference.type_params.as_ref()?;
+    let arguments = reference.type_arguments.as_ref()?;
     if arguments.params.len() != 1 {
         return None;
     }
-    let ast::TsType::TsTypeLit(literal) = &*arguments.params[0] else {
+    let ast::TSType::TSTypeLiteral(literal) = &arguments.params[0] else {
         return None;
     };
     Some(literal)
@@ -249,10 +334,10 @@ fn parse_integer_spelling(raw: &str, negate: bool) -> Option<i128> {
 /// member initializer, §13.2), or `None` for any other expression. Source
 /// spellings are read exactly; a synthesized node goes through the f64
 /// path.
-fn int_literal_value(e: &ast::Expr) -> Option<i64> {
+fn int_literal_value(e: &ast::Expression) -> Option<i64> {
     match e {
-        ast::Expr::Lit(ast::Lit::Num(n)) => {
-            if let Some(raw) = n.raw.as_deref() {
+        ast::Expression::NumericLiteral(n) => {
+            if let Some(raw) = n.raw.as_ref().map(|raw| raw.as_str()) {
                 let value = parse_integer_spelling(raw, false)?;
                 return u64::try_from(value).ok().map(|value| value as i64);
             }
@@ -263,7 +348,7 @@ fn int_literal_value(e: &ast::Expr) -> Option<i64> {
                 None
             }
         }
-        ast::Expr::Paren(p) => int_literal_value(&p.expr),
+        ast::Expression::ParenthesizedExpression(p) => int_literal_value(&p.expression),
         _ => None,
     }
 }
@@ -271,28 +356,28 @@ fn int_literal_value(e: &ast::Expr) -> Option<i64> {
 /// The value of a mirror variable declarator in the one accepted form,
 /// `declare const X = <integer literal>;` (compiler.md §136.1 rule 1).
 /// Every other form gives `None`.
-fn mirror_const_value(v: &ast::VarDecl, d: &ast::VarDeclarator) -> Option<i64> {
-    let ast::Pat::Ident(binding) = &d.name else {
+fn mirror_const_value(v: &ast::VariableDeclaration, d: &ast::VariableDeclarator) -> Option<i64> {
+    let ast::BindingPattern::BindingIdentifier(_binding) = &d.id else {
         return None;
     };
-    if !v.declare || v.kind != ast::VarDeclKind::Const || binding.type_ann.is_some() {
+    if !v.declare || v.kind != ast::VariableDeclarationKind::Const || d.type_annotation.is_some() {
         return None;
     }
-    d.init.as_deref().and_then(int_literal_value)
+    d.init.as_ref().and_then(int_literal_value)
 }
 
 /// One declared parameter in a signature.
 #[derive(Debug, Clone)]
-pub(crate) struct ParamSig {
+pub(crate) struct ParamSig<'p> {
     /// True when a source annotation names no type parameter.
     pub annotated: bool,
     pub name: String,
     pub state: TypeState,
-    pub initializer: Option<Initializer>,
+    pub initializer: Option<Initializer<'p>>,
     pub has_default: bool,
 }
 
-impl ParamSig {
+impl<'p> ParamSig<'p> {
     pub(crate) fn ty(&self) -> &Type {
         self.state.ty()
     }
@@ -309,12 +394,12 @@ impl ParamSig {
 
 /// A resolved function signature.
 #[derive(Debug, Clone)]
-pub(crate) struct FnSig {
+pub(crate) struct FnSig<'p> {
     /// The cached result pattern before caller substitution (compiler.md §335 rule 1b).
     pub result_template: Option<Type>,
     /// True when the source signature declares type parameters.
     pub generic: bool,
-    pub params: Vec<ParamSig>,
+    pub params: Vec<ParamSig<'p>>,
     /// Return type; `Generator<Y>` for generators once the yield type is
     /// inferred from the body.
     pub ret: Type,
@@ -331,23 +416,23 @@ pub(crate) struct FnSig {
 /// Checker-side class information (the HIR `ClassDef` holds the fields;
 /// this holds callable signatures).
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ClassSig {
-    pub ctor: Option<Vec<ParamSig>>,
+pub(crate) struct ClassSig<'p> {
+    pub ctor: Option<Vec<ParamSig<'p>>>,
     modifiers: member_modifiers::ClassModifiers,
-    pub methods: HashMap<String, FnSig>,
-    pub static_methods: HashMap<String, FnSig>,
-    pub static_fields: HashMap<String, GlobalSig>,
-    pub fields: HashMap<String, GlobalSig>,
+    pub methods: HashMap<String, FnSig<'p>>,
+    pub static_methods: HashMap<String, FnSig<'p>>,
+    pub static_fields: HashMap<String, GlobalSig<'p>>,
+    pub fields: HashMap<String, GlobalSig<'p>>,
     /// Generic instance methods, by declared name (§82.4). A template
     /// never reaches the HIR; each call instantiates one method.
-    pub generic_methods: HashMap<String, GenericMethod>,
+    pub generic_methods: HashMap<String, GenericMethod<'p>>,
     /// Generic static methods, by declared name (§82.4).
-    pub static_generic_methods: HashMap<String, GenericMethod>,
+    pub static_generic_methods: HashMap<String, GenericMethod<'p>>,
     member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
     static_member_namespace: HashMap<String, ClassMemberNamespaceEntry>,
 }
 
-impl ClassSig {
+impl<'p> ClassSig<'p> {
     fn has_member(&self, name: &str) -> bool {
         self.member_namespace.contains_key(name)
     }
@@ -425,17 +510,17 @@ fn static_member_symbol(id: ClassId, class: &str, member: &str) -> String {
 
 /// A module-level variable's declared shape.
 #[derive(Debug, Clone)]
-pub(crate) struct GlobalSig {
+pub(crate) struct GlobalSig<'p> {
     pub annotated: bool,
     pub named_lambda: bool,
     pub lambda_defaults: Option<hir::LambdaDefaults>,
     pub function_value_required: Option<usize>,
     pub state: TypeState,
-    pub initializer: Option<Initializer>,
+    pub initializer: Option<Initializer<'p>>,
     pub mutable: bool,
 }
 
-impl GlobalSig {
+impl<'p> GlobalSig<'p> {
     pub(crate) fn ty(&self) -> &Type {
         self.state.ty()
     }
@@ -443,33 +528,37 @@ impl GlobalSig {
 
 /// A generic function template awaiting monomorphization.
 #[derive(Debug, Clone)]
-pub(crate) struct GenericFn {
+pub(crate) struct GenericFn<'p> {
     pub file: usize,
     pub type_params: Vec<String>,
-    pub function: ast::Function,
+    pub function: Rc<ast::Function<'p>>,
     pub rejected: bool,
 }
 
 /// A generic method template awaiting monomorphization (§82.4).
 #[derive(Debug, Clone)]
-pub(crate) struct GenericMethod {
+pub(crate) struct GenericMethod<'p> {
     pub file: usize,
     pub type_params: Vec<String>,
-    pub function: ast::Function,
+    pub function: Rc<ast::Function<'p>>,
     pub rejected: bool,
 }
 
-impl GenericMethod {
-    fn rejected(file: usize, function: &ast::Function) -> Option<Self> {
-        let declaration = function.type_params.as_ref()?;
+impl<'p> GenericMethod<'p> {
+    fn rejected(
+        file: usize,
+        function: &ast::Function<'_>,
+        allocator: &'p oxc_allocator::Allocator,
+    ) -> Option<Self> {
+        let declaration = function.type_parameters.as_ref()?;
         Some(Self {
             file,
             type_params: declaration
                 .params
                 .iter()
-                .map(|parameter| parameter.name.sym.to_string())
+                .map(|parameter| parameter.name.name.to_string())
                 .collect(),
-            function: function.clone(),
+            function: Rc::new(function.clone_in(allocator)),
             rejected: true,
         })
     }
@@ -477,7 +566,7 @@ impl GenericMethod {
 
 /// A generic class template awaiting monomorphization.
 #[derive(Debug, Clone)]
-pub(crate) struct GenericClass {
+pub(crate) struct GenericClass<'p> {
     pub file: usize,
     pub is_value: bool,
     pub is_descriptor: bool,
@@ -488,8 +577,8 @@ pub(crate) struct GenericClass {
     pub type_params: Vec<String>,
     pub has_static_member: bool,
     /// Rejected method templates, partitioned by the static namespace flag.
-    pub rejected_generic_methods: HashMap<(Option<String>, bool), GenericMethod>,
-    pub class: ast::Class,
+    pub rejected_generic_methods: HashMap<(Option<String>, bool), GenericMethod<'p>>,
+    pub class: Rc<ast::Class<'p>>,
     pub pos: Pos,
 }
 
@@ -556,7 +645,7 @@ pub(crate) struct Local {
 /// One lexical scope. `fn_boundary` marks the start of a lambda body:
 /// lookups that cross it are captures.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Scope {
+pub(crate) struct Scope<'p> {
     /// Source parameter names select the form-specific example (§312 rule 1).
     pub parameter_names: Shared<HashSet<String>>,
     /// The running lambda binding and its decided signature (§284).
@@ -567,9 +656,9 @@ pub(crate) struct Scope {
         bool,
         Option<hir::LambdaDefaults>,
     )>,
-    pub result_sources: HashMap<String, Option<Vec<(swc_common::Span, bool)>>>,
-    pub lambda_groups: HashMap<swc_common::Span, Vec<lambda_group::Member>>,
-    pub group_members: HashMap<String, lambda_group::Member>,
+    pub result_sources: HashMap<String, Option<Vec<(oxc_span::Span, bool)>>>,
+    pub lambda_groups: HashMap<oxc_span::Span, Vec<lambda_group::Member<'p>>>,
+    pub group_members: HashMap<String, lambda_group::Member<'p>>,
     pub named_lambdas: Shared<HashMap<String, hir::LambdaDefaults>>,
     /// Defaults retained by inferred const aliases (compiler.md §320 rules 1–3).
     pub adapter_defaults: Shared<HashMap<String, hir::Callee>>,
@@ -605,7 +694,7 @@ pub(crate) struct Scope {
     pub dispose_on_exit: bool,
 }
 
-impl Scope {
+impl<'p> Scope<'p> {
     /// Whether this scope owns a binding of `name`: a local, a name that a
     /// later declaration of the scope owns, or a name that a `switch` case
     /// declares.
@@ -925,9 +1014,9 @@ type FinallyEndedFacts = Shared<std::collections::BTreeSet<(String, Option<usize
 /// Per-body checking state: scope stack, frames, and the narrowing set of
 /// path keys known non-null or present (C7, §43).
 #[derive(Debug, Clone)]
-pub(crate) struct FnCtx {
+pub(crate) struct FnCtx<'p> {
     /// A whole local const initializer that can name its running lambda (§284).
-    pub lambda_initializer: Option<(swc_common::Span, String, bool)>,
+    pub lambda_initializer: Option<(oxc_span::Span, String, bool)>,
     pub frames: Shared<Vec<Frame>>,
     pub lexical_class: Option<ClassId>,
     /// The generic class template whose body encloses a moved local
@@ -943,13 +1032,13 @@ pub(crate) struct FnCtx {
     /// The assignment target in check is the target of a compound
     /// assignment, an increment, or a decrement (§209.1 rule 3).
     arithmetic_write: bool,
-    pub scopes: Shared<Vec<Scope>>,
+    pub scopes: Shared<Vec<Scope<'p>>>,
     pub narrowed: NarrowingFacts,
     /// Scope indices that contain hidden path facts.
     pub shadowed_narrowing_scopes: Shared<std::collections::BTreeSet<usize>>,
     pub ended_shared_narrowing: NarrowingFacts,
     pub finally_ended_narrowing: FinallyEndedFacts,
-    failed_loop_finally_causes: Rc<RefCell<HashMap<swc_common::Span, LoopEdge>>>,
+    failed_loop_finally_causes: Rc<RefCell<HashMap<oxc_span::Span, LoopEdge>>>,
     /// Entry narrowing facts ended at each active loop head (§308 rule 1).
     pub loop_ended_narrowing: Shared<Vec<loop_narrowing_note::EndedLoopFacts>>,
     pub loop_depth: u32,
@@ -962,7 +1051,7 @@ pub(crate) struct FnCtx {
     pub loop_break_facts: Shared<LoopBreakFacts>,
     /// A failed §315 assumption stays failed across enclosing-loop retries.
     /// Unlike flow snapshots, this memo belongs to the entire body check.
-    failed_loop_assumptions: Rc<RefCell<HashSet<swc_common::Span>>>,
+    failed_loop_assumptions: Rc<RefCell<HashSet<oxc_span::Span>>>,
     pub flow_reachable: bool,
     /// Each async handle creation or async-handle parameter in this body.
     pub async_origins: Shared<Vec<AsyncOrigin>>,
@@ -1146,7 +1235,7 @@ impl<T, E> SyntheticOwnerResult for Result<T, E> {
     }
 }
 
-impl FnCtx {
+impl<'p> FnCtx<'p> {
     pub(crate) fn new(
         ret: Type,
         is_generator: bool,
@@ -1381,7 +1470,7 @@ pub(crate) struct Checker<'p> {
     /// (compiler.md §241 rule 2).
     lambda_called_at_once: bool,
     /// The lambda written at a Promise callback argument (§329 rule 2).
-    reaction_lambda: Option<swc_common::Span>,
+    reaction_lambda: Option<oxc_span::Span>,
     /// The parameters and the result of a built-in callback place with an
     /// optional trailing index, for the leaves of the next conditional
     /// (compiler.md §242 rule 1a).
@@ -1390,7 +1479,7 @@ pub(crate) struct Checker<'p> {
     /// (compiler.md §300 rule 1, §258 rule 3).
     void_leaf_place: Option<expr::VoidLeafPlace>,
     /// The direct call operand of an `await` expression statement (§289 rule 1a).
-    void_catch_statement: Option<swc_common::Span>,
+    void_catch_statement: Option<oxc_span::Span>,
     /// The position of the name of each class, generic class, and enum
     /// declared in a program file, by file and name (compiler.md §241
     /// rule 1).
@@ -1398,58 +1487,58 @@ pub(crate) struct Checker<'p> {
     /// Access positions already diagnosed by §241 rule 1, including
     /// the member position of a static field read or write.
     diagnosed_class_accesses: Vec<Pos>,
-    initializer_call: Option<swc_common::Span>,
-    active_call: Option<swc_common::Span>,
+    initializer_call: Option<oxc_span::Span>,
+    active_call: Option<oxc_span::Span>,
     /// The contextual type of the active call (§212 rule 1).
     active_call_context: Option<Type>,
     /// The fallback call whose context only supplies missing candidates (§319).
-    nullish_fallback_call: Option<(swc_common::Span, Type)>,
+    nullish_fallback_call: Option<(oxc_span::Span, Type)>,
     /// Each call that `mark_operand_calls` marks. Such a call has no
     /// contextual type (§212 rule 1a).
-    operand_calls: transaction::Set<swc_common::Span>,
+    operand_calls: transaction::Set<oxc_span::Span>,
     /// The context of the call that ends the optional chain being checked
     /// (§232 rule 1).
     optional_chain_context: Option<Type>,
     /// Each type argument entry of an active call that the checker did not
     /// read yet (§230 rule 3).
-    type_argument_watch: transaction::Set<swc_common::Span>,
+    type_argument_watch: transaction::Set<oxc_span::Span>,
     /// The count of type arguments that a built-in call reads, by call
     /// span (§230 rule 3).
-    type_argument_takes: transaction::Map<swc_common::Span, usize>,
+    type_argument_takes: transaction::Map<oxc_span::Span, usize>,
     /// Each call with a type argument list that reaches a user method
     /// (`true`) or a user function or function value (§231 rule 1).
-    type_argument_user_calls: transaction::Map<swc_common::Span, bool>,
+    type_argument_user_calls: transaction::Map<oxc_span::Span, bool>,
     function_value_decision: bool,
-    initializer_root: Option<swc_common::Span>,
+    initializer_root: Option<oxc_span::Span>,
     static_method_owners: transaction::Map<String, (ClassId, String)>,
     /// The file and the class name of the class body that encloses each
     /// moved local function, by function symbol (§207.1 rule 2a).
     local_function_classes: transaction::Map<String, (usize, String)>,
     next_deferred_id: usize,
     expression_work: Vec<Option<usize>>,
-    deferred_expressions: transaction::Vector<DeferredExpression>,
+    deferred_expressions: transaction::Vector<DeferredExpression<'p>>,
     deferred_captures: transaction::Map<hir::LambdaId, Vec<hir::Capture>>,
-    pending_function_bodies: transaction::Vector<deferred_body::PendingFunctionBody>,
+    pending_function_bodies: transaction::Vector<deferred_body::PendingFunctionBody<'p>>,
     narrowing_analysis: Option<narrowing::Analysis>,
     narrowing_helper_symbols: HashSet<hir::Symbol>,
-    pub prog: &'p ParsedProgram,
+    pub prog: &'p ParsedProgram<'p>,
     pub diags: DiagnosticSink,
     /// Unchanged empty context for independent field initializer snapshots.
-    initializer_context: Option<FnCtx>,
+    initializer_context: Option<FnCtx<'p>>,
     pub classes: transaction::Vector<hir::ClassDef>,
-    pub class_sigs: transaction::Vector<ClassSig>,
+    pub class_sigs: transaction::Vector<ClassSig<'p>>,
     pub class_ids: transaction::Map<String, ClassId>,
     pub enums: Vec<hir::EnumDef>,
     pub string_aliases: Vec<hir::StringAliasDef>,
-    pub fn_sigs: transaction::Map<String, FnSig>,
+    pub fn_sigs: transaction::Map<String, FnSig<'p>>,
     pub functions: Vec<hir::Function>,
     pub worker_entries: Vec<hir::WorkerEntry>,
-    pub global_sigs: transaction::Map<String, GlobalSig>,
+    pub global_sigs: transaction::Map<String, GlobalSig<'p>>,
     pub globals: Vec<hir::Global>,
-    pub generic_fns: HashMap<String, GenericFn>,
-    pub generic_classes: HashMap<String, GenericClass>,
+    pub generic_fns: HashMap<String, GenericFn<'p>>,
+    pub generic_classes: HashMap<String, GenericClass<'p>>,
     /// Every module-level interface declaration, in source order (§208).
-    pub(crate) interfaces: Vec<interface::InterfaceDef>,
+    pub(crate) interfaces: Vec<interface::InterfaceDef<'p>>,
     /// The interfaces that each implementing class declares (§208.1 rule 3).
     pub(crate) implements: interface::ImplementsClauses,
     pub instance_symbols: transaction::Map<String, String>,
@@ -1472,7 +1561,7 @@ pub(crate) struct Checker<'p> {
     /// ambient constants. Consulted after the per-file scope.
     pub ambient_scope: HashMap<String, ScopeBinding>,
     /// Resolved signatures of foreign functions, keyed by symbol name.
-    pub foreign_sigs: HashMap<String, FnSig>,
+    pub foreign_sigs: HashMap<String, FnSig<'p>>,
     /// Foreign function definitions, in mirror declaration order.
     pub foreign_defs: Vec<hir::ForeignFn>,
     /// Mirrors that contribute foreign functions, in source order.
@@ -1547,7 +1636,7 @@ pub(crate) struct Checker<'p> {
     /// `for…of` subject across the fused loop.
     pub next_for_of_id: usize,
     /// Earlier const reads reconsidered after forward group links are known (§293).
-    pub earlier_member_reads: transaction::Map<hir::LambdaId, Vec<lambda_group::EarlierRead>>,
+    pub earlier_member_reads: transaction::Map<hir::LambdaId, Vec<lambda_group::EarlierRead<'p>>>,
     /// Monotonic lambda unit identity (compiler.md §137 rule 5b).
     pub next_lambda_id: usize,
     /// Check order keeps synthetic parameter names independent of forward identities (§293 rule 1).

@@ -14,14 +14,14 @@ impl<'p> Checker<'p> {
                 continue;
             };
             match decl {
-                ast::Decl::Fn(function) => {
-                    functions.insert(function.ident.sym.to_string(), &function.function);
+                ast::Declaration::FunctionDeclaration(function) => {
+                    functions.insert(function.declaration_name().to_string(), function.as_ref());
                 }
-                ast::Decl::TsTypeAlias(alias) => {
-                    aliases.insert(alias.id.sym.to_string());
+                ast::Declaration::TSTypeAliasDeclaration(alias) => {
+                    aliases.insert(alias.id.name.to_string());
                 }
-                ast::Decl::Class(class) => {
-                    classes.insert(class.ident.sym.to_string(), &class.class);
+                ast::Declaration::ClassDeclaration(class) => {
+                    classes.insert(class.declaration_name().to_string(), class.as_ref());
                 }
                 _ => {}
             }
@@ -63,10 +63,11 @@ impl<'p> Checker<'p> {
 
         for ((function_name, parameter_name), record) in &parsed.provenance.parameters {
             let exists = functions.get(function_name).is_some_and(|function| {
-                function.params.iter().any(|parameter| {
-                    parameter_name_from_pat(&parameter.pat)
-                        .is_some_and(|name| name == parameter_name)
-                })
+                (parameter_name == "this" && function.this_param.is_some())
+                    || function.params.items.iter().any(|parameter| {
+                        parameter_name_from_pat(&parameter.pattern)
+                            .is_some_and(|name| name == parameter_name)
+                    })
             });
             if !exists {
                 self.reject_subset(
@@ -86,10 +87,11 @@ impl<'p> Checker<'p> {
         let mut read_errors = Vec::new();
         for ((function_name, parameter_name), record) in &parsed.provenance.pointer_parameters {
             let exists = functions.get(function_name).is_some_and(|function| {
-                function.params.iter().any(|parameter| {
-                    parameter_name_from_pat(&parameter.pat)
-                        .is_some_and(|name| name == parameter_name)
-                })
+                (parameter_name == "this" && function.this_param.is_some())
+                    || function.params.items.iter().any(|parameter| {
+                        parameter_name_from_pat(&parameter.pattern)
+                            .is_some_and(|name| name == parameter_name)
+                    })
             });
             if !exists {
                 read_errors.push((
@@ -106,8 +108,8 @@ impl<'p> Checker<'p> {
         // A member record names a field of a boundary class of this mirror.
         for ((aggregate, member), record) in &parsed.provenance.members {
             let exists = classes.get(aggregate).is_some_and(|class| {
-                class.body.iter().any(|class_member| {
-                    matches!(class_member, ast::ClassMember::ClassProp(prop)
+                class.body.body.iter().any(|class_member| {
+                    matches!(class_member, ast::ClassElement::PropertyDefinition(prop)
                         if Self::class_method_name(&prop.key).is_some_and(|key| key == *member))
                 })
             });
@@ -150,14 +152,14 @@ impl<'p> Checker<'p> {
         let mut lifetime_errors = Vec::new();
         for (aggregate, record) in &parsed.provenance.callback_lifetimes {
             let carries_callback = classes.get(aggregate).is_some_and(|class| {
-                class.body.iter().any(|member| {
-                    let ast::ClassMember::ClassProp(prop) = member else {
+                class.body.body.iter().any(|member| {
+                    let ast::ClassElement::PropertyDefinition(prop) = member else {
                         return false;
                     };
                     type_reference_name(
-                        prop.type_ann
+                        prop.type_annotation
                             .as_deref()
-                            .map(|annotation| annotation.type_ann.as_ref()),
+                            .map(|annotation| &annotation.type_annotation),
                     )
                     .is_some_and(|name| parsed.provenance.callbacks.contains_key(name))
                 })
@@ -478,7 +480,7 @@ impl<'p> Checker<'p> {
     pub(super) fn callback_provenance(
         &mut self,
         file: usize,
-        type_ann: Option<&ast::TsType>,
+        type_ann: Option<&ast::TSType>,
         pos: Pos,
     ) -> Option<hir::ForeignTypeProvenance> {
         let parsed = &self.prog.files[file];

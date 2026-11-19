@@ -3,12 +3,12 @@
 use super::*;
 use crate::check::{rejection::RejectionSite, FnCtx, ParamSig};
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     pub(super) fn check_lambda_self_call(
         &mut self,
-        name: &ast::Ident,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        name: &ast::IdentifierReference,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<hir::Expr> {
         if let Some(value) = self.check_group_call(name, call, fx, pos) {
@@ -19,11 +19,11 @@ impl Checker<'_> {
             .iter()
             .rev()
             .find_map(|scope| {
-                if scope.owns(name.sym.as_ref()) {
+                if scope.owns(name.name.as_ref()) {
                     return Some(None);
                 }
                 if let Some((binding, id, signature, is_async, defaults)) = &scope.self_call {
-                    if binding == name.sym.as_ref() {
+                    if binding == name.name.as_ref() {
                         return Some(Some((*id, signature.clone(), *is_async, defaults.clone())));
                     }
                 }
@@ -31,7 +31,7 @@ impl Checker<'_> {
             })
             .flatten()?;
         self.mark_user_call(call, false);
-        let defaults = defaults.filter(|_| call.args.len() < signature.params.len());
+        let defaults = defaults.filter(|_| call.arguments.len() < signature.params.len());
         let params = defaults
             .as_ref()
             .map(Self::lambda_default_signature)
@@ -50,10 +50,10 @@ impl Checker<'_> {
                 RejectionSite::FunctionValueArgumentCount
             },
             &params,
-            &call.args,
+            &call.arguments,
             fx,
             pos,
-            name.sym.as_ref(),
+            name.name.as_ref(),
             None,
             false,
         );
@@ -62,7 +62,7 @@ impl Checker<'_> {
             ty: signature.ret.clone(),
             kind: ExprKind::Call {
                 callee: Callee::LambdaSelf {
-                    name: std::sync::Arc::new(name.sym.to_string()),
+                    name: std::sync::Arc::new(name.name.to_string()),
                     id,
                     signature,
                     is_async,

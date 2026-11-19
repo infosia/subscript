@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use crate::parse::ParsedProgram;
 
@@ -32,15 +32,9 @@ pub(super) fn files(prog: &ParsedProgram, entry: Option<usize>) -> Vec<usize> {
         visited[index] = true;
         for item in &prog.files[index].module.body {
             let source = match item {
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import)) => {
-                    Some(import.src.value.as_str())
-                }
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportNamed(export)) => {
-                    export.src.as_ref().map(|source| source.value.as_str())
-                }
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportAll(export)) => {
-                    Some(export.src.value.as_str())
-                }
+                ast::Statement::ImportDeclaration(import) => Some(import.source.value.as_str()),
+                ast::Statement::ExportFromDeclaration(export) => Some(export.source.value.as_str()),
+                ast::Statement::ExportAllDeclaration(export) => Some(export.source.value.as_str()),
                 _ => None,
             };
             if let Some(next) = source.and_then(|source| {

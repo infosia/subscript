@@ -706,7 +706,7 @@ const ALLOWLIST: &[AllowGroup] = &[
             ("expr/method.rs", "check_map_group_by", 0xe321a8c6ea280c71),
             ("host_entries.rs", "populate", 0x19f942a8ec1b1313),
             ("pipeline.rs", "visit_expr", 0xbfa87e28830c1a2f),
-            ("stmt.rs", "check_return", 0xcc9ffd8cdbdfaf84),
+            ("stmt.rs", "check_return", 0x18d87995307c7fdb),
         ],
     },
 

@@ -1,8 +1,8 @@
 //! Checks array literals, array spread literals, and descriptor object literals.
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use super::entry::ContextKind;
 use crate::check::{Checker, ContainerSlot, FnCtx};
@@ -27,30 +27,26 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_array_lit(
         &mut self,
-        a: &ast::ArrayLit,
+        a: &ast::ArrayExpression,
         (ctx, kind): (Option<&Type>, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        if a.elems
+        if a.elements
             .iter()
-            .flatten()
-            .any(|element| element.spread.is_some())
+            .any(|element| matches!(element, ast::ArrayExpressionElement::SpreadElement(_)))
         {
             return self.check_array_spread_lit(a, (ctx, kind), fx, pos);
         }
-        let mut elems: Vec<&ast::ExprOrSpread> = Vec::new();
-        for e in &a.elems {
-            match e {
-                Some(e) if e.spread.is_none() => elems.push(e),
-                Some(_) => unreachable!("spread literal dispatched above"),
-                None => {
-                    self.reject_subset(
-                        RejectionSite::ArrayLiteralHole,
-                        "array holes are not decided",
-                        pos.clone(),
-                    );
-                }
+        let mut elems: Vec<&ast::Expression<'_>> = Vec::new();
+        for element in &a.elements {
+            match crate::check::array_element_expression(element) {
+                Some(expression) => elems.push(expression),
+                None => self.reject_subset(
+                    RejectionSite::ArrayLiteralHole,
+                    "array holes are not decided",
+                    pos.clone(),
+                ),
             }
         }
         let ctx = self.array_literal_context(ctx);
@@ -61,7 +57,7 @@ impl<'p> Checker<'p> {
             // more and the element still reports its own errors.
             Some(Type::Error) => {
                 for e in elems {
-                    let _ = self.check_expr(&e.expr, Some(&Type::Error), fx);
+                    let _ = self.check_expr(e, Some(&Type::Error), fx);
                 }
                 self.err_expr(pos)
             }
@@ -69,7 +65,7 @@ impl<'p> Checker<'p> {
                 let elem_ty = (**elem_ty).clone();
                 let mut out = Vec::new();
                 for e in elems {
-                    let mut checked = self.check_expr_as(&e.expr, Some(&elem_ty), kind, fx);
+                    let mut checked = self.check_expr_as(e, Some(&elem_ty), kind, fx);
                     self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
@@ -97,7 +93,7 @@ impl<'p> Checker<'p> {
                 }
                 let mut out = Vec::new();
                 for e in elems {
-                    let mut checked = self.check_expr_as(&e.expr, Some(&elem_ty), kind, fx);
+                    let mut checked = self.check_expr_as(e, Some(&elem_ty), kind, fx);
                     self.require_expr_assignable(&mut checked, &elem_ty, fx, "the array element");
                     out.push(checked);
                 }
@@ -117,7 +113,7 @@ impl<'p> Checker<'p> {
                     );
                     return self.err_expr(pos);
                 }
-                let first = self.check_expr(&elems[0].expr, None, fx);
+                let first = self.check_expr(elems[0], None, fx);
                 let mut elem_ty = first.ty.clone();
                 // compiler.md §248 rule 1: a list of function values is
                 // checked whole before the type of the list is selected.
@@ -132,9 +128,9 @@ impl<'p> Checker<'p> {
                         && !matches!(self.apparent_type(&elem_ty), Type::StringAlias(_)))
                     .then_some(&elem_ty);
                     let checked = if function_list {
-                        self.check_function_list_element(&e.expr, context, fx)
+                        self.check_function_list_element(e, context, fx)
                     } else {
-                        self.check_expr_as(&e.expr, context, ContextKind::Hint, fx)
+                        self.check_expr_as(e, context, ContextKind::Hint, fx)
                     };
                     if function_list {
                         deferred.push(checked);
@@ -180,7 +176,7 @@ impl<'p> Checker<'p> {
         out: &mut Vec<hir::Expr>,
         mut checked: hir::Expr,
         elem_ty: Type,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Type {
         let elem_ty = if let Some(ty) = self.string_alias_array_element(out, &mut checked, &elem_ty)
         {
@@ -199,54 +195,63 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_descriptor_lit(
         &mut self,
-        object: &ast::ObjectLit,
+        object: &ast::ObjectExpression,
         (class_id, kind): (crate::types::ClassId, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let class = self.classes[class_id.0].clone();
         let property_diagnostics = self.diags.len();
         let mut provided: Vec<(String, DescriptorProp<'_>, Pos)> = Vec::new();
-        for prop in &object.props {
+        for prop in &object.properties {
             let (name, value, prop_pos) = match prop {
-                ast::PropOrSpread::Spread(spread) => {
+                ast::ObjectPropertyKind::SpreadProperty(spread) => {
                     self.reject_subset(
                         RejectionSite::DescriptorLiteralSpread,
                         "spread properties are not supported in descriptor literals",
-                        self.pos(spread.dot3_token),
+                        self.pos(spread.span),
                     );
                     continue;
                 }
-                ast::PropOrSpread::Prop(prop) => match &**prop {
-                    ast::Prop::KeyValue(key_value) => {
-                        let ast::PropName::Ident(key) = &key_value.key else {
-                            self.reject_subset(
-                                RejectionSite::DescriptorLiteralQuotedKey,
-                                "descriptor literal member names must be identifiers",
-                                self.pos(key_value.key.span()),
-                            );
-                            continue;
-                        };
-                        (
-                            key.sym.to_string(),
-                            DescriptorProp::Expr(&key_value.value),
-                            self.pos(key.span),
-                        )
-                    }
-                    ast::Prop::Shorthand(ident) => (
-                        ident.sym.to_string(),
+                ast::ObjectPropertyKind::ObjectProperty(property) if property.shorthand => {
+                    let ast::Expression::Identifier(ident) = &property.value else {
+                        continue;
+                    };
+                    (
+                        ident.name.to_string(),
                         DescriptorProp::Shorthand(ident),
                         self.pos(ident.span),
-                    ),
-                    other => {
+                    )
+                }
+                ast::ObjectPropertyKind::ObjectProperty(property)
+                    if !property.method && property.kind == ast::PropertyKind::Init =>
+                {
+                    let ast::PropertyKey::StaticIdentifier(key) = &property.key else {
                         self.reject_subset(
-                            RejectionSite::DescriptorLiteralAccessor,
-                            "descriptor literals contain data properties only",
-                            self.pos(other.span()),
+                            RejectionSite::DescriptorLiteralQuotedKey,
+                            "descriptor literal member names must be identifiers",
+                            self.pos(if property.computed {
+                                oxc_span::Span::new(property.span.start, property.key.span().end)
+                            } else {
+                                property.key.span()
+                            }),
                         );
                         continue;
-                    }
-                },
+                    };
+                    (
+                        key.name.to_string(),
+                        DescriptorProp::Expr(&property.value),
+                        self.pos(key.span),
+                    )
+                }
+                other => {
+                    self.reject_subset(
+                        RejectionSite::DescriptorLiteralAccessor,
+                        "descriptor literals contain data properties only",
+                        self.pos(other.span()),
+                    );
+                    continue;
+                }
             };
             if provided.iter().any(|(existing, _, _)| existing == &name) {
                 self.reject_subset(
@@ -301,12 +306,12 @@ impl<'p> Checker<'p> {
                     })
                 }
                 None => {
-                    if object.props.iter().any(|property| matches!(property, ast::PropOrSpread::Prop(property) if matches!(&**property, ast::Prop::KeyValue(value) if matches!(&value.key, ast::PropName::Str(key) if key.value.as_str() == field.name.as_str())))) {
+                    if object.properties.iter().any(|property| matches!(property, ast::ObjectPropertyKind::ObjectProperty(value) if !value.method && value.kind == ast::PropertyKind::Init && matches!(&value.key, ast::PropertyKey::StringLiteral(key) if key.value.as_str() == field.name.as_str()))) {
                         fields.push(None);
                         continue;
                     }
                     self.reject_subset(
-                        if object.props.iter().any(|property| matches!(property, ast::PropOrSpread::Prop(property) if matches!(&**property, ast::Prop::KeyValue(value) if matches!(&value.key, ast::PropName::Str(key) if key.value.as_str() == field.name.as_str())))) { RejectionSite::DescriptorRequiredMemberQuotedKey } else { RejectionSite::DescriptorRequiredMemberMissing },
+                        if object.properties.iter().any(|property| matches!(property, ast::ObjectPropertyKind::ObjectProperty(value) if !value.method && value.kind == ast::PropertyKind::Init && matches!(&value.key, ast::PropertyKey::StringLiteral(key) if key.value.as_str() == field.name.as_str()))) { RejectionSite::DescriptorRequiredMemberQuotedKey } else { RejectionSite::DescriptorRequiredMemberMissing },
                         format!(
                             "descriptor literal for `{}` is missing required member `{}`",
                             class.name, field.name
@@ -338,9 +343,9 @@ impl<'p> Checker<'p> {
     /// construction keep their own lowering.
     fn check_array_spread_lit(
         &mut self,
-        a: &ast::ArrayLit,
+        a: &ast::ArrayExpression,
         (ctx, kind): (Option<&Type>, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         if matches!(
@@ -362,8 +367,8 @@ impl<'p> Checker<'p> {
         let mut inferred: Option<Type> = context_elem.clone();
         let mut element_types = Vec::new();
         let mut function_list = false;
-        for slot in &a.elems {
-            let Some(slot) = slot else {
+        for slot in &a.elements {
+            let Some(expression) = crate::check::array_element_expression(slot) else {
                 self.reject_subset(
                     RejectionSite::ArraySpreadLiteralHole,
                     "array holes are not decided",
@@ -371,7 +376,7 @@ impl<'p> Checker<'p> {
                 );
                 continue;
             };
-            let is_spread = slot.spread.is_some();
+            let is_spread = matches!(slot, ast::ArrayExpressionElement::SpreadElement(_));
             // §212 rule 1a: with no context, an earlier element gives a hint.
             let element_kind = if context_elem.is_some() {
                 kind
@@ -379,17 +384,17 @@ impl<'p> Checker<'p> {
                 ContextKind::Hint
             };
             let expr = if function_list && !is_spread {
-                self.check_function_list_element(&slot.expr, inferred.as_ref(), fx)
+                self.check_function_list_element(expression, inferred.as_ref(), fx)
             } else {
                 self.check_expr_as(
-                    &slot.expr,
+                    expression,
                     if is_spread { None } else { inferred.as_ref() },
                     element_kind,
                     fx,
                 )
             };
             let (spread, element_ty) = if is_spread {
-                let spread_pos = self.pos(slot.spread.unwrap_or(a.span));
+                let spread_pos = self.pos(slot.span());
                 let apparent = self.apparent_type(&expr.ty);
                 let selected = match &self.apparent_type(&apparent) {
                     // compiler.md §104.1 rules 1 and 4: the operand is

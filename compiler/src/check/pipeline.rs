@@ -234,8 +234,8 @@ fn run_with_effects(
     let provisional = narrowing_analysis.is_none();
     let mut resolved_program = prog.files.iter().any(|file| {
         file.module.body.iter().any(|item| {
-            matches!(item, ast::ModuleItem::ModuleDecl(ast::ModuleDecl::Import(import))
-                if import.specifiers.iter().any(|specifier| matches!(specifier, ast::ImportSpecifier::Namespace(_))))
+            matches!(item, ast::Statement::ImportDeclaration(import)
+                if import.specifiers.iter().flatten().any(|specifier| matches!(specifier, ast::ImportDeclarationSpecifier::ImportNamespaceSpecifier(_))))
         })
     }).then(|| prog.clone());
     let mut ck = Checker {
@@ -365,27 +365,19 @@ fn run_with_effects(
             continue;
         }
         for item in &source.module.body {
-            let declaration = match item {
-                ast::ModuleItem::Stmt(ast::Stmt::Decl(ast::Decl::TsModule(module))) => module,
-                _ => continue,
+            let ast::Statement::TSExternalModuleDeclaration(declaration) = item else {
+                continue;
             };
-            if let ast::TsModuleName::Str(name) = &declaration.id {
-                let stem = normalize_module_specifier(&name.value);
-                ck.poison_missing_modules.insert(stem.clone());
-                if let Some(ast::TsNamespaceBody::TsModuleBlock(block)) = &declaration.body {
-                    let names = ck.rejected_module_exports.entry(stem).or_default();
-                    for item in &block.body {
-                        let decl = match item {
-                            ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(export)) => {
-                                &export.decl
-                            }
-                            ast::ModuleItem::Stmt(ast::Stmt::Decl(decl)) => decl,
-                            _ => continue,
-                        };
+            let stem = normalize_module_specifier(&declaration.id.value);
+            ck.poison_missing_modules.insert(stem.clone());
+            if let Some(block) = &declaration.body {
+                let names = ck.rejected_module_exports.entry(stem).or_default();
+                for item in &block.body {
+                    if let Some(decl) = super::module_decl(item) {
                         names.extend(
                             super::exports::declaration_names(decl)
                                 .iter()
-                                .map(|id| id.sym.to_string()),
+                                .map(|id| id.name.to_string()),
                         );
                     }
                 }

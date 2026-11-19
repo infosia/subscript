@@ -25,25 +25,25 @@ enum OpaqueTemplate {
 }
 
 /// The checker state that the opaque check restores after it runs.
-struct OpaqueSnapshot {
+struct OpaqueSnapshot<'p> {
     functions: usize,
     narrowing_helper_symbols: HashSet<hir::Symbol>,
     classes: usize,
     methods: Vec<usize>,
-    class_sigs: Vec<ClassSig>,
+    class_sigs: Vec<ClassSig<'p>>,
     class_ids: HashMap<String, ClassId>,
-    fn_sigs: HashMap<String, FnSig>,
+    fn_sigs: HashMap<String, FnSig<'p>>,
     instance_symbols: HashMap<String, String>,
     type_handle_classes: usize,
     pending_layouts: usize,
     globals: usize,
-    global_sigs: HashMap<String, GlobalSig>,
+    global_sigs: HashMap<String, GlobalSig<'p>>,
     regex_literals: HashMap<(String, u32, u32), String>,
     worker_entries: usize,
     top_level: usize,
-    deferred_expressions: Vec<DeferredExpression>,
+    deferred_expressions: Vec<DeferredExpression<'p>>,
     deferred_captures: HashMap<hir::LambdaId, Vec<hir::Capture>>,
-    pending_function_bodies: Vec<deferred_body::PendingFunctionBody>,
+    pending_function_bodies: Vec<deferred_body::PendingFunctionBody<'p>>,
     pending_instance_bodies: Vec<(ClassId, Vec<instance_chain::InstanceRequest>)>,
 }
 
@@ -622,7 +622,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn opaque_snapshot(&self) -> OpaqueSnapshot {
+    fn opaque_snapshot(&self) -> OpaqueSnapshot<'p> {
         OpaqueSnapshot {
             functions: self.functions.len(),
             narrowing_helper_symbols: self.narrowing_helper_symbols.clone(),
@@ -650,7 +650,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    fn restore_opaque_snapshot(&mut self, snapshot: OpaqueSnapshot) {
+    fn restore_opaque_snapshot(&mut self, snapshot: OpaqueSnapshot<'p>) {
         self.functions.truncate(snapshot.functions);
         self.narrowing_helper_symbols = snapshot.narrowing_helper_symbols;
         self.classes.truncate(snapshot.classes);

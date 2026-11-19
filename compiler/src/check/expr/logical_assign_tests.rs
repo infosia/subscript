@@ -1,7 +1,7 @@
 //! Logical assignment tests (compiler.md §199, §300).
 //! Cost: in-process checker calls only; no compiler or engine subprocess.
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use super::LogicalAssign;
 use crate::{check_program, hir, Diagnostic, SourceFile};
@@ -53,16 +53,24 @@ fn checks(source: &str) -> bool {
 #[test]
 fn operator_selection_and_spelling() {
     for (op, logical, spelling) in [
-        (ast::AssignOp::NullishAssign, LogicalAssign::Nullish, "??="),
-        (ast::AssignOp::OrAssign, LogicalAssign::Or, "||="),
-        (ast::AssignOp::AndAssign, LogicalAssign::And, "&&="),
+        (
+            ast::AssignmentOperator::LogicalNullish,
+            LogicalAssign::Nullish,
+            "??=",
+        ),
+        (ast::AssignmentOperator::LogicalOr, LogicalAssign::Or, "||="),
+        (
+            ast::AssignmentOperator::LogicalAnd,
+            LogicalAssign::And,
+            "&&=",
+        ),
     ] {
         assert_eq!(LogicalAssign::of(op), Some(logical));
         assert_eq!(logical.spelling(), spelling);
     }
     // Control: a compound or plain operator is not a logical assignment.
-    assert_eq!(LogicalAssign::of(ast::AssignOp::AddAssign), None);
-    assert_eq!(LogicalAssign::of(ast::AssignOp::Assign), None);
+    assert_eq!(LogicalAssign::of(ast::AssignmentOperator::Addition), None);
+    assert_eq!(LogicalAssign::of(ast::AssignmentOperator::Assign), None);
 }
 
 #[test]

@@ -12,8 +12,9 @@ use super::FactSet;
 use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use super::argument_expression;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::diag::Pos;
 use crate::hir::{self, BinOp, ExprKind, ERROR_KIND_FIELD};
@@ -35,7 +36,7 @@ enum FinalizerJumpTarget {
 }
 
 impl FinalizerJumpMark {
-    fn new(fx: &FnCtx) -> Self {
+    fn new(fx: &FnCtx<'_>) -> Self {
         Self {
             loops: fx
                 .loop_break_facts
@@ -50,7 +51,7 @@ impl FinalizerJumpMark {
         }
     }
 
-    fn take(self, fx: &mut FnCtx) -> Vec<(FinalizerJumpTarget, super::LoopEdge)> {
+    fn take(self, fx: &mut FnCtx<'_>) -> Vec<(FinalizerJumpTarget, super::LoopEdge)> {
         let mut pending = Vec::new();
         for (index, (breaks, continues)) in self.loops.into_iter().enumerate() {
             let (_, break_edges, continue_edges) = &mut fx.loop_break_facts[index];
@@ -172,7 +173,7 @@ fn field_parameter(field: &str) -> &str {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// Declares the shared Error-family layout (compiler.md §119.1 rule 6).
     pub(crate) fn declare_error_class(&mut self) -> ClassId {
         let pos = &Pos::new("", 0, 0);
@@ -227,7 +228,7 @@ impl Checker<'_> {
 
     /// Whether an ambient Error-family name is visible here: no local and
     /// no program declaration shadows it.
-    pub(crate) fn error_name_is_ambient(&self, name: &str, fx: &FnCtx) -> bool {
+    pub(crate) fn error_name_is_ambient(&self, name: &str, fx: &FnCtx<'p>) -> bool {
         ErrorKind::from_name(name).is_some() && self.ambient_visible(name, fx)
     }
 
@@ -270,21 +271,21 @@ impl Checker<'_> {
     pub(crate) fn check_error_new(
         &mut self,
         name: &str,
-        n: &ast::NewExpr,
-        fx: &mut FnCtx,
+        n: &ast::NewExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let Some(kind) = ErrorKind::from_name(name) else {
             return self.err_expr(pos);
         };
-        if n.type_args.is_some() {
+        if n.type_arguments.is_some() {
             self.reject_subset(
                 RejectionSite::ErrorConstructorTypeArguments,
                 format!("`{name}` is not generic"),
                 pos.clone(),
             );
         }
-        let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
+        let arguments: &[ast::Argument] = &n.arguments;
         let message = match arguments {
             [] => hir::Expr {
                 pending_work: None,
@@ -292,8 +293,8 @@ impl Checker<'_> {
                 ty: Type::Str,
                 pos: pos.clone(),
             },
-            [argument] if argument.spread.is_none() => {
-                let message = self.check_expr(&argument.expr, Some(&Type::Str), fx);
+            [argument] if !argument.is_spread() => {
+                let message = self.check_expr(argument_expression(argument), Some(&Type::Str), fx);
                 if !matches!(self.apparent_type(&message.ty), Type::Str | Type::Error) {
                     let found = self.type_name(&message.ty);
                     self.reject_subset(
@@ -355,15 +356,15 @@ impl Checker<'_> {
     }
 
     /// The caught binding that `expr` names, before a narrowing test.
-    fn caught_operand(&mut self, expr: &ast::Expr, fx: &mut FnCtx) -> Option<hir::Expr> {
+    fn caught_operand(&mut self, expr: &ast::Expression, fx: &mut FnCtx<'p>) -> Option<hir::Expr> {
         let mut expr = expr;
-        while let ast::Expr::Paren(paren) = expr {
-            expr = &paren.expr;
+        while let ast::Expression::ParenthesizedExpression(paren) = expr {
+            expr = &paren.expression;
         }
-        let ast::Expr::Ident(id) = expr else {
+        let ast::Expression::Identifier(id) = expr else {
             return None;
         };
-        let name = id.sym.to_string();
+        let name = id.name.to_string();
         // Peek without diagnostics: the scope that owns the name decides.
         let caught = fx
             .scopes
@@ -381,15 +382,19 @@ impl Checker<'_> {
     }
 
     /// Rejects a property access on an unnarrowed catch binding.
-    pub(super) fn reject_caught_property(&mut self, receiver: &ast::Expr, fx: &FnCtx) -> bool {
+    pub(super) fn reject_caught_property(
+        &mut self,
+        receiver: &ast::Expression,
+        fx: &FnCtx<'p>,
+    ) -> bool {
         let mut receiver = receiver;
-        while let ast::Expr::Paren(paren) = receiver {
-            receiver = &paren.expr;
+        while let ast::Expression::ParenthesizedExpression(paren) = receiver {
+            receiver = &paren.expression;
         }
-        let ast::Expr::Ident(id) = receiver else {
+        let ast::Expression::Identifier(id) = receiver else {
             return false;
         };
-        let name = id.sym.as_ref();
+        let name = id.name.as_ref();
         let Some(local) = fx
             .scopes
             .iter()
@@ -409,7 +414,7 @@ impl Checker<'_> {
         name: &str,
         local: &Local,
         pos: &Pos,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
         property: bool,
     ) -> bool {
         if !local.caught
@@ -438,15 +443,15 @@ impl Checker<'_> {
     /// `throw expr` (§115.2).
     pub(super) fn check_throw(
         &mut self,
-        t: &ast::ThrowStmt,
-        fx: &mut FnCtx,
+        t: &ast::ThrowStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         let pos = self.pos(t.span);
-        let value = match self.caught_operand(&t.arg, fx) {
+        let value = match self.caught_operand(&t.argument, fx) {
             Some(caught) => caught,
             None => {
-                let value = self.check_expr(&t.arg, None, fx);
+                let value = self.check_expr(&t.argument, None, fx);
                 if !matches!(self.apparent_type(&value.ty), Type::Error)
                     && !self.is_error_type(&value.ty)
                 {
@@ -470,8 +475,8 @@ impl Checker<'_> {
     /// `try { … } catch (e) { … }` (§115.3).
     pub(super) fn check_try(
         &mut self,
-        t: &ast::TryStmt,
-        fx: &mut FnCtx,
+        t: &ast::TryStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         let pos = self.pos(t.span);
@@ -479,7 +484,7 @@ impl Checker<'_> {
         if t.handler.is_none() {
             let base = fx.narrowed.clone();
             let notes = fx.ended_shared_narrowing.clone();
-            let (body, _) = self.check_block(&t.block.stmts, fx);
+            let (body, _) = self.check_block(&t.block.body, fx);
             let effects = self.body_narrowing_effects(&body, fx, &base, &notes);
             fx.narrowed = base;
             let body_finally = fx.finally_ended_narrowing.clone();
@@ -508,7 +513,7 @@ impl Checker<'_> {
         let base = fx.narrowed.clone();
         let initial_finally = fx.finally_ended_narrowing.clone();
         let initial_notes = fx.ended_shared_narrowing.clone();
-        let (body, _) = self.check_block(&t.block.stmts, fx);
+        let (body, _) = self.check_block(&t.block.body, fx);
         let body_finally = fx.finally_ended_narrowing.clone();
         let body_facts = fx.narrowed.clone();
         let mut body_notes = fx.ended_shared_narrowing.clone();
@@ -537,7 +542,7 @@ impl Checker<'_> {
                 fx,
             );
         }
-        let (handler_body, _) = self.check_block(&handler.body.stmts, fx);
+        let (handler_body, _) = self.check_block(&handler.body.body, fx);
         fx.pop_scope();
         let handler_facts = fx.narrowed.clone();
         let body_terminates = !super::fallthrough::sequence_can_fall_through(&body);
@@ -612,9 +617,9 @@ impl Checker<'_> {
     /// sees the inner finalizer's result before applying its own (§315 rule 1a).
     fn check_finalizer(
         &mut self,
-        block: &ast::BlockStmt,
+        block: &ast::BlockStatement,
         mark: FinalizerJumpMark,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> Vec<hir::Stmt> {
         let pending = mark.take(fx);
         for (_, edge) in &pending {
@@ -625,7 +630,7 @@ impl Checker<'_> {
         }
         let incoming = fx.narrowed.clone();
         let notes = fx.ended_shared_narrowing.clone();
-        let (body, terminates) = self.check_block(&block.stmts, fx);
+        let (body, terminates) = self.check_block(&block.body, fx);
         if !terminates && !pending.is_empty() {
             let mut edge_facts = incoming;
             for (_, edge) in &pending {
@@ -694,7 +699,11 @@ impl Checker<'_> {
     }
 
     /// Checks one block in its own scope.
-    fn check_block(&mut self, statements: &[ast::Stmt], fx: &mut FnCtx) -> (Vec<hir::Stmt>, bool) {
+    fn check_block(
+        &mut self,
+        statements: &[ast::Statement],
+        fx: &mut FnCtx<'p>,
+    ) -> (Vec<hir::Stmt>, bool) {
         let reachable = fx.flow_reachable;
         fx.scopes.push(Default::default());
         self.reserve_block_declarations(statements, fx);
@@ -712,49 +721,50 @@ impl Checker<'_> {
     /// The catch binding name and position (§115.3 rule 1).
     fn catch_binding(&mut self, handler: &ast::CatchClause) -> Option<(String, Pos)> {
         let param = handler.param.as_ref()?;
-        let ast::Pat::Ident(binding) = param else {
-            let any_annotation = match param {
-                ast::Pat::Array(p) => p.type_ann.as_ref(),
-                ast::Pat::Object(p) => p.type_ann.as_ref(),
-                _ => None,
-            }.is_some_and(|a| matches!(a.type_ann.as_ref(), ast::TsType::TsKeywordType(k) if k.kind == ast::TsKeywordTypeKind::TsAnyKeyword));
-            self.reject_subset(if any_annotation { RejectionSite::CatchBindingPattern } else { RejectionSite::CatchBindingPatternWithoutAny }, "a catch binding is one name; a binding pattern is not in the decided exception surface", self.pos(param.span()));
+        let ast::BindingPattern::BindingIdentifier(binding) = &param.pattern else {
+            let any_annotation = param.type_annotation.as_ref().is_some_and(|annotation| {
+                matches!(annotation.type_annotation, ast::TSType::TSAnyKeyword(_))
+            });
+            self.reject_subset(if any_annotation { RejectionSite::CatchBindingPattern } else { RejectionSite::CatchBindingPatternWithoutAny }, "a catch binding is one name; a binding pattern is not in the decided exception surface", self.pos(param.span));
             return None;
         };
-        let pos = self.pos(binding.id.span);
-        if let Some(annotation) = &binding.type_ann {
+        let pos = self.pos(binding.span);
+        if let Some(annotation) = &param.type_annotation {
             let unknown = matches!(
-                annotation.type_ann.as_ref(),
-                ast::TsType::TsKeywordType(keyword)
-                    if keyword.kind == ast::TsKeywordTypeKind::TsUnknownKeyword
+                &annotation.type_annotation,
+                ast::TSType::TSUnknownKeyword(_)
             );
             if !unknown {
                 self.reject_subset(
-                    if matches!(annotation.type_ann.as_ref(), ast::TsType::TsKeywordType(k) if k.kind == ast::TsKeywordTypeKind::TsAnyKeyword) { RejectionSite::CatchBindingAnnotation } else { RejectionSite::CatchBindingInvalidAnnotation },
+                    if matches!(&annotation.type_annotation, ast::TSType::TSAnyKeyword(_)) {
+                        RejectionSite::CatchBindingAnnotation
+                    } else {
+                        RejectionSite::CatchBindingInvalidAnnotation
+                    },
                     "a catch binding annotation other than `unknown` is rejected; \
                      write `catch (e)` or `catch (e: unknown)`",
                     self.pos(binding.span()),
                 );
             }
         }
-        Some((binding.id.sym.to_string(), pos))
+        Some((binding.name.to_string(), pos))
     }
 
     /// `value instanceof C` (§115.3 rule 5).
     pub(crate) fn check_instanceof(
         &mut self,
-        b: &ast::BinExpr,
-        fx: &mut FnCtx,
+        b: &ast::BinaryExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let mut right: &ast::Expr = &b.right;
-        while let ast::Expr::Paren(paren) = right {
-            right = &paren.expr;
+        let mut right: &ast::Expression = &b.right;
+        while let ast::Expression::ParenthesizedExpression(paren) = right {
+            right = &paren.expression;
         }
         // A type-only import binding as the right operand is a value use
         // (compiler.md §134 rule 2): its S100 is the only diagnostic.
-        if let ast::Expr::Ident(id) = right {
-            let name = id.sym.as_ref();
+        if let ast::Expression::Identifier(id) = right {
+            let name = id.name.as_ref();
             let type_only = !fx.owns_local_name(name)
                 && self
                     .scope_binding(name)
@@ -769,14 +779,14 @@ impl Checker<'_> {
             }
         }
         let kind = match right {
-            ast::Expr::Ident(id) if self.error_name_is_ambient(id.sym.as_ref(), fx) => {
-                ErrorKind::from_name(id.sym.as_ref())
+            ast::Expression::Identifier(id) if self.error_name_is_ambient(id.name.as_ref(), fx) => {
+                ErrorKind::from_name(id.name.as_ref())
             }
             _ => None,
         };
         let Some(kind) = kind else {
             self.reject_subset(
-                if matches!(right, ast::Expr::Ident(id) if matches!(self.peek_scope_item(id.sym.as_ref()), Some(super::ScopeItem::Class(_) | super::ScopeItem::GenericClass(_) | super::ScopeItem::Func(_)))) { RejectionSite::InstanceofRightNotErrorFamily } else { RejectionSite::InstanceofRightNotClass },
+                if matches!(right, ast::Expression::Identifier(id) if matches!(self.peek_scope_item(id.name.as_ref()), Some(super::ScopeItem::Class(_) | super::ScopeItem::GenericClass(_) | super::ScopeItem::Func(_)))) { RejectionSite::InstanceofRightNotErrorFamily } else { RejectionSite::InstanceofRightNotClass },
                 "`instanceof` requires an Error-family class as its right operand",
                 pos.clone(),
             );

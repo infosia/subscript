@@ -2,14 +2,14 @@
 //! (stdlib.md §10.1, compiler.md §197).
 use super::*;
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
+use oxc_span::GetSpan;
 
 use crate::check::{ContainerSlot, FnCtx};
 use crate::hir::{Callee, MapFn, SetFn};
 
 /// The value type argument of a `Map` construction.
 enum ValueArgument<'a> {
-    Written(&'a ast::TsType),
+    Written(&'a ast::TSType<'a>),
     Inferred(Type),
 }
 
@@ -20,18 +20,18 @@ impl<'p> Checker<'p> {
     pub(super) fn check_container_new(
         &mut self,
         name: &str,
-        n: &ast::NewExpr,
+        n: &ast::NewExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         ident_pos: Pos,
     ) -> hir::Expr {
-        if name == "Map" && n.args.as_ref().is_some_and(|args| !args.is_empty()) {
+        if name == "Map" && !n.arguments.is_empty() {
             return self.check_map_copy(n, ctx, fx, pos, ident_pos);
         }
-        let arguments: &[ast::ExprOrSpread] = n.args.as_deref().unwrap_or(&[]);
+        let arguments: &[ast::Argument] = n.arguments.as_slice();
         let mut source = None;
-        let (key, key_pos, value) = match &n.type_args {
+        let (key, key_pos, value) = match &n.type_arguments {
             None => {
                 let Some((types, checked)) =
                     self.infer_container_arguments(name, arguments, ctx, fx, &ident_pos)
@@ -60,15 +60,12 @@ impl<'p> Checker<'p> {
                 (
                     Type::Error,
                     self.pos(type_args.params[0].span()),
-                    type_args
-                        .params
-                        .get(1)
-                        .map(|value| ValueArgument::Written(value)),
+                    type_args.params.get(1).map(ValueArgument::Written),
                 )
             }
         };
         let saved_context = self.enter_container_context(ctx);
-        let key = match &n.type_args {
+        let key = match &n.type_arguments {
             Some(type_args) => {
                 let saved = self.in_assoc_key;
                 self.in_assoc_key = true;

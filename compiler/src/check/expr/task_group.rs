@@ -5,40 +5,37 @@ use crate::check::{rejection::RejectionSite, FnCtx, ParamSig};
 use crate::hir::TaskGroupOperation as G;
 
 impl<'p> Checker<'p> {
-    pub(in crate::check) fn annotation_has_task_group(ty: &ast::TsType) -> bool {
+    pub(in crate::check) fn annotation_has_task_group(ty: &ast::TSType) -> bool {
         match ty {
-            ast::TsType::TsTypeRef(reference) => {
+            ast::TSType::TSTypeReference(reference) => {
                 matches!(&reference.type_name,
-                ast::TsEntityName::Ident(id) if id.sym.as_ref() == "TaskGroup")
-                    || reference.type_params.as_ref().is_some_and(|params| {
+                ast::TSTypeName::IdentifierReference(id) if id.name.as_ref() == "TaskGroup")
+                    || reference.type_arguments.as_ref().is_some_and(|params| {
                         params
                             .params
                             .iter()
                             .any(|ty| Self::annotation_has_task_group(ty))
                     })
             }
-            ast::TsType::TsArrayType(array) => Self::annotation_has_task_group(&array.elem_type),
-            ast::TsType::TsParenthesizedType(paren) => {
-                Self::annotation_has_task_group(&paren.type_ann)
+            ast::TSType::TSArrayType(array) => Self::annotation_has_task_group(&array.element_type),
+            ast::TSType::TSParenthesizedType(paren) => {
+                Self::annotation_has_task_group(&paren.type_annotation)
             }
-            ast::TsType::TsUnionOrIntersectionType(union) => match union {
-                ast::TsUnionOrIntersectionType::TsUnionType(union) => union
-                    .types
-                    .iter()
-                    .any(|ty| Self::annotation_has_task_group(ty)),
-                ast::TsUnionOrIntersectionType::TsIntersectionType(intersection) => intersection
-                    .types
-                    .iter()
-                    .any(|ty| Self::annotation_has_task_group(ty)),
-            },
+            ast::TSType::TSUnionType(union) => {
+                union.types.iter().any(Self::annotation_has_task_group)
+            }
+            ast::TSType::TSIntersectionType(intersection) => intersection
+                .types
+                .iter()
+                .any(Self::annotation_has_task_group),
             _ => false,
         }
     }
 
     pub(super) fn check_task_group_new(
         &mut self,
-        new: &ast::NewExpr,
-        fx: &mut FnCtx,
+        new: &ast::NewExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         if fx.frames.iter().any(|frame| frame.is_generator) {
@@ -57,7 +54,7 @@ impl<'p> Checker<'p> {
             );
             return self.err_expr(pos);
         }
-        if new.type_args.is_some() || new.args.as_ref().is_some_and(|args| !args.is_empty()) {
+        if new.type_arguments.is_some() || !new.arguments.is_empty() {
             self.reject_subset(
                 RejectionSite::ReferenceConstructorArgumentCount,
                 "TaskGroup requires zero arguments",
@@ -83,8 +80,8 @@ impl<'p> Checker<'p> {
         &mut self,
         receiver: hir::Expr,
         name: &str,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let (operation, params, ty) = match name {
@@ -103,7 +100,7 @@ impl<'p> Checker<'p> {
                 return self.err_expr(pos);
             }
         };
-        if call.type_args.is_some() {
+        if call.type_arguments.is_some() {
             self.reject_subset(
                 RejectionSite::NonGenericStaticMethodTypeArguments,
                 "TaskGroup methods take no type arguments",
@@ -114,7 +111,7 @@ impl<'p> Checker<'p> {
         args.extend(self.check_args(
             RejectionSite::ContextMethodArgumentCount,
             &params,
-            &call.args,
+            &call.arguments,
             fx,
             &pos,
             name,

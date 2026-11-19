@@ -8,8 +8,8 @@
 //! (§107.4).
 
 use crate::check::rejection::RejectionSite;
-use swc_common::{Span, Spanned};
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::{GetSpan, Span};
 
 /// Where one bound name reads its value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +26,7 @@ pub(crate) struct PatternBinding<'a> {
     /// The source of the bound value.
     pub source: BindingSource,
     /// The declared name.
-    pub binding: &'a ast::BindingIdent,
+    pub binding: &'a ast::BindingIdentifier<'a>,
 }
 
 /// A rejected pattern: the offending position, the reason, and every
@@ -40,14 +40,14 @@ pub(crate) struct PatternRejection<'a> {
     /// The TypeScript form, when stock `tsc` accepts this program.
     pub site: RejectionSite,
     /// Every name in the pattern, in source order.
-    pub names: Vec<&'a ast::BindingIdent>,
+    pub names: Vec<&'a ast::BindingIdentifier<'a>>,
 }
 
 /// An accepted binding pattern, or the reason one is rejected.
 #[derive(Debug, Clone)]
 pub(crate) enum Pattern<'a> {
     /// A single name. The source binds to it directly.
-    Name(&'a ast::BindingIdent),
+    Name(&'a ast::BindingIdentifier<'a>),
     /// `[a, , b]` over a `T[]` or a `FixedArray<T, N>` (§107.1 rule 1).
     Array {
         /// Position of the whole pattern.
@@ -75,7 +75,7 @@ impl Pattern<'_> {
     /// Position of the whole pattern.
     pub(crate) fn span(&self) -> Span {
         match self {
-            Pattern::Name(binding) => binding.id.span,
+            Pattern::Name(binding) => binding.span,
             Pattern::Array { span, .. } | Pattern::Fields { span, .. } => *span,
             Pattern::Rejected(rejection) => rejection.span,
         }
@@ -98,13 +98,12 @@ mod reason {
         "a field binding pattern names its fields with an identifier or a string literal";
 }
 
-/// Reads a pattern's shape (§107.1), or the first reason it is rejected
-/// (§107.3).
-pub(crate) fn classify(pat: &ast::Pat) -> Pattern<'_> {
+/// Reads an accepted binding shape or its first rejection (compiler.md §107).
+pub(crate) fn classify<'a>(pat: &'a ast::BindingPattern<'a>) -> Pattern<'a> {
     match pat {
-        ast::Pat::Ident(binding) => Pattern::Name(binding),
-        ast::Pat::Array(array) => classify_array(array),
-        ast::Pat::Object(object) => classify_object(object),
+        ast::BindingPattern::BindingIdentifier(binding) => Pattern::Name(binding),
+        ast::BindingPattern::ArrayPattern(array) => classify_array(array),
+        ast::BindingPattern::ObjectPattern(object) => classify_object(object),
         other => Pattern::Rejected(PatternRejection {
             span: other.span(),
             message: reason::NESTED,
@@ -113,27 +112,22 @@ pub(crate) fn classify(pat: &ast::Pat) -> Pattern<'_> {
         }),
     }
 }
-
-fn classify_array(array: &ast::ArrayPat) -> Pattern<'_> {
+fn classify_array<'a>(array: &'a ast::ArrayPattern<'a>) -> Pattern<'a> {
     let mut bindings = Vec::new();
-    for (index, element) in array.elems.iter().enumerate() {
-        // `const [, b] = xs` advances the position and binds no name.
-        let Some(element) = element else { continue };
+    for (index, element) in array.elements.iter().enumerate() {
+        let Some(element) = element else {
+            continue;
+        };
         let index = i32::try_from(index).unwrap_or(i32::MAX);
+        if let ast::BindingPattern::BindingIdentifier(binding) = element {
+            bindings.push(PatternBinding {
+                source: BindingSource::Element(index),
+                binding,
+            });
+            continue;
+        }
         let (span, message, site) = match element {
-            ast::Pat::Ident(binding) => {
-                bindings.push(PatternBinding {
-                    source: BindingSource::Element(index),
-                    binding,
-                });
-                continue;
-            }
-            ast::Pat::Rest(rest) => (
-                rest.span,
-                reason::ARRAY_REST,
-                RejectionSite::ArrayBindingRestElement,
-            ),
-            ast::Pat::Assign(assign) => (
+            ast::BindingPattern::AssignmentPattern(assign) => (
                 assign.span,
                 reason::DEFAULT_VALUE,
                 RejectionSite::ArrayBindingDefaultValue,
@@ -151,66 +145,66 @@ fn classify_array(array: &ast::ArrayPat) -> Pattern<'_> {
             names: array_names(array),
         });
     }
+    if let Some(rest) = &array.rest {
+        return Pattern::Rejected(PatternRejection {
+            span: rest.span,
+            message: reason::ARRAY_REST,
+            site: RejectionSite::ArrayBindingRestElement,
+            names: array_names(array),
+        });
+    }
     Pattern::Array {
         span: array.span,
         bindings,
     }
 }
-
-fn classify_object(object: &ast::ObjectPat) -> Pattern<'_> {
+fn classify_object<'a>(object: &'a ast::ObjectPattern<'a>) -> Pattern<'a> {
     let mut bindings = Vec::new();
-    for prop in &object.props {
-        let (span, message, site) = match prop {
-            ast::ObjectPatProp::Assign(assign) => match assign.value {
-                Some(_) => (
-                    assign.span,
-                    reason::DEFAULT_VALUE,
-                    RejectionSite::ObjectBindingShorthandDefault,
-                ),
-                None => {
-                    bindings.push(PatternBinding {
-                        source: BindingSource::Field(assign.key.id.sym.to_string()),
-                        binding: &assign.key,
-                    });
-                    continue;
-                }
-            },
-            ast::ObjectPatProp::KeyValue(entry) => {
-                let name = match &entry.key {
-                    ast::PropName::Ident(key) => Some(key.sym.to_string()),
-                    ast::PropName::Str(key) => Some(key.value.to_string()),
-                    _ => None,
-                };
-                match (name, entry.value.as_ref()) {
-                    (Some(name), ast::Pat::Ident(binding)) => {
-                        bindings.push(PatternBinding {
-                            source: BindingSource::Field(name),
-                            binding,
-                        });
-                        continue;
-                    }
-                    (None, _) => (
-                        entry.key.span(),
-                        reason::FIELD_NAME,
-                        RejectionSite::ObjectBindingNonLiteralFieldName,
-                    ),
-                    (Some(_), ast::Pat::Assign(assign)) => (
-                        assign.span,
-                        reason::DEFAULT_VALUE,
-                        RejectionSite::ObjectBindingFieldDefault,
-                    ),
-                    (Some(_), other) => (
-                        other.span(),
-                        reason::NESTED,
-                        RejectionSite::ObjectBindingNestedPattern,
-                    ),
-                }
+    for property in &object.properties {
+        let name = if property.computed {
+            None
+        } else {
+            match &property.key {
+                ast::PropertyKey::StaticIdentifier(key) => Some(key.name.to_string()),
+                ast::PropertyKey::StringLiteral(key) => Some(key.value.to_string()),
+                _ => None,
             }
-            ast::ObjectPatProp::Rest(rest) => (
-                rest.span,
-                reason::OBJECT_REST,
-                RejectionSite::ObjectBindingRestProperty,
-            ),
+        };
+        if let (Some(name), ast::BindingPattern::BindingIdentifier(binding)) =
+            (&name, &property.value)
+        {
+            bindings.push(PatternBinding {
+                source: BindingSource::Field(name.clone()),
+                binding,
+            });
+            continue;
+        }
+        let (span, message, site) = if name.is_none() {
+            (
+                Span::new(property.span.start, property.key.span().end),
+                reason::FIELD_NAME,
+                RejectionSite::ObjectBindingNonLiteralFieldName,
+            )
+        } else if let ast::BindingPattern::AssignmentPattern(assign) = &property.value {
+            (
+                if property.shorthand {
+                    property.span
+                } else {
+                    assign.span
+                },
+                reason::DEFAULT_VALUE,
+                if property.shorthand {
+                    RejectionSite::ObjectBindingShorthandDefault
+                } else {
+                    RejectionSite::ObjectBindingFieldDefault
+                },
+            )
+        } else {
+            (
+                property.value.span(),
+                reason::NESTED,
+                RejectionSite::ObjectBindingNestedPattern,
+            )
         };
         return Pattern::Rejected(PatternRejection {
             span,
@@ -219,71 +213,76 @@ fn classify_object(object: &ast::ObjectPat) -> Pattern<'_> {
             names: object_names(object),
         });
     }
+    if let Some(rest) = &object.rest {
+        return Pattern::Rejected(PatternRejection {
+            span: rest.span,
+            message: reason::OBJECT_REST,
+            site: RejectionSite::ObjectBindingRestProperty,
+            names: object_names(object),
+        });
+    }
     Pattern::Fields {
         span: object.span,
         bindings,
     }
 }
-
-/// Every name an array pattern binds, in source order.
-fn array_names(array: &ast::ArrayPat) -> Vec<&ast::BindingIdent> {
+fn array_names<'a, 'p>(array: &'a ast::ArrayPattern<'p>) -> Vec<&'a ast::BindingIdentifier<'p>> {
     let mut out = Vec::new();
-    for element in array.elems.iter().flatten() {
+    for element in array.elements.iter().flatten() {
         collect_into(element, &mut out);
     }
-    out
-}
-
-/// Every name a field pattern binds, in source order.
-fn object_names(object: &ast::ObjectPat) -> Vec<&ast::BindingIdent> {
-    let mut out = Vec::new();
-    for prop in &object.props {
-        match prop {
-            ast::ObjectPatProp::Assign(assign) => out.push(&assign.key),
-            ast::ObjectPatProp::KeyValue(entry) => collect_into(&entry.value, &mut out),
-            ast::ObjectPatProp::Rest(rest) => collect_into(&rest.arg, &mut out),
-        }
+    if let Some(rest) = &array.rest {
+        collect_into(&rest.argument, &mut out);
     }
     out
 }
-
-/// Every name a pattern binds, in source order.
-pub(crate) fn collect_names(pat: &ast::Pat) -> Vec<&ast::BindingIdent> {
+fn object_names<'a, 'p>(object: &'a ast::ObjectPattern<'p>) -> Vec<&'a ast::BindingIdentifier<'p>> {
+    let mut out = Vec::new();
+    for property in &object.properties {
+        collect_into(&property.value, &mut out);
+    }
+    if let Some(rest) = &object.rest {
+        collect_into(&rest.argument, &mut out);
+    }
+    out
+}
+/// Every bound name, in source order.
+pub(crate) fn collect_names<'a, 'p>(
+    pat: &'a ast::BindingPattern<'p>,
+) -> Vec<&'a ast::BindingIdentifier<'p>> {
     let mut out = Vec::new();
     collect_into(pat, &mut out);
     out
 }
-
-fn collect_into<'a>(pat: &'a ast::Pat, out: &mut Vec<&'a ast::BindingIdent>) {
+fn collect_into<'a, 'p>(
+    pat: &'a ast::BindingPattern<'p>,
+    out: &mut Vec<&'a ast::BindingIdentifier<'p>>,
+) {
     match pat {
-        ast::Pat::Ident(binding) => out.push(binding),
-        ast::Pat::Array(array) => out.extend(array_names(array)),
-        ast::Pat::Object(object) => out.extend(object_names(object)),
-        ast::Pat::Rest(rest) => collect_into(&rest.arg, out),
-        ast::Pat::Assign(assign) => collect_into(&assign.left, out),
-        ast::Pat::Expr(_) | ast::Pat::Invalid(_) => {}
+        ast::BindingPattern::BindingIdentifier(binding) => out.push(binding),
+        ast::BindingPattern::ArrayPattern(array) => out.extend(array_names(array)),
+        ast::BindingPattern::ObjectPattern(object) => out.extend(object_names(object)),
+        ast::BindingPattern::AssignmentPattern(assign) => collect_into(&assign.left, out),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{classify, collect_names, BindingSource, Pattern};
-    use swc_ecma_ast as ast;
+    use oxc_ast::ast;
 
     /// Parses `const <source> = value;` and answers with its pattern.
-    fn with_pattern<R>(source: &str, body: impl FnOnce(&ast::Pat) -> R) -> R {
+    fn with_pattern<R>(source: &str, body: impl FnOnce(&ast::BindingPattern) -> R) -> R {
         let text = format!("const {source} = value;\n");
-        swc_common::GLOBALS.set(&swc_common::Globals::new(), || {
-            let program =
-                crate::parse::parse_program(&[crate::SourceFile::new("pattern.ts", text)])
-                    .expect("the pattern parses");
-            let ast::ModuleItem::Stmt(ast::Stmt::Decl(ast::Decl::Var(declaration))) =
-                &program.files[0].module.body[0]
-            else {
-                panic!("{source}: expected a variable declaration");
-            };
-            body(&declaration.decls[0].name)
-        })
+        let allocator = oxc_allocator::Allocator::default();
+        let program =
+            crate::parse::parse_program(&allocator, &[crate::SourceFile::new("pattern.ts", text)])
+                .expect("the pattern parses");
+        let ast::Statement::VariableDeclaration(declaration) = &program.files[0].module.body[0]
+        else {
+            panic!("expected variable declaration");
+        };
+        body(&declaration.declarations[0].id)
     }
 
     fn bound(source: &str) -> Vec<(String, BindingSource)> {
@@ -294,7 +293,7 @@ mod tests {
             };
             bindings
                 .iter()
-                .map(|binding| (binding.binding.id.sym.to_string(), binding.source.clone()))
+                .map(|binding| (binding.binding.name.to_string(), binding.source.clone()))
                 .collect()
         })
     }
@@ -374,7 +373,7 @@ mod tests {
             with_pattern(source, |pat| {
                 let names: Vec<String> = collect_names(pat)
                     .iter()
-                    .map(|binding| binding.id.sym.to_string())
+                    .map(|binding| binding.name.to_string())
                     .collect();
                 assert_eq!(names, expected, "{source}");
             });

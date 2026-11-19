@@ -2,24 +2,26 @@
 use super::{Checker, FnCtx};
 use crate::hir::{self, ExprKind};
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     pub(super) fn inferred_function_required(
         &self,
-        source: &swc_ecma_ast::Expr,
+        source: &oxc_ast::ast::Expression,
         value: &hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<usize> {
-        if let swc_ecma_ast::Expr::Arrow(arrow) = super::expr::unparen_expr(source) {
-            if arrow
-                .params
-                .iter()
-                .any(|p| matches!(p, swc_ecma_ast::Pat::Assign(_)))
-            {
+        if let oxc_ast::ast::Expression::ArrowFunctionExpression(arrow) =
+            super::expr::unparen_expr(source)
+        {
+            if arrow.params.items.iter().any(|p| p.initializer.is_some()) {
+                if arrow.params.rest.is_some() {
+                    return Some(arrow.params.items.len() + 1);
+                }
                 return Some(
                     arrow
                         .params
+                        .items
                         .iter()
-                        .rposition(|p| !matches!(p, swc_ecma_ast::Pat::Assign(_)))
+                        .rposition(|p| p.initializer.is_none())
                         .map_or(0, |i| i + 1),
                 );
             }
@@ -30,9 +32,9 @@ impl Checker<'_> {
     pub(super) fn check_function_binding_assignment(
         &mut self,
         target: &hir::Expr,
-        source: &swc_ecma_ast::Expr,
+        source: &oxc_ast::ast::Expression,
         value: &hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) {
         let Some(required) = self.function_value_required(target, fx) else {
             return;
@@ -91,13 +93,13 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// The existing call form that evaluates an inferred const's defaults
     /// (compiler.md §320 rule 2). Lambda defaults keep the value's environment.
     pub(super) fn adapter_default_callee(
         &mut self,
         value: &hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<hir::Callee> {
         let callee = match &value.kind {
             ExprKind::FuncRef(symbol) => hir::Callee::Func(symbol.clone()),
@@ -146,7 +148,7 @@ impl Checker<'_> {
         mutable: bool,
         annotated: bool,
         value: &hir::Expr,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
         if mutable || annotated || self.function_value_required(value, fx).is_none() {
             return;
@@ -160,22 +162,23 @@ impl Checker<'_> {
 
     pub(super) fn prepare_named_lambda(
         &self,
-        declaration: &swc_ecma_ast::VarDeclarator,
+        declaration: &oxc_ast::ast::VariableDeclarator,
         mutable: bool,
         name: &str,
         annotation: Option<&crate::types::Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
-        use swc_ecma_ast::Expr;
+        use oxc_ast::ast::Expression as Expr;
         if mutable || name.is_empty() {
             return;
         }
-        if let Some(Expr::Arrow(arrow)) = declaration.init.as_deref().map(super::expr::unparen_expr)
+        if let Some(Expr::ArrowFunctionExpression(arrow)) =
+            declaration.init.as_ref().map(super::expr::unparen_expr)
         {
             // compiler.md §285 rule 4 and §288 rule 1.
             if annotation.is_none_or(|ty| {
                 matches!(self.apparent_type(ty), crate::types::Type::Func(function)
-                    if function.params.len() == arrow.params.len())
+                    if function.params.len() == arrow.params.items.len())
             }) {
                 fx.lambda_initializer = Some((arrow.span, name.to_string(), annotation.is_none()));
             }
@@ -185,17 +188,17 @@ impl Checker<'_> {
     pub(super) fn remember_named_lambda(
         &self,
         name: &str,
-        declaration: &swc_ecma_ast::VarDeclarator,
+        declaration: &oxc_ast::ast::VariableDeclarator,
         mutable: bool,
         value: &hir::Expr,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
-        use swc_ecma_ast::{Expr, Pat};
+        use oxc_ast::ast::{BindingPattern as Pat, Expression as Expr};
         if mutable
-            || !matches!(&declaration.name, Pat::Ident(binding) if binding.type_ann.is_none())
+            || !matches!(&declaration.id, Pat::BindingIdentifier(binding) if declaration.type_annotation.is_none())
             || !matches!(
-                declaration.init.as_deref().map(super::expr::unparen_expr),
-                Some(Expr::Arrow(_))
+                declaration.init.as_ref().map(super::expr::unparen_expr),
+                Some(Expr::ArrowFunctionExpression(_))
             )
         {
             return;
@@ -216,7 +219,7 @@ impl Checker<'_> {
     pub(in crate::check) fn named_lambda_defaults(
         &mut self,
         value: &hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<hir::LambdaDefaults> {
         match &value.kind {
             ExprKind::Local(name, ..) => fx
@@ -232,7 +235,7 @@ impl Checker<'_> {
 
     pub(in crate::check) fn lambda_default_signature(
         defaults: &hir::LambdaDefaults,
-    ) -> Vec<super::ParamSig> {
+    ) -> Vec<super::ParamSig<'p>> {
         defaults
             .params
             .iter()

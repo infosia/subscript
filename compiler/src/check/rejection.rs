@@ -484,9 +484,7 @@ rejection_classes! {
         Diverges(Divergence::ReadAccessorReturnMissing),
     ),
     Self::ValueClassWriteAccessor => (RuleCode::S100, Diverges(Divergence::NamedAccessor)),
-    Self::WriteAccessorReturnAnnotation => (RuleCode::S100, TscRejects),
     Self::WriteAccessorParameterCount => (RuleCode::S100, TscRejects),
-    Self::WriteAccessorDefaultParameter => (RuleCode::S100, TscRejects),
     Self::WriteAccessorPattern => {
         (RuleCode::S100, Diverges(Divergence::WriteAccessorPattern))
     }
@@ -545,7 +543,6 @@ rejection_classes! {
         Diverges(Divergence::ContextAffineStaticField),
     ),
     Self::DescriptorOptionalDefaultMissing => (RuleCode::S012, TscRejects),
-    Self::DescriptorRequiredInitializer => (RuleCode::S100, TscRejects),
     Self::DescriptorInitializerWithoutOptional => (
         RuleCode::S100,
         Diverges(Divergence::DescriptorInitializerWithoutOptional),
@@ -591,13 +588,10 @@ rejection_classes! {
         RuleCode::S100,
         Diverges(Divergence::ClassIndexSignatureStatic),
     ),
-    Self::IndexSignatureParameterAnnotationMissing => (RuleCode::S100, TscRejects),
-    Self::IndexSignatureParameterKind => (RuleCode::S100, TscRejects),
     Self::ClassIndexSignatureIndexType => (
         RuleCode::S100,
         Diverges(Divergence::ClassIndexSignatureIndexType),
     ),
-    Self::IndexSignatureElementAnnotationMissing => (RuleCode::S100, TscRejects),
     Self::StaticBlockDeclaration => {
         (RuleCode::S100, Diverges(Divergence::StaticBlockDeclaration))
     }
@@ -773,7 +767,6 @@ rejection_classes! {
         Diverges(Divergence::GenericMethodOnGenericClass),
     ),
     Self::SourceFunctionBodyMissing => (RuleCode::S100, TscRejects),
-    Self::UndefinedTypeParameterName => (RuleCode::S100, TscRejects),
     Self::DuplicateTypeParameter => (RuleCode::S017, TscRejects),
     Self::ModuleBindingPattern => {
         (RuleCode::S100, Diverges(Divergence::ModuleLevelPattern))
@@ -906,7 +899,6 @@ rejection_classes! {
         (RuleCode::S100, Diverges(Divergence::StructuralAnnotation))
     }
     Self::OptionalAnnotation => (RuleCode::S100, TscRejects),
-    Self::RestAnnotation => (RuleCode::S100, TscRejects),
     Self::ConditionalAnnotation => {
         (RuleCode::S100, Diverges(Divergence::ConditionalAnnotation))
     }
@@ -1265,7 +1257,6 @@ rejection_classes! {
     Self::AsyncArrowResultAnnotation => (RuleCode::S100, TscRejects),
     Self::AsyncArrowCapture => (RuleCode::S009, Diverges(Divergence::AsyncArrowCapture)),
     Self::AsyncArrowFunction => (RuleCode::S100, Diverges(Divergence::AsyncFunctionShape)),
-    Self::GeneratorArrowFunction => (RuleCode::S100, TscRejects),
     Self::FieldTypeWithoutInitializer => (
         RuleCode::S100,
         Diverges(Divergence::FieldTypeWithoutInitializer),

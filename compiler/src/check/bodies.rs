@@ -8,11 +8,16 @@ impl<'p> Checker<'p> {
         let module = &self.prog.files[file].module;
         for item in &module.body {
             match item {
-                ast::ModuleItem::ModuleDecl(ast::ModuleDecl::ExportDecl(e)) => {
-                    self.check_body_decl(&e.decl, true);
+                ast::Statement::ExportDeclaration(export) => {
+                    self.check_body_decl(&export.declaration, true)
                 }
-                ast::ModuleItem::Stmt(ast::Stmt::Decl(d)) => self.check_body_decl(d, false),
-                ast::ModuleItem::Stmt(s) => {
+                item if item.as_declaration().is_some() => {
+                    if let Some(declaration) = item.as_declaration() {
+                        self.check_body_decl(declaration, false);
+                    }
+                }
+                item if !item.is_module_declaration() => {
+                    let s = item;
                     let mut fx = FnCtx::new(
                         Type::Void,
                         false,
@@ -40,20 +45,20 @@ impl<'p> Checker<'p> {
             let Some(decl) = module_decl(item) else {
                 continue;
             };
-            let ast::Decl::Class(class) = decl else {
+            let ast::Declaration::ClassDeclaration(class) = decl else {
                 continue;
             };
-            if class.class.type_params.is_some() {
+            if class.type_parameters.is_some() {
                 continue;
             }
             let Some(&id) = self
                 .class_ids
-                .get(&self.declaration_symbol(file, class.ident.sym.as_ref()))
+                .get(&self.declaration_symbol(file, class.declaration_name().as_ref()))
             else {
                 continue;
             };
             if self.classes[id.0].is_descriptor {
-                self.check_descriptor_defaults(id, &class.class);
+                self.check_descriptor_defaults(id, class);
             }
         }
     }
@@ -73,11 +78,11 @@ impl<'p> Checker<'p> {
         for (name, pos) in fields {
             self.decide_field(id, &name, pos);
         }
-        for member in &class.body {
-            let ast::ClassMember::ClassProp(prop) = member else {
+        for member in &class.body.body {
+            let ast::ClassElement::PropertyDefinition(prop) = member else {
                 continue;
             };
-            let ast::PropName::Ident(key) = &prop.key else {
+            let ast::PropertyKey::StaticIdentifier(key) = &prop.key else {
                 continue;
             };
             let Some(value) = &prop.value else {
@@ -86,7 +91,7 @@ impl<'p> Checker<'p> {
             let field_ty = self.classes[id.0]
                 .fields
                 .iter()
-                .find(|field| field.name == key.sym.as_ref() && field.is_defaulted)
+                .find(|field| field.name == key.name.as_ref() && field.is_defaulted)
                 .map(|field| field.ty.clone());
             let Some(field_ty) = field_ty else {
                 continue;
@@ -102,7 +107,7 @@ impl<'p> Checker<'p> {
             fx.descriptor_default = Some(Type::Class(id));
             let mut initializer = self.class_sigs[id.0]
                 .fields
-                .get(key.sym.as_ref())
+                .get(key.name.as_ref())
                 .and_then(|sig| sig.initializer.clone());
             let cached = self.finish_initializer(&mut initializer);
             let checked = if let Some(value) = cached {
@@ -126,42 +131,35 @@ impl<'p> Checker<'p> {
             if let Some(field) = self.classes[id.0]
                 .fields
                 .iter_mut()
-                .find(|field| field.name == key.sym.as_ref())
+                .find(|field| field.name == key.name.as_ref())
             {
                 field.init = Some(checked);
             }
         }
     }
 
-    fn check_body_decl(&mut self, decl: &ast::Decl, exported: bool) {
+    fn check_body_decl(&mut self, decl: &ast::Declaration, exported: bool) {
         match decl {
-            ast::Decl::Fn(f) if f.function.type_params.is_none() => {
-                let name = self.declaration_symbol(self.cur_file, f.ident.sym.as_ref());
-                let pos = self.pos(f.ident.span);
+            ast::Declaration::FunctionDeclaration(f) if f.type_parameters.is_none() => {
+                let name = self.declaration_symbol(self.cur_file, f.declaration_name().as_ref());
+                let pos = self.pos(f.declaration_name_span());
                 let Some(sig) = self.fn_sigs.get(&name).cloned() else {
                     return;
                 };
-                let function = self.check_function(
-                    &f.function,
-                    &name,
-                    exported,
-                    &sig,
-                    (None, None),
-                    false,
-                    pos,
-                );
+                let function =
+                    self.check_function(f, &name, exported, &sig, (None, None), false, pos);
                 if let Some(function) = function {
                     self.functions.push(function);
                 }
             }
-            ast::Decl::Class(c) if c.class.type_params.is_none() => {
-                let name = self.declaration_symbol(self.cur_file, c.ident.sym.as_ref());
+            ast::Declaration::ClassDeclaration(c) if c.type_parameters.is_none() => {
+                let name = self.declaration_symbol(self.cur_file, c.declaration_name().as_ref());
                 if let Some(&id) = self.class_ids.get(&name) {
-                    self.check_class_body(id, &c.class, c.declare);
+                    self.check_class_body(id, c, c.declare);
                 }
             }
-            ast::Decl::Var(v) => {
-                if v.kind == ast::VarDeclKind::Var {
+            ast::Declaration::VariableDeclaration(v) => {
+                if v.kind == ast::VariableDeclarationKind::Var {
                     let pos = self.pos(v.span);
                     self.reject_subset(
                         RejectionSite::ModuleVarDeclaration,
@@ -170,15 +168,15 @@ impl<'p> Checker<'p> {
                     );
                     return;
                 }
-                for d in &v.decls {
-                    let ast::Pat::Ident(binding) = &d.name else {
+                for d in &v.declarations {
+                    let ast::BindingPattern::BindingIdentifier(binding) = &d.id else {
                         continue;
                     };
-                    let name = self.declaration_symbol(self.cur_file, binding.id.sym.as_ref());
+                    let name = self.declaration_symbol(self.cur_file, binding.name.as_ref());
                     let Some(mut sig) = self.global_sigs.get(&name).cloned() else {
                         continue;
                     };
-                    let pos = self.pos(binding.id.span);
+                    let pos = self.pos(binding.span);
                     let mut fx = FnCtx::new(
                         Type::Void,
                         false,
@@ -261,7 +259,7 @@ impl<'p> Checker<'p> {
         f: &ast::Function,
         name: &str,
         exported: bool,
-        sig: &FnSig,
+        sig: &FnSig<'p>,
         this: (Option<Type>, Option<RejectionSite>),
         is_setter: bool,
         pos: Pos,
@@ -309,9 +307,9 @@ impl<'p> Checker<'p> {
             Some(block) => {
                 #[cfg(test)]
                 super::body_check_cost::record();
-                self.reserve_block_declarations(&block.stmts, &mut fx);
+                self.reserve_block_declarations(&block.statements, &mut fx);
                 let mut out = prologue;
-                for s in &block.stmts {
+                for s in &block.statements {
                     self.check_stmt(s, &mut fx, &mut out);
                 }
                 if !sig.is_generator {
@@ -408,7 +406,11 @@ impl<'p> Checker<'p> {
 
     /// Reports each origin from `start` on that its body does not
     /// discharge, at the site of the origin (`compiler.md` §188.1 rule 4).
-    pub(in crate::check) fn report_unhandled_async_origins(&mut self, fx: &FnCtx, start: usize) {
+    pub(in crate::check) fn report_unhandled_async_origins(
+        &mut self,
+        fx: &FnCtx<'p>,
+        start: usize,
+    ) {
         let unhandled = fx.async_origins[start..]
             .iter()
             .enumerate()
@@ -440,40 +442,34 @@ impl<'p> Checker<'p> {
     fn bind_params(
         &mut self,
         f: &ast::Function,
-        sig: &FnSig,
-        fx: &mut FnCtx,
+        sig: &FnSig<'p>,
+        fx: &mut FnCtx<'p>,
     ) -> (Vec<hir::Param>, Vec<hir::Stmt>) {
         let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let mut out = Vec::new();
         let mut patterns = Vec::new();
-        for (i, p) in f.params.iter().enumerate() {
+        let source_parameters = function_parameters(f, self.prog.allocator);
+        for (i, p) in source_parameters.iter().enumerate() {
             let Some(ps) = sig.params.get(i) else { break };
             let pos = self.pos(p.span);
             let mut initializer = ps.initializer.clone();
-            let default =
-                if let Some(value) = self.finish_parameter_initializer(&mut initializer, ps.ty()) {
-                    Some(value)
-                } else {
-                    match &p.pat {
-                        ast::Pat::Assign(a) => Some(
-                            fx.with_synthetic_owner(
-                                SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                                |fx| {
-                                    let mut e = self.check_expr(&a.right, Some(ps.ty()), fx);
-                                    self.require_expr_assignable(
-                                        &mut e,
-                                        ps.ty(),
-                                        fx,
-                                        "the default value",
-                                    );
-                                    e
-                                },
-                            )
-                            .0,
-                        ),
-                        _ => None,
-                    }
-                };
+            let default = if let Some(value) =
+                self.finish_parameter_initializer(&mut initializer, ps.ty())
+            {
+                Some(value)
+            } else {
+                p.initializer.as_ref().map(|a| {
+                    fx.with_synthetic_owner(
+                        SyntheticOwnerKind::Initializer(self.pos(a.span())),
+                        |fx| {
+                            let mut e = self.check_expr(a, Some(ps.ty()), fx);
+                            self.require_expr_assignable(&mut e, ps.ty(), fx, "the default value");
+                            e
+                        },
+                    )
+                    .0
+                })
+            };
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.parameter_names.insert(ps.name.clone());
             }
@@ -503,10 +499,10 @@ impl<'p> Checker<'p> {
                 foreign_provenance: None,
                 pos,
             });
-            patterns.push((ps.clone(), p.pat.clone()));
+            patterns.push((ps.clone(), p.pattern.clone_in(self.prog.allocator)));
         }
         fx.parameter_default = saved_default;
-        let prologue = self.bind_parameter_patterns(patterns, fx);
+        let prologue = self.bind_parameter_patterns(patterns, f.params.rest.as_deref(), fx);
         (out, prologue)
     }
 
@@ -533,29 +529,30 @@ impl<'p> Checker<'p> {
         let this_ty = Type::Class(id);
         let definite_uninitialized: HashSet<String> = class
             .body
+            .body
             .iter()
             .filter_map(|member| {
-                let ast::ClassMember::ClassProp(prop) = member else {
+                let ast::ClassElement::PropertyDefinition(prop) = member else {
                     return None;
                 };
-                let ast::PropName::Ident(name) = &prop.key else {
+                let ast::PropertyKey::StaticIdentifier(name) = &prop.key else {
                     return None;
                 };
-                (prop.definite && prop.value.is_none() && !prop.is_static)
-                    .then(|| name.sym.to_string())
+                (prop.definite && prop.value.is_none() && !prop.r#static)
+                    .then(|| name.name.to_string())
             })
             .collect();
         let mut earlier_initialized_fields = HashSet::new();
         let mut checked_read_accessors = HashSet::new();
         let mut checked_write_accessors = HashSet::new();
-        for member in &class.body {
+        for member in &class.body.body {
             match member {
-                ast::ClassMember::ClassProp(prop) => {
-                    let ast::PropName::Ident(key) = &prop.key else {
+                ast::ClassElement::PropertyDefinition(prop) => {
+                    let ast::PropertyKey::StaticIdentifier(key) = &prop.key else {
                         continue;
                     };
-                    if prop.is_static {
-                        let name = key.sym.to_string();
+                    if prop.r#static {
+                        let name = key.name.to_string();
                         let Some(mut signature) =
                             self.class_sigs[id.0].static_fields.get(&name).cloned()
                         else {
@@ -627,13 +624,13 @@ impl<'p> Checker<'p> {
                     let field_ty = self.classes[id.0]
                         .fields
                         .iter()
-                        .find(|f| f.name == key.sym.as_ref())
+                        .find(|f| f.name == key.name.as_ref())
                         .map(|f| f.ty.clone());
                     let Some(field_ty) = field_ty else { continue };
-                    let cached = if prop.type_ann.is_none() {
+                    let cached = if prop.type_annotation.is_none() {
                         let mut initializer = self.class_sigs[id.0]
                             .fields
-                            .get(key.sym.as_ref())
+                            .get(key.name.as_ref())
                             .and_then(|sig| sig.initializer.clone());
                         self.finish_initializer(&mut initializer)
                     } else {
@@ -679,13 +676,15 @@ impl<'p> Checker<'p> {
                     if let Some(field) = self.classes[id.0]
                         .fields
                         .iter_mut()
-                        .find(|f| f.name == key.sym.as_ref())
+                        .find(|f| f.name == key.name.as_ref())
                     {
                         field.init = Some(e);
-                        earlier_initialized_fields.insert(key.sym.to_string());
+                        earlier_initialized_fields.insert(key.name.to_string());
                     }
                 }
-                ast::ClassMember::Constructor(ctor) => {
+                ast::ClassElement::MethodDefinition(ctor)
+                    if ctor.kind == ast::MethodDefinitionKind::Constructor =>
+                {
                     let Some(params) = self.class_sigs[id.0].ctor.clone() else {
                         continue;
                     };
@@ -709,19 +708,11 @@ impl<'p> Checker<'p> {
                     fx.lexical_class = Some(id);
                     fx.constructor_body = true;
                     fx.frames[0].rejects_return_operand = true;
-                    fx.frames[0].super_call_available = class.super_class.is_some();
+                    fx.frames[0].super_call_available = class.heritage.is_some();
                     fx.parameter_default = true;
                     let mut hir_params = Vec::new();
                     let mut patterns = Vec::new();
-                    for (i, param) in ctor
-                        .params
-                        .iter()
-                        .filter_map(|parameter| match parameter {
-                            ast::ParamOrTsParamProp::Param(param) => Some(param),
-                            _ => None,
-                        })
-                        .enumerate()
-                    {
+                    for (i, param) in ctor.value.params.items.iter().enumerate() {
                         let Some(ps) = sig.params.get(i) else { break };
                         let mut initializer = ps.initializer.clone();
                         let default = if let Some(value) =
@@ -729,16 +720,13 @@ impl<'p> Checker<'p> {
                         {
                             Some(value)
                         } else {
-                            match &param.pat {
-                                ast::Pat::Assign(a) => Some(
-                                    fx.with_synthetic_owner(
-                                        SyntheticOwnerKind::Initializer(self.pos(a.right.span())),
-                                        |fx| self.check_expr(&a.right, Some(ps.ty()), fx),
-                                    )
-                                    .0,
-                                ),
-                                _ => None,
-                            }
+                            param.initializer.as_ref().map(|a| {
+                                fx.with_synthetic_owner(
+                                    SyntheticOwnerKind::Initializer(self.pos(a.span())),
+                                    |fx| self.check_expr(a, Some(ps.ty()), fx),
+                                )
+                                .0
+                            })
                         };
                         let param_pos = self.pos(param.span);
                         let origins = default.as_ref().map_or_else(Default::default, |value| {
@@ -767,13 +755,17 @@ impl<'p> Checker<'p> {
                             foreign_provenance: None,
                             pos: param_pos,
                         });
-                        patterns.push((ps.clone(), param.pat.clone()));
+                        patterns.push((ps.clone(), param.pattern.clone_in(self.prog.allocator)));
                     }
                     fx.parameter_default = false;
-                    let mut body = self.bind_parameter_patterns(patterns, &mut fx);
-                    if let Some(block) = &ctor.body {
-                        self.reserve_block_declarations(&block.stmts, &mut fx);
-                        for s in &block.stmts {
+                    let mut body = self.bind_parameter_patterns(
+                        patterns,
+                        ctor.value.params.rest.as_deref(),
+                        &mut fx,
+                    );
+                    if let Some(block) = &ctor.value.body {
+                        self.reserve_block_declarations(&block.statements, &mut fx);
+                        for s in &block.statements {
                             self.check_stmt(s, &mut fx, &mut body);
                         }
                     }
@@ -799,35 +791,38 @@ impl<'p> Checker<'p> {
                         pos,
                     });
                 }
-                ast::ClassMember::Method(method) => {
+                ast::ClassElement::MethodDefinition(method) => {
                     let (mut name, pos) = match &method.key {
-                        ast::PropName::Ident(key) => (key.sym.to_string(), self.pos(key.span)),
+                        ast::PropertyKey::StaticIdentifier(key) => {
+                            (key.name.to_string(), self.pos(key.span))
+                        }
                         key if is_dispose_method_key(key) => {
                             (hir::DISPOSE_METHOD_NAME.to_string(), self.pos(method.span))
                         }
                         _ => continue,
                     };
                     match method.kind {
-                        ast::MethodKind::Getter => {
-                            let has_accessor = if method.is_static {
+                        ast::MethodDefinitionKind::Constructor => continue,
+                        ast::MethodDefinitionKind::Get => {
+                            let has_accessor = if method.r#static {
                                 self.class_sigs[id.0].has_static_accessor(&name)
                             } else {
                                 self.class_sigs[id.0].has_accessor(&name)
                             };
                             if !has_accessor
-                                || !checked_read_accessors.insert((method.is_static, name.clone()))
+                                || !checked_read_accessors.insert((method.r#static, name.clone()))
                             {
                                 continue;
                             }
                         }
-                        ast::MethodKind::Setter => {
-                            if !checked_write_accessors.insert((method.is_static, name.clone())) {
+                        ast::MethodDefinitionKind::Set => {
+                            if !checked_write_accessors.insert((method.r#static, name.clone())) {
                                 continue;
                             }
                             name.push('=');
                         }
-                        ast::MethodKind::Method => {
-                            let has_accessor = if method.is_static {
+                        ast::MethodDefinitionKind::Method => {
+                            let has_accessor = if method.r#static {
                                 self.class_sigs[id.0].has_static_accessor(&name)
                             } else {
                                 self.class_sigs[id.0].has_accessor(&name)
@@ -838,12 +833,12 @@ impl<'p> Checker<'p> {
                             // §82.4 rule 3: a template has no body of its
                             // own. `instantiate_method` checks each
                             // instance at its first call.
-                            if self.class_sigs[id.0].has_generic_method(&name, method.is_static) {
+                            if self.class_sigs[id.0].has_generic_method(&name, method.r#static) {
                                 continue;
                             }
                         }
                     }
-                    let sig = if method.is_static {
+                    let sig = if method.r#static {
                         self.class_sigs[id.0].static_methods.get(&name).cloned()
                     } else {
                         self.class_sigs[id.0].methods.get(&name).cloned()
@@ -851,24 +846,24 @@ impl<'p> Checker<'p> {
                     let Some(sig) = sig else {
                         continue;
                     };
-                    let function_name = if method.is_static {
+                    let function_name = if method.r#static {
                         static_member_symbol(id, &self.classes[id.0].name, &name)
                     } else {
                         name.clone()
                     };
                     if let Some(func) = self.check_function(
-                        &method.function,
+                        &method.value,
                         &function_name,
                         false,
                         &sig,
                         (
                             Some(this_ty.clone()),
-                            method.is_static.then_some(RejectionSite::ThisStaticField),
+                            method.r#static.then_some(RejectionSite::ThisStaticField),
                         ),
-                        method.kind == ast::MethodKind::Setter,
+                        method.kind == ast::MethodDefinitionKind::Set,
                         pos,
                     ) {
-                        if method.is_static {
+                        if method.r#static {
                             self.functions.push(func);
                         } else {
                             self.classes[id.0].methods.push(func);
@@ -906,28 +901,28 @@ impl<'p> Checker<'p> {
             return;
         }
         let mut spellings: HashMap<String, FieldSpelling> = HashMap::new();
-        for member in &class.body {
-            let ast::ClassMember::ClassProp(prop) = member else {
+        for member in &class.body.body {
+            let ast::ClassElement::PropertyDefinition(prop) = member else {
                 continue;
             };
-            let ast::PropName::Ident(key) = &prop.key else {
+            let ast::PropertyKey::StaticIdentifier(key) = &prop.key else {
                 continue;
             };
-            if !prop.is_static {
+            if !prop.r#static {
                 spellings.insert(
-                    key.sym.to_string(),
+                    key.name.to_string(),
                     FieldSpelling {
                         declared: prop.declare,
-                        abstract_member: prop.is_abstract,
+                        abstract_member: (prop.r#type
+                            == ast::PropertyDefinitionType::TSAbstractPropertyDefinition),
                         definite: prop.definite,
-                        optional: prop.is_optional,
+                        optional: prop.optional,
                         // The declared text, not the resolved type: a
                         // generic template declares `T`, and the advice
                         // is written into the template.
-                        declared_type: prop
-                            .type_ann
-                            .as_ref()
-                            .and_then(|annotation| self.prog.snippet(annotation.type_ann.span())),
+                        declared_type: prop.type_annotation.as_ref().and_then(|annotation| {
+                            self.prog.snippet(annotation.type_annotation.span())
+                        }),
                     },
                 );
             }

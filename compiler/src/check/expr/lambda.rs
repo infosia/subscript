@@ -2,8 +2,9 @@
 
 use crate::check::rejection::RejectionSite;
 
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_allocator::CloneIn;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use super::entry::ContextKind;
 use crate::check::{Checker, FnCtx, Frame, Local, ParamSig, Scope};
@@ -16,19 +17,22 @@ impl<'p> Checker<'p> {
     /// §287 rule 1: an async lambda also accepts a Promise<void> operand.
     pub(in crate::check) fn check_inferred_void_return(
         &mut self,
-        arg: &ast::Expr,
-        fx: &mut FnCtx,
+        arg: &ast::Expression,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
         out: &mut Vec<hir::Stmt>,
     ) {
         // compiler.md §286 rule 3b: reuse §237's return leaf split.
-        if matches!(super::unparen_expr(arg), ast::Expr::Cond(_)) {
+        if matches!(
+            super::unparen_expr(arg),
+            ast::Expression::ConditionalExpression(_)
+        ) {
             self.split_return(arg, fx, out);
             return;
         }
         let result_operand = matches!(
             super::unparen_expr(arg),
-            ast::Expr::Call(_) | ast::Expr::Await(_)
+            ast::Expression::CallExpression(_) | ast::Expression::AwaitExpression(_)
         );
         let saved_operand = std::mem::replace(&mut self.inferring_result_operand, result_operand);
         let (mut statements, ty) = self.check_void_operand(arg, fx);
@@ -71,9 +75,9 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_lambda(
         &mut self,
-        a: &ast::ArrowExpr,
+        a: &ast::ArrowFunctionExpression,
         (ctx, kind): (Option<&Type>, ContextKind),
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         if ctx.is_some_and(|ty| self.apparent_type(ty) == Type::Error) {
@@ -110,11 +114,11 @@ impl<'p> Checker<'p> {
     /// `map` callback, stdlib.md §9: `U` comes from the closure).
     pub(super) fn check_lambda_with(
         &mut self,
-        a: &ast::ArrowExpr,
+        a: &ast::ArrowFunctionExpression,
         param_ctx: Option<&[Type]>,
         (ret_ctx, ret_kind): (Option<&Type>, ContextKind),
         resolved_first: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let generic_context = self.generic_callback_context;
@@ -123,13 +127,7 @@ impl<'p> Checker<'p> {
         let called_at_once = std::mem::take(&mut self.lambda_called_at_once);
         let reaction_parameter = self.reaction_lambda == Some(a.span);
         let value = self.with_expression_work(|checker| {
-            if a.type_params
-                .as_deref()
-                .is_some_and(|params| checker.reject_reserved_type_parameter_names(params))
-            {
-                return checker.err_expr(pos);
-            }
-            if a.is_async && a.type_params.is_some() {
+            if a.r#async && a.type_parameters.is_some() {
                 checker.reject_subset(
                     RejectionSite::AsyncArrowFunction,
                     "generic async arrows are not in the decided surface",
@@ -137,42 +135,44 @@ impl<'p> Checker<'p> {
                 );
                 return checker.err_expr(pos);
             }
-            if a.is_generator {
-                checker.reject_subset(
-                    RejectionSite::GeneratorArrowFunction,
-                    "generator arrows are not in the decided surface",
-                    pos.clone(),
-                );
-                return checker.err_expr(pos);
-            }
             let saved_group_parameters = checker.task_group_parameters;
             checker.task_group_parameters =
-                !a.is_async && !a.is_generator && !fx.frames.iter().any(|frame| frame.is_generator);
+                !a.r#async && !fx.frames.iter().any(|frame| frame.is_generator);
             let prepared_member = checker.prepare_lambda_group(a.span, fx);
             let mut params = Vec::new();
-            for (i, pat) in a.params.iter().enumerate() {
+            for (i, pat) in a.params.items.iter().enumerate() {
                 // An un-annotated lambda parameter takes its type from the
                 // contextual function type (tsc-style contextual typing);
                 // only a parameter with neither annotation nor context is an
                 // error. This is how a boundary callback (e.g. a `void*`
                 // `object | null` userdata slot) is typed without the program
                 // spelling the boundary type itself.
-                let unannotated_ident = match pat {
-                    ast::Pat::Ident(b) if b.type_ann.is_none() && !b.id.optional => Some(b),
+                let unannotated_ident = match &pat.pattern {
+                    ast::BindingPattern::BindingIdentifier(b)
+                        if pat.type_annotation.is_none()
+                            && !pat.optional
+                            && pat.initializer.is_none() =>
+                    {
+                        Some(b)
+                    }
                     _ => None,
                 };
                 let sig =
                     if let Some(param) = prepared_member.as_ref().and_then(|m| m.params.get(i)) {
                         param.clone()
-                    } else if let (0, Some(resolved), ast::Pat::Ident(binding)) =
-                        (i, resolved_first, pat)
+                    } else if let (
+                        0,
+                        Some(resolved),
+                        ast::BindingPattern::BindingIdentifier(binding),
+                        true,
+                    ) = (i, resolved_first, &pat.pattern, pat.initializer.is_none())
                     {
                         ParamSig {
-                            annotated: binding
-                                .type_ann
+                            annotated: pat
+                                .type_annotation
                                 .as_ref()
-                                .is_some_and(|ann| checker.written_type(&ann.type_ann)),
-                            name: binding.id.sym.to_string(),
+                                .is_some_and(|ann| checker.written_type(&ann.type_annotation)),
+                            name: binding.name.to_string(),
                             state: crate::check::initializer::TypeState::decided(resolved.clone()),
                             initializer: None,
                             has_default: false,
@@ -181,7 +181,7 @@ impl<'p> Checker<'p> {
                         if let Some(t) = param_ctx.and_then(|p| p.get(i)) {
                             ParamSig {
                                 annotated: false,
-                                name: b.id.sym.to_string(),
+                                name: b.name.to_string(),
                                 state: crate::check::initializer::TypeState::decided(t.clone()),
                                 initializer: None,
                                 has_default: false,
@@ -194,6 +194,20 @@ impl<'p> Checker<'p> {
                     };
                 params.push(sig);
             }
+            if let Some(rest) = &a.params.rest {
+                checker.reject_subset(
+                    RejectionSite::RestParameter,
+                    "parameter pattern outside the decided surface",
+                    checker.pos(rest.span),
+                );
+                params.push(ParamSig {
+                    annotated: false,
+                    name: String::new(),
+                    state: crate::check::initializer::TypeState::Rejected,
+                    initializer: None,
+                    has_default: false,
+                });
+            }
             checker.task_group_parameters = saved_group_parameters;
             let mut ret = a
                 .return_type
@@ -203,12 +217,12 @@ impl<'p> Checker<'p> {
                         .as_ref()
                         .and_then(|m| m.signature.as_ref())
                         .map(|s| s.ret.clone())
-                        .unwrap_or_else(|| checker.resolve_result_type(&ann.type_ann))
+                        .unwrap_or_else(|| checker.resolve_result_type(&ann.type_annotation))
                 })
                 .or_else(|| {
                     ret_ctx
                         .filter(|ty| {
-                            !a.is_async
+                            !a.r#async
                                 || matches!(
                                     checker.apparent_type(ty),
                                     Type::AsyncHandle(_) | Type::Error
@@ -218,9 +232,9 @@ impl<'p> Checker<'p> {
                 })
                 // compiler.md §238 rule 2: a `void` result of the parameter
                 // type of a generic call is the context of the result.
-                .or_else(|| (void_context && !a.is_async).then_some(Type::Void));
+                .or_else(|| (void_context && !a.r#async).then_some(Type::Void));
 
-            if a.is_async
+            if a.r#async
                 && ret.as_ref().is_some_and(|ty| {
                     !matches!(
                         checker.apparent_type(ty),
@@ -238,12 +252,12 @@ impl<'p> Checker<'p> {
             // compiler.md §286 rules 1 to 3: decide a block result before
             // checking its operands without context.
             let mut void_block =
-                ret.is_none() && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_));
+                ret.is_none() && matches!(&a.body, ast::ArrowFunctionBody::FunctionBody(_));
             // compiler.md §286 rule 3a: reject before publishing a result,
             // including when the body would otherwise be deferred.
             if void_block {
-                if let ast::BlockStmtOrExpr::BlockStmt(block) = &*a.body {
-                    if returns_matching(&block.stmts, nonvoid_return_syntax) {
+                if let ast::ArrowFunctionBody::FunctionBody(block) = &a.body {
+                    if returns_matching(&block.statements, nonvoid_return_syntax) {
                         checker.reject_subset(
                             RejectionSite::BlockLambdaReturnAnnotationMissing,
                             "a lambda with a block body requires a return type annotation",
@@ -257,12 +271,12 @@ impl<'p> Checker<'p> {
             // compiler.md §239 rule 1, §290 rule 1: a block with no return
             // operand has a decided result; §286 operands still need inference.
             let needs_void_inference = void_block
-                && matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(block)
-                    if returns_matching(&block.stmts, |_| true));
+                && matches!(&a.body, ast::ArrowFunctionBody::FunctionBody(block)
+                    if returns_matching(&block.statements, |_| true));
             let decided_from_syntax =
                 a.return_type.is_some() || (void_block && !needs_void_inference);
             if void_block {
-                ret = Some(if a.is_async {
+                ret = Some(if a.r#async {
                     Type::async_handle(Type::Void)
                 } else {
                     Type::Void
@@ -281,7 +295,7 @@ impl<'p> Checker<'p> {
                 );
                 checker.defer_work(
                     crate::check::initializer::DeferredWork::Lambda {
-                        source: a.clone(),
+                        source: std::rc::Rc::new(a.clone_in(checker.prog.allocator)),
                         inferred_void: void_block,
                         params,
                         result: result.clone(),
@@ -299,9 +313,9 @@ impl<'p> Checker<'p> {
                         group: None,
                         id,
                         params: Vec::new(),
-                        is_async: a.is_async,
-                        owns_environment: a.is_async,
-                        ret: if a.is_async {
+                        is_async: a.r#async,
+                        owns_environment: a.r#async,
+                        ret: if a.r#async {
                             match checker.apparent_type(&result) {
                                 Type::AsyncHandle(t) => *t,
                                 _ => Type::Error,
@@ -349,15 +363,21 @@ impl<'p> Checker<'p> {
 
     pub(in crate::check) fn check_lambda_parameter_defaults(
         &mut self,
-        params: &[ParamSig],
-        patterns: &[ast::Pat],
+        params: &[ParamSig<'p>],
+        patterns: &ast::FormalParameters,
         pos: &Pos,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         reaction_parameter: bool,
     ) -> Vec<hir::Param> {
         let saved_default = std::mem::replace(&mut fx.parameter_default, true);
         let mut hir_params = Vec::new();
-        for (p, pattern) in params.iter().zip(patterns) {
+        for (p, (param_span, source)) in params.iter().zip(
+            patterns
+                .items
+                .iter()
+                .map(|p| (p.pattern.span(), p.initializer.as_ref()))
+                .chain(patterns.rest.iter().map(|rest| (rest.span, None))),
+        ) {
             if let Some(frame) = fx.frames.last_mut() {
                 for capture in Self::initializer_captures(&p.initializer) {
                     if !frame.captures.iter().any(|c| c.name == capture.name) {
@@ -369,14 +389,14 @@ impl<'p> Checker<'p> {
             let default =
                 if let Some(value) = self.finish_parameter_initializer(&mut initializer, p.ty()) {
                     Some(value)
-                } else if let ast::Pat::Assign(assign) = pattern {
-                    let mut value = self.check_expr(&assign.right, Some(p.ty()), fx);
+                } else if let Some(source) = source {
+                    let mut value = self.check_expr(source, Some(p.ty()), fx);
                     self.require_expr_assignable(&mut value, p.ty(), fx, "the default value");
                     Some(value)
                 } else {
                     None
                 };
-            let param_pos = self.pos(pattern.span());
+            let param_pos = self.pos(param_span);
             let origins = default
                 .as_ref()
                 .map_or_else(Default::default, |value| self.expr_async_origins(value, fx));
@@ -418,8 +438,8 @@ impl<'p> Checker<'p> {
 
     pub(in crate::check) fn check_lambda_body(
         &mut self,
-        a: &ast::ArrowExpr,
-        params: Vec<ParamSig>,
+        a: &ast::ArrowFunctionExpression,
+        params: Vec<ParamSig<'p>>,
         (mut ret, result_kind, inferred_void, reaction_parameter): (
             Option<Type>,
             ContextKind,
@@ -427,7 +447,7 @@ impl<'p> Checker<'p> {
             bool,
         ),
         result_hint: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
         let saved_operand = std::mem::replace(&mut self.inferring_result_operand, false);
@@ -446,7 +466,7 @@ impl<'p> Checker<'p> {
                     rejected: false,
                 });
         }
-        if a.is_async {
+        if a.r#async {
             ret = ret.map(|ty| match self.apparent_type(&ty) {
                 Type::AsyncHandle(value) => *value,
                 _ => Type::Error,
@@ -457,7 +477,7 @@ impl<'p> Checker<'p> {
             .as_ref()
             .and_then(|(span, name, named)| {
                 let syntax_result = a.return_type.is_some()
-                    || matches!(&*a.body, ast::BlockStmtOrExpr::BlockStmt(_));
+                    || matches!(&a.body, ast::ArrowFunctionBody::FunctionBody(_));
                 // compiler.md §285 rule 1: the const annotation also decides
                 // the result before the body. A result hint does not.
                 let decided_result = syntax_result || result_kind == ContextKind::Contextual;
@@ -468,7 +488,7 @@ impl<'p> Checker<'p> {
                         *named,
                         crate::types::FuncType {
                             params: params.iter().map(|p| p.ty().clone()).collect(),
-                            ret: if a.is_async {
+                            ret: if a.r#async {
                                 Type::async_handle(result)
                             } else {
                                 result
@@ -493,11 +513,11 @@ impl<'p> Checker<'p> {
             ret: ret.clone().unwrap_or(Type::Error),
             result_kind,
             is_generator: false,
-            is_async: a.is_async,
+            is_async: a.r#async,
             yield_ty: None,
             yield_annotated: false,
             is_lambda: true,
-            contextual_void: !a.is_async && a.return_type.is_none() && ret == Some(Type::Void),
+            contextual_void: !a.r#async && a.return_type.is_none() && ret == Some(Type::Void),
             inferred_void: inferred_void.then(|| (pos.clone(), false)),
             rejects_return_operand: false,
             void_split: None,
@@ -521,7 +541,7 @@ impl<'p> Checker<'p> {
                 // compiler.md §322 rule 1: only a non-async immediate callee keeps the static field fact.
                 let immutable_global = !fact.shared && fact.starts_with("[[global]]");
                 fact.narrows_type()
-                    && (called_at_once && !a.is_async && immutable_global
+                    && (called_at_once && !a.r#async && immutable_global
                         || !fact.contains('.')
                             && (immutable_global
                                 || fx
@@ -553,23 +573,29 @@ impl<'p> Checker<'p> {
                 .find_map(|s| s.lambda_groups.get(&member.span))
                 .cloned()
                 .unwrap_or_default();
-            fx.scopes.last_mut().unwrap().group_members =
-                members.into_iter().map(|m| (m.name.clone(), m)).collect();
+            if let Some(scope) = fx.scopes.last_mut() {
+                scope.group_members = members.into_iter().map(|m| (m.name.clone(), m)).collect();
+            }
         }
         self.cache_global_lambda_defaults(a.span, id, &hir_params);
         let parameter_patterns = params
             .iter()
             .cloned()
-            .zip(a.params.iter().cloned())
+            .zip(
+                a.params
+                    .items
+                    .iter()
+                    .map(|parameter| parameter.pattern.clone_in(self.prog.allocator)),
+            )
             .collect::<Vec<_>>();
-        let entry = self.bind_parameter_patterns(parameter_patterns, fx);
+        let entry = self.bind_parameter_patterns(parameter_patterns, a.params.rest.as_deref(), fx);
         if let Some((name, named, signature)) = self_call {
             if let Some(scope) = fx.scopes.last_mut() {
                 scope.self_call = Some((
                     name,
                     id,
                     signature,
-                    a.is_async,
+                    a.r#async,
                     named.then(|| hir::LambdaDefaults {
                         id,
                         params: hir_params.clone(),
@@ -580,12 +606,15 @@ impl<'p> Checker<'p> {
         let body_pos = self.pos(a.body.span());
         let (body, prefix) = fx.with_synthetic_owner(
             crate::check::SyntheticOwnerKind::ArrowBody(body_pos),
-            |fx| match &*a.body {
-                ast::BlockStmtOrExpr::Expr(e) => {
+            |fx| match &a.body {
+                body if body.as_expression().is_some() => {
+                    let Some(e) = body.as_expression() else {
+                        return Vec::new();
+                    };
                     // compiler.md §236 rule 3: an unannotated body whose
                     // leaves mix a handle and a value takes the value type
                     // of its handle leaf, and splits as a return does.
-                    if a.is_async && ret.is_none() {
+                    if a.r#async && ret.is_none() {
                         if let Some(value) = self.mixed_body_result(e, fx) {
                             if let Some(frame) = fx.frames.last_mut() {
                                 frame.ret = value.clone();
@@ -598,13 +627,14 @@ impl<'p> Checker<'p> {
                     let void_result = ret
                         .as_ref()
                         .is_some_and(|ty| self.apparent_type(ty) == Type::Void);
-                    if (a.is_async && ret.is_some()) || void_result {
+                    if (a.r#async && ret.is_some()) || void_result {
                         let mut out = Vec::new();
                         self.check_return(
-                            &ast::ReturnStmt {
-                                span: e.span(),
-                                arg: Some(e.clone()),
-                            },
+                            &ast::ReturnStatement::new(
+                                e.span(),
+                                Some(e.clone_in(self.prog.allocator)),
+                                &oxc_ast::builder::AstBuilder::new(self.prog.allocator),
+                            ),
                             fx,
                             &mut out,
                         );
@@ -639,7 +669,7 @@ impl<'p> Checker<'p> {
                         );
                     } else {
                         ret = Some(checked.ty.clone());
-                        if a.is_async {
+                        if a.r#async {
                             let expected = match self.apparent_type(&checked.ty) {
                                 Type::AsyncHandle(inner) => *inner,
                                 _ => checked.ty.clone(),
@@ -671,10 +701,10 @@ impl<'p> Checker<'p> {
                         pos: value_pos,
                     }]
                 }
-                ast::BlockStmtOrExpr::BlockStmt(block) => {
-                    self.reserve_block_declarations(&block.stmts, fx);
+                ast::ArrowFunctionBody::FunctionBody(block) => {
+                    self.reserve_block_declarations(&block.statements, fx);
                     let mut out = Vec::new();
-                    for s in &block.stmts {
+                    for s in &block.statements {
                         self.check_stmt(s, fx, &mut out);
                     }
                     if let Some(ret) = &ret {
@@ -695,6 +725,7 @@ impl<'p> Checker<'p> {
                     }
                     out
                 }
+                _ => Vec::new(),
             },
         );
         let mut statements = entry;
@@ -745,7 +776,7 @@ impl<'p> Checker<'p> {
         fx.async_origins.truncate(origin_start);
         fx.group_origins.retain(|id| (*id as usize) < origin_start);
         let ret = ret.unwrap_or(Type::Error);
-        let result = if a.is_async {
+        let result = if a.r#async {
             Type::AsyncHandle(Box::new(ret.clone()))
         } else {
             ret.clone()
@@ -762,8 +793,8 @@ impl<'p> Checker<'p> {
                 group: member.map(|member| member.group),
                 id,
                 params: hir_params,
-                is_async: a.is_async,
-                owns_environment: a.is_async,
+                is_async: a.r#async,
+                owns_environment: a.r#async,
                 ret,
                 body,
                 captures,
@@ -787,57 +818,75 @@ fn evaluation_of(called_at_once: bool) -> crate::check::Evaluation {
 
 /// compiler.md §286 rules 1 and 3a: inspect this block's returns only.
 pub(in crate::check) fn returns_matching(
-    statements: &[ast::Stmt],
-    operand: fn(&ast::Expr) -> bool,
+    statements: &[ast::Statement],
+    operand: fn(&ast::Expression) -> bool,
 ) -> bool {
     statements.iter().any(|statement| match statement {
-        ast::Stmt::Return(r) => r.arg.as_deref().is_some_and(operand),
-        ast::Stmt::Block(block) => returns_matching(&block.stmts, operand),
-        ast::Stmt::If(i) => {
-            returns_matching(std::slice::from_ref(&i.cons), operand)
-                || i.alt
-                    .as_deref()
+        ast::Statement::ReturnStatement(r) => r.argument.as_ref().is_some_and(operand),
+        ast::Statement::BlockStatement(block) => returns_matching(&block.body, operand),
+        ast::Statement::IfStatement(i) => {
+            returns_matching(std::slice::from_ref(&i.consequent), operand)
+                || i.alternate
+                    .as_ref()
                     .is_some_and(|alt| returns_matching(std::slice::from_ref(alt), operand))
         }
-        ast::Stmt::While(w) => returns_matching(std::slice::from_ref(&w.body), operand),
-        ast::Stmt::DoWhile(d) => returns_matching(std::slice::from_ref(&d.body), operand),
-        ast::Stmt::For(f) => returns_matching(std::slice::from_ref(&f.body), operand),
-        ast::Stmt::ForIn(f) => returns_matching(std::slice::from_ref(&f.body), operand),
-        ast::Stmt::ForOf(f) => returns_matching(std::slice::from_ref(&f.body), operand),
-        ast::Stmt::Labeled(l) => returns_matching(std::slice::from_ref(&l.body), operand),
-        ast::Stmt::Switch(s) => s
+        ast::Statement::WhileStatement(w) => {
+            returns_matching(std::slice::from_ref(&w.body), operand)
+        }
+        ast::Statement::DoWhileStatement(d) => {
+            returns_matching(std::slice::from_ref(&d.body), operand)
+        }
+        ast::Statement::ForStatement(f) => returns_matching(std::slice::from_ref(&f.body), operand),
+        ast::Statement::ForInStatement(f) => {
+            returns_matching(std::slice::from_ref(&f.body), operand)
+        }
+        ast::Statement::ForOfStatement(f) => {
+            returns_matching(std::slice::from_ref(&f.body), operand)
+        }
+        ast::Statement::LabeledStatement(l) => {
+            returns_matching(std::slice::from_ref(&l.body), operand)
+        }
+        ast::Statement::SwitchStatement(s) => s
             .cases
             .iter()
-            .any(|case| returns_matching(&case.cons, operand)),
-        ast::Stmt::Try(t) => {
-            returns_matching(&t.block.stmts, operand)
+            .any(|case| returns_matching(&case.consequent, operand)),
+        ast::Statement::TryStatement(t) => {
+            returns_matching(&t.block.body, operand)
                 || t.handler
                     .as_ref()
-                    .is_some_and(|handler| returns_matching(&handler.body.stmts, operand))
+                    .is_some_and(|handler| returns_matching(&handler.body.body, operand))
                 || t.finalizer
                     .as_ref()
-                    .is_some_and(|finalizer| returns_matching(&finalizer.stmts, operand))
+                    .is_some_and(|finalizer| returns_matching(&finalizer.body, operand))
         }
         _ => false,
     })
 }
 
 /// compiler.md §286 rule 3a: parentheses and conditionals expose leaves.
-fn nonvoid_return_syntax(expr: &ast::Expr) -> bool {
+fn nonvoid_return_syntax(expr: &ast::Expression) -> bool {
     match super::unparen_expr(expr) {
-        ast::Expr::Cond(c) => nonvoid_return_syntax(&c.cons) || nonvoid_return_syntax(&c.alt),
-        ast::Expr::Ident(id) => id.sym == "undefined",
-        ast::Expr::Lit(_)
-        | ast::Expr::Tpl(_)
-        | ast::Expr::Array(_)
-        | ast::Expr::Object(_)
-        | ast::Expr::Unary(_)
-        | ast::Expr::Bin(_)
-        | ast::Expr::Update(_)
-        | ast::Expr::New(_)
-        | ast::Expr::This(_)
-        | ast::Expr::Arrow(_)
-        | ast::Expr::Fn(_) => true,
+        ast::Expression::ConditionalExpression(c) => {
+            nonvoid_return_syntax(&c.consequent) || nonvoid_return_syntax(&c.alternate)
+        }
+        ast::Expression::Identifier(id) => id.name == "undefined",
+        ast::Expression::NumericLiteral(_)
+        | ast::Expression::StringLiteral(_)
+        | ast::Expression::BooleanLiteral(_)
+        | ast::Expression::NullLiteral(_)
+        | ast::Expression::BigIntLiteral(_)
+        | ast::Expression::RegExpLiteral(_)
+        | ast::Expression::TemplateLiteral(_)
+        | ast::Expression::ArrayExpression(_)
+        | ast::Expression::ObjectExpression(_)
+        | ast::Expression::UnaryExpression(_)
+        | ast::Expression::LogicalExpression(_)
+        | ast::Expression::BinaryExpression(_)
+        | ast::Expression::UpdateExpression(_)
+        | ast::Expression::NewExpression(_)
+        | ast::Expression::ThisExpression(_)
+        | ast::Expression::ArrowFunctionExpression(_)
+        | ast::Expression::FunctionExpression(_) => true,
         _ => false,
     }
 }

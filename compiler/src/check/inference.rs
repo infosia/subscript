@@ -5,18 +5,47 @@ use crate::check::expr::unparen_expr;
 use crate::check::instance_chain::ParameterEdge;
 use crate::check::rejection::RejectionSite;
 
-fn deferred_literal(expr: &ast::Expr) -> bool {
+fn deferred_literal(expr: &ast::Expression) -> bool {
     match unparen_expr(expr) {
-        ast::Expr::Lit(ast::Lit::Num(_) | ast::Lit::Str(_)) => true,
-        ast::Expr::Unary(unary) if matches!(unary.op, ast::UnaryOp::Minus | ast::UnaryOp::Plus) => {
-            matches!(unparen_expr(&unary.arg), ast::Expr::Lit(ast::Lit::Num(_)))
+        ast::Expression::NumericLiteral(_) | ast::Expression::StringLiteral(_) => true,
+        ast::Expression::UnaryExpression(unary)
+            if matches!(
+                unary.operator,
+                ast::UnaryOperator::UnaryNegation | ast::UnaryOperator::UnaryPlus
+            ) =>
+        {
+            matches!(
+                unparen_expr(&unary.argument),
+                ast::Expression::NumericLiteral(_)
+            )
         }
-        ast::Expr::Array(array) => array.elems.iter().all(|element| {
-            element
-                .as_ref()
-                .is_some_and(|element| element.spread.is_none() && deferred_literal(&element.expr))
-        }),
+        ast::Expression::ArrayExpression(array) => array
+            .elements
+            .iter()
+            .all(|element| element.as_expression().is_some_and(deferred_literal)),
         _ => false,
+    }
+}
+
+/// Whether the operand keeps its contextual type (compiler.md §232 rule 1).
+fn literal_free(expr: &ast::Expression) -> bool {
+    match unparen_expr(expr) {
+        ast::Expression::NullLiteral(_) => true,
+        ast::Expression::NumericLiteral(_)
+        | ast::Expression::StringLiteral(_)
+        | ast::Expression::BooleanLiteral(_)
+        | ast::Expression::BigIntLiteral(_)
+        | ast::Expression::RegExpLiteral(_)
+        | ast::Expression::TemplateLiteral(_)
+        | ast::Expression::ArrayExpression(_) => false,
+        ast::Expression::UnaryExpression(unary) => !matches!(
+            unary.operator,
+            ast::UnaryOperator::UnaryNegation | ast::UnaryOperator::UnaryPlus
+        ),
+        ast::Expression::ConditionalExpression(conditional) => {
+            literal_free(&conditional.consequent) && literal_free(&conditional.alternate)
+        }
+        _ => true,
     }
 }
 
@@ -24,25 +53,17 @@ fn deferred_literal(expr: &ast::Expr) -> bool {
 /// annotation, as its value or in an element, a branch, a member, or a
 /// lambda result. Such an argument of a generic call is checked after the
 /// arguments that fix its type parameters (compiler.md §249 rule 2a).
-fn context_sensitive(expr: &ast::Expr) -> bool {
+fn context_sensitive(expr: &ast::Expression) -> bool {
     match unparen_expr(expr) {
-        ast::Expr::Arrow(arrow) => {
-            arrow.params.iter().any(
-                |pattern| matches!(pattern, ast::Pat::Ident(binding) if binding.type_ann.is_none()),
-            ) || matches!(&*arrow.body, ast::BlockStmtOrExpr::Expr(body) if context_sensitive(body))
+        ast::Expression::ArrowFunctionExpression(arrow) => {
+            arrow.params.items.iter().any(|parameter| matches!(parameter.pattern, ast::BindingPattern::BindingIdentifier(_)) && parameter.initializer.is_none() && parameter.type_annotation.is_none()) || arrow.body.as_expression().is_some_and(context_sensitive)
         }
-        ast::Expr::Cond(conditional) => {
-            context_sensitive(&conditional.cons) || context_sensitive(&conditional.alt)
+        ast::Expression::ConditionalExpression(conditional) => {
+            context_sensitive(&conditional.consequent) || context_sensitive(&conditional.alternate)
         }
-        ast::Expr::Array(array) => array
-            .elems
-            .iter()
-            .flatten()
-            .any(|element| context_sensitive(&element.expr)),
-        ast::Expr::Object(object) => object.props.iter().any(|property| {
-            matches!(property, ast::PropOrSpread::Prop(prop)
-                if matches!(&**prop, ast::Prop::KeyValue(pair) if context_sensitive(&pair.value)))
-        }),
+        ast::Expression::ArrayExpression(array) => array
+            .elements.iter().filter_map(array_element_expression).any(context_sensitive),
+        ast::Expression::ObjectExpression(object) => object.properties.iter().any(|property| matches!(property, ast::ObjectPropertyKind::ObjectProperty(property) if !property.method && property.kind == ast::PropertyKind::Init && context_sensitive(&property.value))),
         _ => false,
     }
 }
@@ -51,24 +72,40 @@ fn context_sensitive(expr: &ast::Expr) -> bool {
 /// a generic callback (compiler.md §252 rule 1): a lambda in a place of a
 /// function type `F`, or `F | null`, with `function_params` parameters,
 /// and the lambda has no more parameters than `F`.
-pub(super) fn generic_callback_place(function_params: Option<usize>, argument: &ast::Expr) -> bool {
+pub(super) fn generic_callback_place(
+    function_params: Option<usize>,
+    argument: &ast::Expression,
+) -> bool {
     match unparen_expr(argument) {
-        ast::Expr::Arrow(lambda) => {
-            function_params.is_some_and(|count| lambda.params.len() <= count)
-        }
+        ast::Expression::ArrowFunctionExpression(lambda) => function_params.is_some_and(|count| {
+            (lambda.params.items.len() + usize::from(lambda.params.rest.is_some())) <= count
+        }),
         _ => false,
     }
 }
 
-fn pattern_annotation(pattern: &ast::Pat) -> Option<&ast::TsType> {
-    match pattern {
-        ast::Pat::Ident(binding) => binding.type_ann.as_ref().map(|ann| &*ann.type_ann),
-        ast::Pat::Assign(assign) => match &*assign.left {
-            ast::Pat::Ident(binding) => binding.type_ann.as_ref().map(|ann| &*ann.type_ann),
-            _ => None,
-        },
-        _ => None,
-    }
+fn formal_annotations<'s, 'a>(
+    params: &'s ast::FormalParameters<'a>,
+) -> impl Iterator<Item = Option<&'s ast::TSTypeAnnotation<'a>>> {
+    params
+        .items
+        .iter()
+        .map(|parameter| parameter.type_annotation.as_deref())
+        .chain(
+            params
+                .rest
+                .iter()
+                .map(|rest| rest.type_annotation.as_deref()),
+        )
+}
+
+fn pattern_annotation<'s, 'a>(
+    parameter: &'s ast::FormalParameter<'a>,
+) -> Option<&'s ast::TSType<'a>> {
+    parameter
+        .type_annotation
+        .as_ref()
+        .map(|annotation| &annotation.type_annotation)
 }
 
 /// The declared parameters that one inference reads (§149 rule 2, §197 rule 2).
@@ -76,9 +113,9 @@ struct InferenceTarget<'a> {
     file: usize,
     type_params: &'a [String],
     /// The annotation of each declared parameter, in order.
-    annotations: Vec<Option<&'a ast::TsType>>,
+    annotations: Vec<Option<&'a ast::TSType<'a>>>,
     /// The declared result annotation of a function or a method (§212).
-    result: Option<&'a ast::TsType>,
+    result: Option<&'a ast::TSType<'a>>,
     /// The count of parameters up to the last one with no default.
     required: usize,
     /// The name that a rejection text gives the callee.
@@ -96,19 +133,32 @@ impl<'a> InferenceTarget<'a> {
             file,
             type_params,
             annotations: function
-                .params
+                .this_param
                 .iter()
-                .map(|param| pattern_annotation(&param.pat))
+                .map(|this| {
+                    this.type_annotation
+                        .as_ref()
+                        .map(|annotation| &annotation.type_annotation)
+                })
+                .chain(function.params.items.iter().map(pattern_annotation))
+                .chain(function.params.rest.iter().map(|rest| {
+                    rest.type_annotation
+                        .as_ref()
+                        .map(|annotation| &annotation.type_annotation)
+                }))
                 .collect(),
             result: function
                 .return_type
                 .as_ref()
-                .map(|annotation| &*annotation.type_ann),
+                .map(|annotation| &annotation.type_annotation),
             required: function
                 .params
+                .items
                 .iter()
-                .rposition(|param| !matches!(param.pat, ast::Pat::Assign(_)))
-                .map_or(0, |index| index + 1),
+                .rposition(|param| param.initializer.is_none())
+                .map_or(0, |index| index + 1)
+                + usize::from(function.this_param.is_some())
+                + usize::from(function.params.rest.is_some()),
             name,
         }
     }
@@ -117,22 +167,34 @@ impl<'a> InferenceTarget<'a> {
     /// the constructor signature does. A class with no constructor has no
     /// parameter, so no argument gives a candidate (§197 rule 2).
     fn constructor(template: &'a GenericClass, name: String) -> Self {
-        let mut parameters: Vec<(Option<&'a ast::TsType>, bool)> = Vec::new();
-        for member in &template.class.body {
-            let ast::ClassMember::Constructor(constructor) = member else {
+        let mut parameters: Vec<(Option<&'a ast::TSType>, bool)> = Vec::new();
+        for member in &template.class.body.body {
+            let ast::ClassElement::MethodDefinition(constructor) = member else {
                 continue;
             };
+            if constructor.kind != ast::MethodDefinitionKind::Constructor {
+                continue;
+            }
             parameters = constructor
+                .value
                 .params
+                .items
                 .iter()
-                .filter_map(|parameter| match parameter {
-                    ast::ParamOrTsParamProp::Param(parameter) => Some((
-                        pattern_annotation(&parameter.pat),
-                        matches!(parameter.pat, ast::Pat::Assign(_)),
-                    )),
-                    ast::ParamOrTsParamProp::TsParamProp(_) => None,
+                .map(|parameter| {
+                    (
+                        pattern_annotation(parameter),
+                        parameter.initializer.is_some(),
+                    )
                 })
                 .collect();
+            if let Some(rest) = &constructor.value.params.rest {
+                parameters.push((
+                    rest.type_annotation
+                        .as_ref()
+                        .map(|annotation| &annotation.type_annotation),
+                    false,
+                ));
+            }
         }
         Self {
             file: template.file,
@@ -159,8 +221,8 @@ impl<'p> Checker<'p> {
     pub(super) fn infer_call_arguments(
         &mut self,
         key: &str,
-        call: &ast::CallExpr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<Inferred> {
         let template = self.generic_fns.get(key)?.clone();
@@ -176,7 +238,7 @@ impl<'p> Checker<'p> {
         let contextual = self.contextual_result_candidates(&target, call);
         self.infer_arguments(
             &target,
-            &call.args,
+            &call.arguments,
             &contextual,
             self.nullish_fallback_call
                 .as_ref()
@@ -192,9 +254,9 @@ impl<'p> Checker<'p> {
         &mut self,
         class: ClassId,
         name: &str,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         is_static: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<Inferred> {
         let signatures = &self.class_sigs[class.0];
@@ -217,7 +279,7 @@ impl<'p> Checker<'p> {
         let contextual = self.contextual_result_candidates(&target, call);
         self.infer_arguments(
             &target,
-            &call.args,
+            &call.arguments,
             &contextual,
             self.nullish_fallback_call
                 .as_ref()
@@ -234,15 +296,17 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn callback_result_argument(
         &mut self,
         method: hir::ArrFn,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
     ) -> Option<Type> {
         let [argument] = self.type_arguments_of(call, 1)? else {
             return None;
         };
-        if let [callback] = call.args.as_slice() {
-            if let ast::Expr::Arrow(arrow) = unparen_expr(&callback.expr) {
+        if let [callback] = call.arguments.as_slice() {
+            if let ast::Expression::ArrowFunctionExpression(arrow) =
+                unparen_expr(argument_expression(callback))
+            {
                 if arrow.return_type.is_none()
-                    && matches!(&*arrow.body, ast::BlockStmtOrExpr::BlockStmt(_))
+                    && matches!(&arrow.body, ast::ArrowFunctionBody::FunctionBody(_))
                 {
                     return None;
                 }
@@ -264,18 +328,20 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn callback_result_context(
         &self,
         method: hir::ArrFn,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
     ) -> Option<Type> {
-        let [callback] = call.args.as_slice() else {
+        let [callback] = call.arguments.as_slice() else {
             return None;
         };
-        if callback.spread.is_some() || !matches!(unparen_expr(&callback.expr), ast::Expr::Arrow(_))
+        if callback.is_spread()
+            || !matches!(
+                unparen_expr(argument_expression(callback)),
+                ast::Expression::ArrowFunctionExpression(_)
+            )
         {
             return None;
         }
-        if self.active_call != Some(call.span)
-            || matches!(&call.callee, ast::Callee::Expr(callee) if matches!(**callee, ast::Expr::Invalid(_)))
-        {
+        if self.active_call != Some(call.span) {
             return None;
         }
         let context = self.contextual_instance(self.active_call_context.as_ref())?;
@@ -290,7 +356,10 @@ impl<'p> Checker<'p> {
 
     /// The value type `C` of the contextual `Promise<C>` of a `then` call,
     /// the context of its fulfillment callback result (§233 rules 1 and 2).
-    pub(in crate::check) fn reaction_result_context(&self, call: &ast::CallExpr) -> Option<Type> {
+    pub(in crate::check) fn reaction_result_context(
+        &self,
+        call: &ast::CallExpression,
+    ) -> Option<Type> {
         if self.active_call != Some(call.span) {
             return None;
         }
@@ -305,11 +374,11 @@ impl<'p> Checker<'p> {
     /// marks has no contextual type (§212 rule 1a).
     pub(super) fn enter_call_context(
         &mut self,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         ctx: Option<&Type>,
     ) -> Option<Type> {
         let operand = self.operand_calls.remove(&call.span);
-        let context = ctx.filter(|_| !operand && call.type_args.is_none());
+        let context = ctx.filter(|_| !operand && call.type_arguments.is_none());
         std::mem::replace(&mut self.active_call_context, context.cloned())
     }
 
@@ -318,34 +387,33 @@ impl<'p> Checker<'p> {
     /// receives types a literal. `tsc` gives such an expression no
     /// contextual type, so it decides no type argument (§212 rule 1a,
     /// §215 rule 4).
-    pub(super) fn mark_operand_calls(&mut self, expr: &ast::Expr) {
+    pub(super) fn mark_operand_calls(&mut self, expr: &ast::Expression) {
         match unparen_expr(expr) {
-            ast::Expr::Call(call) => {
+            ast::Expression::CallExpression(call) => {
                 self.operand_calls.insert(call.span);
             }
-            ast::Expr::Cond(conditional) => {
-                self.mark_operand_calls(&conditional.cons);
-                self.mark_operand_calls(&conditional.alt);
+            ast::Expression::ConditionalExpression(conditional) => {
+                self.mark_operand_calls(&conditional.consequent);
+                self.mark_operand_calls(&conditional.alternate);
             }
-            ast::Expr::Array(array) => {
-                for element in array.elems.iter().flatten() {
-                    self.mark_operand_calls(&element.expr);
+            ast::Expression::ArrayExpression(array) => {
+                for element in array.elements.iter().filter_map(array_element_expression) {
+                    self.mark_operand_calls(element);
                 }
             }
-            ast::Expr::Await(awaited) => self.mark_operand_calls(&awaited.arg),
+            ast::Expression::AwaitExpression(awaited) => self.mark_operand_calls(&awaited.argument),
             // §232 rule 1: the operands that keep the context of the
             // expression also keep a mark.
-            ast::Expr::Bin(binary) => match binary.op {
-                ast::BinaryOp::LogicalOr => {
+            ast::Expression::LogicalExpression(binary) => match binary.operator {
+                ast::LogicalOperator::Or => {
                     self.mark_operand_calls(&binary.left);
                     self.mark_operand_calls(&binary.right);
                 }
-                ast::BinaryOp::LogicalAnd => self.mark_operand_calls(&binary.right),
-                ast::BinaryOp::NullishCoalescing => self.mark_operand_calls(&binary.left),
-                _ => {}
+                ast::LogicalOperator::And => self.mark_operand_calls(&binary.right),
+                ast::LogicalOperator::Coalesce => self.mark_operand_calls(&binary.left),
             },
-            ast::Expr::OptChain(chain) => {
-                if let ast::OptChainBase::Call(call) = &*chain.base {
+            ast::Expression::ChainExpression(chain) => {
+                if let ast::ChainElement::CallExpression(call) = &chain.expression {
                     self.operand_calls.insert(call.span);
                 }
             }
@@ -357,20 +425,11 @@ impl<'p> Checker<'p> {
     /// (§232 rules 1 and 3). By §232 rule 1, a literal other than `null`, a
     /// template, and an array literal take no context, so each keeps its
     /// present type. `null` has one type in each context.
-    pub(super) fn operand_context(&self, operand: &ast::Expr, ctx: Option<&Type>) -> Option<Type> {
-        fn literal_free(expr: &ast::Expr) -> bool {
-            match unparen_expr(expr) {
-                ast::Expr::Lit(ast::Lit::Null(_)) => true,
-                ast::Expr::Lit(_) | ast::Expr::Tpl(_) | ast::Expr::Array(_) => false,
-                ast::Expr::Unary(unary) => {
-                    !matches!(unary.op, ast::UnaryOp::Minus | ast::UnaryOp::Plus)
-                }
-                ast::Expr::Cond(conditional) => {
-                    literal_free(&conditional.cons) && literal_free(&conditional.alt)
-                }
-                _ => true,
-            }
-        }
+    pub(super) fn operand_context(
+        &self,
+        operand: &ast::Expression,
+        ctx: Option<&Type>,
+    ) -> Option<Type> {
         ctx.filter(|_| literal_free(operand)).cloned()
     }
 
@@ -391,7 +450,7 @@ impl<'p> Checker<'p> {
     /// `| undefined` and `| null` dropped (§232 rule 1).
     pub(super) fn with_optional_call_context<T>(
         &mut self,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         ctx: Option<&Type>,
         check: impl FnOnce(&mut Self) -> T,
     ) -> T {
@@ -416,7 +475,7 @@ impl<'p> Checker<'p> {
     fn contextual_result_candidates(
         &mut self,
         target: &InferenceTarget<'_>,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
     ) -> Vec<Option<Type>> {
         if self.active_call != Some(call.span) {
             return Vec::new();
@@ -467,9 +526,9 @@ impl<'p> Checker<'p> {
     pub(super) fn infer_constructor_arguments(
         &mut self,
         key: &str,
-        args: &[ast::ExprOrSpread],
+        args: &[ast::Argument],
         context: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<Inferred> {
         let template = self.generic_classes.get(key)?.clone();
@@ -503,9 +562,9 @@ impl<'p> Checker<'p> {
     pub(super) fn infer_container_arguments(
         &mut self,
         name: &str,
-        args: &[ast::ExprOrSpread],
+        args: &[ast::Argument],
         context: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<(Vec<Type>, Option<hir::Expr>)> {
         let contextual = match (name, self.contextual_instance(context)) {
@@ -516,10 +575,10 @@ impl<'p> Checker<'p> {
         };
         if name == "Set" {
             if let [argument] = args {
-                if argument.spread.is_none() {
-                    let literal = deferred_literal(&argument.expr);
+                if !argument.is_spread() {
+                    let literal = deferred_literal(argument_expression(argument));
                     if !literal || contextual.is_none() {
-                        let source = self.check_expr(&argument.expr, None, fx);
+                        let source = self.check_expr(argument_expression(argument), None, fx);
                         let element = match self.apparent_type(&source.ty) {
                             Type::Error => return None,
                             Type::Map(..) | Type::Generator(_) => Type::Error,
@@ -530,8 +589,11 @@ impl<'p> Checker<'p> {
                         return Some((vec![element], Some(source)));
                     }
                     let element = contextual.as_ref()?[0].clone();
-                    let source =
-                        self.check_expr(&argument.expr, Some(&Type::array(element.clone())), fx);
+                    let source = self.check_expr(
+                        argument_expression(argument),
+                        Some(&Type::array(element.clone())),
+                        fx,
+                    );
                     return Some((vec![element], Some(source)));
                 }
             }
@@ -564,33 +626,34 @@ impl<'p> Checker<'p> {
     /// §252 rule 1, §251). A type parameter names no function type.
     fn declared_function_arity(
         &self,
-        annotation: &ast::TsType,
+        annotation: &ast::TSType,
         target: &InferenceTarget<'_>,
     ) -> Option<usize> {
         match annotation {
-            ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
-                Some(function.params.len())
+            ast::TSType::TSParenthesizedType(parenthesized) => {
+                self.declared_function_arity(&parenthesized.type_annotation, target)
             }
-            ast::TsType::TsParenthesizedType(parenthesized) => {
-                self.declared_function_arity(&parenthesized.type_ann, target)
-            }
-            ast::TsType::TsUnionOrIntersectionType(
-                ast::TsUnionOrIntersectionType::TsUnionType(union),
-            ) => {
-                let mut members = union.types.iter().filter(|member| {
-                    !matches!(&***member, ast::TsType::TsKeywordType(keyword)
-                        if keyword.kind == ast::TsKeywordTypeKind::TsNullKeyword)
-                });
+            ast::TSType::TSFunctionType(function) => Some(
+                function.params.items.len()
+                    + usize::from(function.params.rest.is_some())
+                    + usize::from(function.this_param.is_some()),
+            ),
+
+            ast::TSType::TSUnionType(union) => {
+                let mut members = union
+                    .types
+                    .iter()
+                    .filter(|member| !matches!(&**member, ast::TSType::TSNullKeyword(_)));
                 match (members.next(), members.next()) {
                     (Some(member), None) => self.declared_function_arity(member, target),
                     _ => None,
                 }
             }
-            ast::TsType::TsTypeRef(reference) => {
-                let ast::TsEntityName::Ident(name) = &reference.type_name else {
+            ast::TSType::TSTypeReference(reference) => {
+                let ast::TSTypeName::IdentifierReference(name) = &reference.type_name else {
                     return None;
                 };
-                let name = name.sym.as_ref();
+                let name = name.name.as_ref();
                 if target.type_params.iter().any(|parameter| parameter == name) {
                     return None;
                 }
@@ -641,10 +704,10 @@ impl<'p> Checker<'p> {
     fn infer_arguments(
         &mut self,
         target: &InferenceTarget<'_>,
-        args: &[ast::ExprOrSpread],
+        args: &[ast::Argument],
         contextual: &[Option<Type>],
         missing_only: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> Option<Inferred> {
         let parameters = target.type_params;
@@ -664,16 +727,19 @@ impl<'p> Checker<'p> {
         // parameter that has no annotation is checked after the others,
         // with the type parameters that they fix.
         let order: Vec<usize> = (0..args.len())
-            .filter(|index| !context_sensitive(&args[*index].expr))
-            .chain((0..args.len()).filter(|index| context_sensitive(&args[*index].expr)))
+            .filter(|index| !context_sensitive(argument_expression(&args[*index])))
+            .chain(
+                (0..args.len())
+                    .filter(|index| context_sensitive(argument_expression(&args[*index]))),
+            )
             .collect();
         let mut fixed_by_others = false;
         for index in order {
             let argument = &args[index];
-            if argument.spread.is_some() || deferred_literal(&argument.expr) {
+            if argument.is_spread() || deferred_literal(argument_expression(argument)) {
                 continue;
             }
-            if context_sensitive(&argument.expr) && !fixed_by_others {
+            if context_sensitive(argument_expression(argument)) && !fixed_by_others {
                 fixed_by_others = true;
                 for (parameter, values) in candidates.iter().enumerate() {
                     // The inferred type of the candidates so far (rule 2a).
@@ -688,9 +754,9 @@ impl<'p> Checker<'p> {
                 }
             }
             // A nested undecided operand gets the same missing-only context.
-            let nested = match unparen_expr(&argument.expr) {
-                ast::Expr::Call(call) => call.type_args.is_none(),
-                ast::Expr::Array(array) => array.elems.is_empty(),
+            let nested = match unparen_expr(argument_expression(argument)) {
+                ast::Expression::CallExpression(call) => call.type_arguments.is_none(),
+                ast::Expression::ArrayExpression(array) => array.elements.is_empty(),
                 _ => false,
             };
             // §319 rule 1a: preserve the context supplied at the pin first.
@@ -752,7 +818,7 @@ impl<'p> Checker<'p> {
                     .copied()
                     .flatten()
                     .and_then(|annotation| self.declared_function_arity(annotation, target)),
-                &argument.expr,
+                argument_expression(argument),
             );
             let saved = std::mem::replace(&mut self.generic_callback_context, callback_place);
             // §229 rule 1: a callback whose result is a type parameter with a
@@ -761,7 +827,10 @@ impl<'p> Checker<'p> {
             // §238 rule 2: a function type with the result `void` gives
             // that result as context, with no candidate of its parameters.
             if context.is_none()
-                && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_))
+                && matches!(
+                    unparen_expr(argument_expression(argument)),
+                    ast::Expression::ArrowFunctionExpression(_)
+                )
                 && annotations
                     .get(index)
                     .copied()
@@ -770,7 +839,12 @@ impl<'p> Checker<'p> {
             {
                 self.lambda_void_context = true;
             }
-            if context.is_none() && matches!(unparen_expr(&argument.expr), ast::Expr::Arrow(_)) {
+            if context.is_none()
+                && matches!(
+                    unparen_expr(argument_expression(argument)),
+                    ast::Expression::ArrowFunctionExpression(_)
+                )
+            {
                 self.lambda_result_hint = annotations
                     .get(index)
                     .copied()
@@ -780,8 +854,8 @@ impl<'p> Checker<'p> {
             }
             let saved_fallback = self.nullish_fallback_call.clone();
             let nested_call = if use_fallback {
-                match unparen_expr(&argument.expr) {
-                    ast::Expr::Call(call) if call.type_args.is_none() => {
+                match unparen_expr(argument_expression(argument)) {
+                    ast::Expression::CallExpression(call) if call.type_arguments.is_none() => {
                         context.clone().map(|context| (call.span, context))
                     }
                     _ => None,
@@ -794,7 +868,7 @@ impl<'p> Checker<'p> {
                 self.nullish_fallback_call = nested_call;
             }
             let value = self.check_expr(
-                &argument.expr,
+                argument_expression(argument),
                 if nested_missing {
                     None
                 } else {
@@ -847,7 +921,7 @@ impl<'p> Checker<'p> {
             }
         }
         for (index, argument) in args.iter().enumerate() {
-            if argument.spread.is_some() || !deferred_literal(&argument.expr) {
+            if argument.is_spread() || !deferred_literal(argument_expression(argument)) {
                 continue;
             }
             let Some(Some(annotation)) = annotations.get(index) else {
@@ -856,12 +930,12 @@ impl<'p> Checker<'p> {
             if !type_mentions_missing(annotation, parameters, &nonliteral) {
                 continue;
             }
-            if matches!(unparen_expr(&argument.expr), ast::Expr::Array(array) if array.elems.is_empty())
+            if matches!(unparen_expr(argument_expression(argument)), ast::Expression::ArrayExpression(array) if array.elements.is_empty())
             {
                 continue;
             }
             let diagnostics = self.diags.len();
-            let value = self.check_expr(&argument.expr, None, fx);
+            let value = self.check_expr(argument_expression(argument), None, fx);
             if value.ty == Type::Error || self.diags.len() != diagnostics {
                 return None;
             }
@@ -947,7 +1021,7 @@ impl<'p> Checker<'p> {
 
     fn match_inference_type(
         &self,
-        pattern: &ast::TsType,
+        pattern: &ast::TSType,
         actual: &Type,
         parameters: &[String],
         candidates: &mut [Vec<Type>],
@@ -956,17 +1030,25 @@ impl<'p> Checker<'p> {
             return;
         }
         match pattern {
-            ast::TsType::TsParenthesizedType(parenthesized) => {
-                self.match_inference_type(&parenthesized.type_ann, actual, parameters, candidates);
-            }
-            ast::TsType::TsArrayType(array) => {
+            ast::TSType::TSParenthesizedType(parenthesized) => self.match_inference_type(
+                &parenthesized.type_annotation,
+                actual,
+                parameters,
+                candidates,
+            ),
+
+            ast::TSType::TSArrayType(array) => {
                 if let Type::Array(element) = self.apparent_type(actual) {
-                    self.match_inference_type(&array.elem_type, &element, parameters, candidates);
+                    self.match_inference_type(
+                        &array.element_type,
+                        &element,
+                        parameters,
+                        candidates,
+                    );
                 }
             }
-            ast::TsType::TsUnionOrIntersectionType(
-                ast::TsUnionOrIntersectionType::TsUnionType(union),
-            ) => {
+
+            ast::TSType::TSUnionType(union) => {
                 if *actual == Type::Null {
                     return;
                 }
@@ -979,22 +1061,22 @@ impl<'p> Checker<'p> {
                     self.match_inference_type(ty, actual, parameters, candidates);
                 }
             }
-            ast::TsType::TsTypeRef(reference) => {
-                let ast::TsEntityName::Ident(name) = &reference.type_name else {
+            ast::TSType::TSTypeReference(reference) => {
+                let ast::TSTypeName::IdentifierReference(name) = &reference.type_name else {
                     return;
                 };
                 if let Some(index) = parameters
                     .iter()
-                    .position(|parameter| parameter == name.sym.as_ref())
+                    .position(|parameter| parameter == name.name.as_ref())
                 {
                     candidates[index].push(actual.clone());
                     return;
                 }
-                let Some(arguments) = &reference.type_params else {
+                let Some(arguments) = &reference.type_arguments else {
                     return;
                 };
                 let shape = self.apparent_type(actual);
-                let components: Vec<&Type> = match (name.sym.as_ref(), &shape) {
+                let components: Vec<&Type> = match (name.name.as_ref(), &shape) {
                     ("FixedArray", Type::FixedArray(element, _) | Type::Array(element))
                     | ("Array", Type::Array(element))
                     | ("Set", Type::Set(element))
@@ -1004,7 +1086,7 @@ impl<'p> Checker<'p> {
                         let Some((key, types)) = self.instance_arguments.get(id) else {
                             return;
                         };
-                        if !matches!(self.type_scope_item(name.sym.as_ref()), Some(ScopeItem::GenericClass(expected)) if expected == *key)
+                        if !matches!(self.type_scope_item(name.name.as_ref()), Some(ScopeItem::GenericClass(expected)) if expected == *key)
                         {
                             return;
                         }
@@ -1016,18 +1098,18 @@ impl<'p> Checker<'p> {
                     self.match_inference_type(pattern, actual, parameters, candidates);
                 }
             }
-            ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
+            ast::TSType::TSFunctionType(function) => {
                 if let Type::Func(signature) = self.apparent_type(actual) {
-                    for (parameter, actual) in function.params.iter().zip(&signature.params) {
-                        let annotation = match parameter {
-                            ast::TsFnParam::Ident(binding) => &binding.type_ann,
-                            ast::TsFnParam::Array(array) => &array.type_ann,
-                            ast::TsFnParam::Rest(rest) => &rest.type_ann,
-                            ast::TsFnParam::Object(object) => &object.type_ann,
-                        };
+                    for (annotation, actual) in function
+                        .this_param
+                        .iter()
+                        .map(|this| this.type_annotation.as_deref())
+                        .chain(formal_annotations(&function.params))
+                        .zip(&signature.params)
+                    {
                         if let Some(annotation) = annotation {
                             self.match_inference_type(
-                                &annotation.type_ann,
+                                &annotation.type_annotation,
                                 actual,
                                 parameters,
                                 candidates,
@@ -1035,7 +1117,7 @@ impl<'p> Checker<'p> {
                         }
                     }
                     self.match_inference_type(
-                        &function.type_ann.type_ann,
+                        &function.return_type.type_annotation,
                         &signature.ret,
                         parameters,
                         candidates,
@@ -1087,18 +1169,17 @@ impl<'p> Checker<'p> {
 
 /// Whether `ty` is the type parameter `parameter`, or a union with that
 /// parameter as a direct member.
-fn accepts_null_as_parameter(ty: &ast::TsType, parameter: &str) -> bool {
+fn accepts_null_as_parameter(ty: &ast::TSType, parameter: &str) -> bool {
     match ty {
-        ast::TsType::TsTypeRef(reference) => {
-            reference.type_params.is_none()
-                && matches!(&reference.type_name, ast::TsEntityName::Ident(name) if name.sym.as_ref() == parameter)
+        ast::TSType::TSParenthesizedType(parenthesized) => {
+            accepts_null_as_parameter(&parenthesized.type_annotation, parameter)
         }
-        ast::TsType::TsParenthesizedType(parenthesized) => {
-            accepts_null_as_parameter(&parenthesized.type_ann, parameter)
+        ast::TSType::TSTypeReference(reference) => {
+            reference.type_arguments.is_none()
+                && matches!(&reference.type_name, ast::TSTypeName::IdentifierReference(name) if name.name.as_ref() == parameter)
         }
-        ast::TsType::TsUnionOrIntersectionType(ast::TsUnionOrIntersectionType::TsUnionType(
-            union,
-        )) => union
+
+        ast::TSType::TSUnionType(union) => union
             .types
             .iter()
             .any(|ty| accepts_null_as_parameter(ty, parameter)),
@@ -1108,63 +1189,64 @@ fn accepts_null_as_parameter(ty: &ast::TsType, parameter: &str) -> bool {
 
 /// The index of the type parameter that is the result type of the
 /// function type `ty` (§229 rule 1).
-fn callback_result_parameter(ty: &ast::TsType, parameters: &[String]) -> Option<usize> {
-    let ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) = ty
-    else {
+fn callback_result_parameter(ty: &ast::TSType, parameters: &[String]) -> Option<usize> {
+    let ast::TSType::TSFunctionType(function) = ty else {
         return match ty {
-            ast::TsType::TsParenthesizedType(parenthesized) => {
-                callback_result_parameter(&parenthesized.type_ann, parameters)
+            ast::TSType::TSParenthesizedType(parenthesized) => {
+                callback_result_parameter(&parenthesized.type_annotation, parameters)
             }
+
             _ => None,
         };
     };
-    let ast::TsType::TsTypeRef(reference) = &*function.type_ann.type_ann else {
+    let ast::TSType::TSTypeReference(reference) = &function.return_type.type_annotation else {
         return None;
     };
-    let ast::TsEntityName::Ident(name) = &reference.type_name else {
+    let ast::TSTypeName::IdentifierReference(name) = &reference.type_name else {
         return None;
     };
-    if reference.type_params.is_some() {
+    if reference.type_arguments.is_some() {
         return None;
     }
     parameters
         .iter()
-        .position(|parameter| parameter == name.sym.as_ref())
+        .position(|parameter| parameter == name.name.as_ref())
 }
 
-fn type_mentions_missing(ty: &ast::TsType, parameters: &[String], nonliteral: &[bool]) -> bool {
+fn type_mentions_missing(ty: &ast::TSType, parameters: &[String], nonliteral: &[bool]) -> bool {
     match ty {
-        ast::TsType::TsTypeRef(reference) => {
-            matches!(&reference.type_name, ast::TsEntityName::Ident(name) if parameters.iter().enumerate().any(|(index, parameter)| !nonliteral[index] && parameter == name.sym.as_ref()))
-                || reference.type_params.as_ref().is_some_and(|args| {
+        ast::TSType::TSParenthesizedType(parenthesized) => {
+            type_mentions_missing(&parenthesized.type_annotation, parameters, nonliteral)
+        }
+        ast::TSType::TSTypeReference(reference) => {
+            matches!(&reference.type_name, ast::TSTypeName::IdentifierReference(name) if parameters.iter().enumerate().any(|(index, parameter)| !nonliteral[index] && parameter == name.name.as_ref()))
+                || reference.type_arguments.as_ref().is_some_and(|args| {
                     args.params
                         .iter()
                         .any(|ty| type_mentions_missing(ty, parameters, nonliteral))
                 })
         }
-        ast::TsType::TsArrayType(array) => {
-            type_mentions_missing(&array.elem_type, parameters, nonliteral)
+        ast::TSType::TSArrayType(array) => {
+            type_mentions_missing(&array.element_type, parameters, nonliteral)
         }
-        ast::TsType::TsParenthesizedType(parenthesized) => {
-            type_mentions_missing(&parenthesized.type_ann, parameters, nonliteral)
-        }
-        ast::TsType::TsUnionOrIntersectionType(ast::TsUnionOrIntersectionType::TsUnionType(
-            union,
-        )) => union
+
+        ast::TSType::TSUnionType(union) => union
             .types
             .iter()
             .any(|ty| type_mentions_missing(ty, parameters, nonliteral)),
-        ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
-            type_mentions_missing(&function.type_ann.type_ann, parameters, nonliteral)
-                || function.params.iter().any(|parameter| {
-                    let annotation = match parameter {
-                        ast::TsFnParam::Ident(binding) => &binding.type_ann,
-                        ast::TsFnParam::Array(array) => &array.type_ann,
-                        ast::TsFnParam::Rest(rest) => &rest.type_ann,
-                        ast::TsFnParam::Object(object) => &object.type_ann,
-                    };
-                    annotation.as_ref().is_some_and(|annotation| {
-                        type_mentions_missing(&annotation.type_ann, parameters, nonliteral)
+        ast::TSType::TSFunctionType(function) => {
+            type_mentions_missing(
+                &function.return_type.type_annotation,
+                parameters,
+                nonliteral,
+            ) || function
+                .this_param
+                .iter()
+                .map(|this| this.type_annotation.as_deref())
+                .chain(formal_annotations(&function.params))
+                .any(|annotation| {
+                    annotation.is_some_and(|annotation| {
+                        type_mentions_missing(&annotation.type_annotation, parameters, nonliteral)
                     })
                 })
         }
@@ -1174,16 +1256,178 @@ fn type_mentions_missing(ty: &ast::TsType, parameters: &[String], nonliteral: &[
 
 /// Whether `annotation` is a function type with the result `void`
 /// (compiler.md §238 rule 2).
-fn returns_void(annotation: &ast::TsType) -> bool {
+fn returns_void(annotation: &ast::TSType) -> bool {
     match annotation {
-        ast::TsType::TsParenthesizedType(inner) => returns_void(&inner.type_ann),
-        ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
+        ast::TSType::TSParenthesizedType(parenthesized) => {
+            returns_void(&parenthesized.type_annotation)
+        }
+
+        ast::TSType::TSFunctionType(function) => {
             matches!(
-                &*function.type_ann.type_ann,
-                ast::TsType::TsKeywordType(keyword)
-                    if keyword.kind == ast::TsKeywordTypeKind::TsVoidKeyword
+                &function.return_type.type_annotation,
+                ast::TSType::TSVoidKeyword(_)
             )
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod ast_migration_tests {
+    use super::*;
+    use oxc_allocator::Allocator;
+
+    fn source_type<'a>(allocator: &'a Allocator, spelling: &str) -> ast::TSType<'a> {
+        let source = allocator.alloc_str(&format!("type Probe = {spelling};"));
+        let mut parsed = oxc_parser::Parser::new(
+            allocator,
+            source,
+            oxc_span::SourceType::ts().with_module(true),
+        )
+        .parse();
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let ast::Statement::TSTypeAliasDeclaration(alias) = parsed.program.body.remove(0) else {
+            panic!("type alias");
+        };
+        alias.unbox().type_annotation
+    }
+
+    fn source_arrow<'a>(allocator: &'a Allocator, spelling: &str) -> ast::Expression<'a> {
+        let source = allocator.alloc_str(&format!("const probe = {spelling};"));
+        let mut parsed = oxc_parser::Parser::new(
+            allocator,
+            source,
+            oxc_span::SourceType::ts().with_module(true),
+        )
+        .parse();
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let ast::Statement::VariableDeclaration(declaration) = parsed.program.body.remove(0) else {
+            panic!("variable");
+        };
+        declaration
+            .unbox()
+            .declarations
+            .pop()
+            .expect("declarator")
+            .init
+            .expect("initializer")
+    }
+
+    // Cost (debug): <0.01 s in the isolated AST helper harness.
+    #[test]
+    fn parenthesized_types_keep_parameter_and_void_facts() {
+        let allocator = Allocator::default();
+        for spelling in ["T", "(T)", "((T))", "(T | null)"] {
+            let ty = source_type(&allocator, spelling);
+            assert!(accepts_null_as_parameter(&ty, "T"), "{spelling}");
+            assert!(type_mentions_missing(&ty, &["T".into()], &[false]));
+        }
+        assert!(!accepts_null_as_parameter(
+            &source_type(&allocator, "(i32)"),
+            "T"
+        ));
+        assert_eq!(
+            callback_result_parameter(&source_type(&allocator, "((() => T))"), &["T".into()]),
+            Some(0)
+        );
+        assert!(returns_void(&source_type(&allocator, "((() => void))")));
+        assert!(!returns_void(&source_type(&allocator, "((() => i32))")));
+    }
+
+    // Cost (debug): <0.01 s in the isolated AST helper harness.
+    #[test]
+    fn source_parameters_keep_this_defaults_optionality_and_rest_count() {
+        let allocator = Allocator::default();
+        let parsed = oxc_parser::Parser::new(
+            &allocator,
+            "function f(this: i32, value: i32 = 1, optional?: i32, ...rest: i32[]): void {}",
+            oxc_span::SourceType::ts().with_module(true),
+        )
+        .parse();
+        assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
+        let ast::Statement::FunctionDeclaration(function) = &parsed.program.body[0] else {
+            panic!("function");
+        };
+        assert_eq!(function_parameter_count(function), 4);
+        let parameters = function_parameters(function, &allocator);
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(
+            parameter_name_from_pat(&parameters[0].pattern),
+            Some("this")
+        );
+        assert!(parameters[0].type_annotation.is_some());
+        assert!(parameters[1].initializer.is_some());
+        assert!(parameters[2].optional);
+        assert!(function.params.rest.is_some());
+    }
+
+    // Cost (debug): <0.01 s in the isolated AST helper harness.
+    #[test]
+    fn contextual_arrow_parameters_distinguish_defaults_and_annotations() {
+        let allocator = Allocator::default();
+        assert!(context_sensitive(&source_arrow(
+            &allocator,
+            "(value) => value"
+        )));
+        assert!(!context_sensitive(&source_arrow(
+            &allocator,
+            "(value = 1) => value"
+        )));
+        assert!(!context_sensitive(&source_arrow(
+            &allocator,
+            "(value: i32) => value"
+        )));
+        assert!(context_sensitive(&source_arrow(
+            &allocator,
+            "[(value) => value]"
+        )));
+        assert!(!deferred_literal(&source_arrow(
+            &allocator,
+            "[1, ...other]"
+        )));
+        assert!(!deferred_literal(&source_arrow(&allocator, "[1,,2]")));
+        assert!(deferred_literal(&source_arrow(&allocator, "[1, 2]")));
+    }
+
+    // Cost (debug): <0.01 s in the isolated AST helper harness.
+    #[test]
+    fn function_type_annotations_include_the_rest_parameter() {
+        let allocator = Allocator::default();
+        let ty = source_type(&allocator, "(first: i32, ...rest: T[]) => void");
+        let ast::TSType::TSFunctionType(function) = &ty else {
+            panic!("function type");
+        };
+        let annotations: Vec<_> = formal_annotations(&function.params).collect();
+        assert_eq!(annotations.len(), 2);
+        assert!(matches!(
+            annotations[1].expect("rest annotation").type_annotation,
+            ast::TSType::TSArrayType(_)
+        ));
+        assert!(type_mentions_missing(&ty, &["T".into()], &[false]));
+    }
+    // Cost (debug): <0.01 s in the isolated AST helper harness.
+    #[test]
+    fn operand_context_distinguishes_literals_from_value_expressions() {
+        let allocator = Allocator::default();
+        for expression in ["value", "null", "flag ? first : second"] {
+            assert!(
+                literal_free(&source_arrow(&allocator, expression)),
+                "{expression}"
+            );
+        }
+        for expression in [
+            "1",
+            "true",
+            "\"text\"",
+            "[value]",
+            "`text`",
+            "-value",
+            "flag ? first : 1",
+        ] {
+            assert!(
+                !literal_free(&source_arrow(&allocator, expression)),
+                "{expression}"
+            );
+        }
     }
 }

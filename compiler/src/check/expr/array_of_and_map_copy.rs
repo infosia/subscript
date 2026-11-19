@@ -1,7 +1,8 @@
 //! Fixed-arity array construction and shallow Map copies (stdlib.md §9.11 and §10.9).
 use super::*;
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
+use oxc_allocator::CloneIn;
+use oxc_span::GetSpan;
 
 use crate::check::{ContainerSlot, FnCtx};
 use crate::hir::{Callee, MapFn};
@@ -9,41 +10,55 @@ use crate::hir::{Callee, MapFn};
 impl<'p> Checker<'p> {
     pub(super) fn check_array_of(
         &mut self,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         prop_pos: Pos,
     ) -> hir::Expr {
         // A spread argument keeps its rejection; any fixed argument list is
         // the array literal of its arguments (compiler.md §201.1 rules 3 and 5).
-        if call.args.iter().any(|arg| arg.spread.is_some()) {
+        if call
+            .arguments
+            .iter()
+            .any(|arg| matches!(arg, ast::Argument::SpreadElement(_)))
+        {
             self.reject_api_form("Array", "of(...values)", "Array.of", prop_pos);
-            self.check_poisoned_arguments(&call.args, fx);
+            self.check_poisoned_arguments(&call.arguments, fx);
             return self.err_expr(pos);
         }
-        let declared = match &call.type_args {
-            Some(args) if args.params.len() == 1 => Some(self.resolve_type(
-                &ast::TsType::TsArrayType(ast::TsArrayType {
-                    span: args.span,
-                    elem_type: args.params[0].clone(),
-                }),
-            )),
+        let declared = match &call.type_arguments {
+            Some(args) if args.params.len() == 1 => {
+                let builder = oxc_ast::builder::AstBuilder::new(self.prog.allocator);
+                Some(
+                    self.resolve_type(&ast::TSType::TSArrayType(ast::TSArrayType::boxed(
+                        args.span,
+                        args.params[0].clone_in(self.prog.allocator),
+                        &builder,
+                    ))),
+                )
+            }
             Some(_) => {
                 self.reject_subset(
                     RejectionSite::ArrayOfTypeArgumentCount,
                     "`Array.of<T>` takes exactly one type argument",
                     prop_pos,
                 );
-                self.check_poisoned_arguments(&call.args, fx);
+                self.check_poisoned_arguments(&call.arguments, fx);
                 return self.err_expr(pos);
             }
             None => None,
         };
-        let literal = ast::ArrayLit {
-            span: call.span,
-            elems: call.args.iter().cloned().map(Some).collect(),
-        };
+        let builder = oxc_ast::builder::AstBuilder::new(self.prog.allocator);
+        let elements = oxc_allocator::Vec::from_iter_in(
+            call.arguments.iter().map(|argument| {
+                ast::ArrayExpressionElement::from(
+                    crate::check::argument_expression(argument).clone_in(self.prog.allocator),
+                )
+            }),
+            &self.prog.allocator,
+        );
+        let literal = ast::ArrayExpression::new(call.span, elements, &builder);
         let context = declared
             .as_ref()
             .or_else(|| ctx.filter(|ty| matches!(&self.apparent_type(ty), Type::Array(_))));
@@ -57,13 +72,13 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_map_copy(
         &mut self,
-        call: &ast::NewExpr,
+        call: &ast::NewExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         ident_pos: Pos,
     ) -> hir::Expr {
-        let declared = match &call.type_args {
+        let declared = match &call.type_arguments {
             Some(args) if args.params.len() == 2 => {
                 let saved_context = self.enter_container_context(ctx);
                 let saved = self.in_assoc_key;
@@ -100,17 +115,23 @@ impl<'p> Checker<'p> {
             }
             None => None,
         };
-        let arguments = call.args.as_deref().unwrap_or(&[]);
+        let arguments = call.arguments.as_slice();
         if let [argument] = arguments {
-            if argument.spread.is_none() {
+            if !matches!(argument, ast::Argument::SpreadElement(_)) {
                 // Pair literals need tuple context before homogeneous array inference.
-                if let ast::Expr::Array(array) = super::unparen_expr(&argument.expr) {
+                if let ast::Expression::ArrayExpression(array) =
+                    super::unparen_expr(crate::check::argument_expression(argument))
+                {
                     if self.reject_map_pairs(array, declared.as_ref().or(ctx), fx, &pos) {
                         return self.err_expr(pos);
                     }
                 }
                 let diagnostics_before = self.diags.len();
-                let mut source = self.check_expr(&argument.expr, declared.as_ref(), fx);
+                let mut source = self.check_expr(
+                    crate::check::argument_expression(argument),
+                    declared.as_ref(),
+                    fx,
+                );
                 if self.apparent_type(&(source.ty)) == Type::Error
                     || self.diags.len() > diagnostics_before
                 {
@@ -148,15 +169,12 @@ impl<'p> Checker<'p> {
 
     fn reject_map_pairs(
         &mut self,
-        array: &ast::ArrayLit,
+        array: &ast::ArrayExpression,
         context: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> bool {
-        if !array.elems.iter().all(|element| element.as_ref().is_some_and(|element|
-            element.spread.is_none() && matches!(super::unparen_expr(&element.expr), ast::Expr::Array(pair)
-                if pair.elems.len() == 2 && pair.elems.iter().all(|part| part.as_ref().is_some_and(|part| part.spread.is_none())))))
-        {
+        if !array.elements.iter().all(|element| !matches!(element, ast::ArrayExpressionElement::SpreadElement(_) | ast::ArrayExpressionElement::Elision(_)) && crate::check::array_element_expression(element).is_some_and(|element| matches!(super::unparen_expr(element), ast::Expression::ArrayExpression(pair) if pair.elements.len() == 2 && pair.elements.iter().all(|part| !matches!(part, ast::ArrayExpressionElement::SpreadElement(_) | ast::ArrayExpressionElement::Elision(_)))))) {
             return false;
         }
         let mut destinations = context.and_then(|ty| match self.apparent_type(ty) {
@@ -164,18 +182,27 @@ impl<'p> Checker<'p> {
             _ => None,
         });
         let infer = destinations.is_none();
-        for element in array.elems.iter().flatten() {
-            let ast::Expr::Array(pair) = super::unparen_expr(&element.expr) else {
+        for element in array
+            .elements
+            .iter()
+            .filter_map(crate::check::array_element_expression)
+        {
+            let ast::Expression::ArrayExpression(pair) = super::unparen_expr(element) else {
                 return false;
             };
             let mut inferred = Vec::new();
-            for (index, part) in pair.elems.iter().flatten().enumerate() {
+            for (index, part) in pair
+                .elements
+                .iter()
+                .filter_map(crate::check::array_element_expression)
+                .enumerate()
+            {
                 let destination = destinations
                     .as_ref()
                     .filter(|_| !infer)
                     .map(|types| &types[index]);
                 let before = self.diags.len();
-                let value = self.check_expr(&part.expr, destination, fx);
+                let value = self.check_expr(part, destination, fx);
                 if self.diags.len() > before || self.apparent_type(&value.ty) == Type::Error {
                     return true;
                 }

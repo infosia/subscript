@@ -3,15 +3,19 @@ use crate::check::rejection::{diagnostic, RejectionSite};
 
 impl<'p> Checker<'p> {
     /// Reserves the names that declarations own in one statement list.
-    pub(crate) fn reserve_block_declarations(&mut self, statements: &[ast::Stmt], fx: &mut FnCtx) {
+    pub(crate) fn reserve_block_declarations(
+        &mut self,
+        statements: &[ast::Statement],
+        fx: &mut FnCtx<'p>,
+    ) {
         let Some(scope) = fx.scopes.last_mut() else {
             return;
         };
         for statement in statements {
-            let ast::Stmt::Decl(declaration) = statement else {
+            let Some(declaration) = statement.as_declaration() else {
                 continue;
             };
-            if let ast::Decl::Fn(function) = declaration {
+            if let ast::Declaration::FunctionDeclaration(function) = declaration {
                 // §207.1 rule 2a: a duplicate local function binds its
                 // name at its declaration, so the later declaration of
                 // the name reports the duplicate. A read before it is a
@@ -20,16 +24,16 @@ impl<'p> Checker<'p> {
                     self.prog
                         .local_functions
                         .outcomes
-                        .get(&function.ident.span.lo),
+                        .get(&function.declaration_name_span().start),
                     Some(crate::parse::local_function::LocalFunctionOutcome::Duplicate)
                 ) {
                     scope
                         .rejected_local_names
-                        .insert(function.ident.sym.to_string());
+                        .insert(function.declaration_name().to_string());
                     continue;
                 }
                 scope.insert_local(
-                    function.ident.sym.to_string(),
+                    function.declaration_name().to_string(),
                     Local {
                         annotated: false,
                         ty: Type::Error,
@@ -43,21 +47,23 @@ impl<'p> Checker<'p> {
                 continue;
             }
             let declarators = match declaration {
-                ast::Decl::Var(declaration) if declaration.kind != ast::VarDeclKind::Var => {
-                    &declaration.decls
+                ast::Declaration::VariableDeclaration(declaration)
+                    if declaration.kind != ast::VariableDeclarationKind::Var =>
+                {
+                    &declaration.declarations
                 }
-                ast::Decl::Using(declaration) => &declaration.decls,
+
                 _ => continue,
             };
             for declarator in declarators {
                 // A binding pattern reserves every name it binds, so a
                 // read before it names the order, not the binding (C14).
-                for binding in pattern::collect_names(&declarator.name) {
-                    let name = binding.id.sym.to_string();
+                for binding in pattern::collect_names(&declarator.id) {
+                    let name = binding.name.to_string();
                     scope
                         .declaration_positions
                         .entry(name.clone())
-                        .or_insert_with(|| self.prog.pos(binding.id.span));
+                        .or_insert_with(|| self.prog.pos(binding.span));
                     if !scope.vars.contains_key(&name) {
                         scope.pending.insert(name);
                     }
@@ -96,7 +102,7 @@ impl<'p> Checker<'p> {
     pub(crate) fn reject_pattern(
         &mut self,
         rejection: &pattern::PatternRejection<'_>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
         let pos = self.pos(rejection.span);
         self.reject_subset(rejection.site, rejection.message, pos);
@@ -105,9 +111,9 @@ impl<'p> Checker<'p> {
 
     /// Binds each name with the error type. A read of one adds no
     /// diagnostic.
-    pub(crate) fn bind_error_names(&mut self, names: &[&ast::BindingIdent], fx: &mut FnCtx) {
+    pub(crate) fn bind_error_names(&mut self, names: &[&ast::BindingIdentifier], fx: &mut FnCtx) {
         for binding in names {
-            let name = binding.id.sym.to_string();
+            let name = binding.name.to_string();
             fx.discard_pending(&name);
             self.declare_in_context(
                 &name,
@@ -190,7 +196,7 @@ impl<'p> Checker<'p> {
         source: &hir::Expr,
         mutable: bool,
         annotated: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         let bindings = match pattern {
@@ -199,13 +205,13 @@ impl<'p> Checker<'p> {
             _ => return,
         };
         if !self.pattern_source_fits(pattern, &source.ty) {
-            let names: Vec<&ast::BindingIdent> =
+            let names: Vec<&ast::BindingIdentifier> =
                 bindings.iter().map(|binding| binding.binding).collect();
             self.bind_error_names(&names, fx);
             return;
         }
         for binding in bindings {
-            let pos = self.pos(binding.binding.id.span);
+            let pos = self.pos(binding.binding.span);
             let value = match &binding.source {
                 pattern::BindingSource::Element(index) => {
                     let index = hir::Expr {
@@ -220,7 +226,7 @@ impl<'p> Checker<'p> {
                     self.member_on(source.clone(), field, pos.clone(), None, fx)
                 }
             };
-            let name = binding.binding.id.sym.to_string();
+            let name = binding.binding.name.to_string();
             let ty = value.ty.clone();
             let async_origins = self.expr_async_origins(&value, fx);
             self.declare_local(
@@ -258,7 +264,7 @@ impl<'p> Checker<'p> {
         source: hir::Expr,
         mutable: bool,
         annotated: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         let id = self.next_pattern_id;
@@ -293,7 +299,7 @@ impl<'p> Checker<'p> {
         name: &str,
         ty: &Type,
         async_origins: super::AsyncOrigins,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
         if async_origins.is_empty() {
             return;
@@ -323,7 +329,7 @@ impl<'p> Checker<'p> {
         self.diags.push(diagnostic);
     }
 
-    pub(crate) fn pos(&self, span: swc_common::Span) -> Pos {
+    pub(crate) fn pos(&self, span: oxc_span::Span) -> Pos {
         self.prog.pos(span)
     }
 

@@ -1,8 +1,9 @@
 //! Checks literals, template strings, and identifier references.
 
 use crate::check::rejection::RejectionSite;
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_allocator::CloneIn;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::check::{Checker, FnCtx, ScopeItem};
 use crate::diag::Pos;
@@ -13,45 +14,52 @@ use super::{path_key, synthesized_int_range};
 
 /// C4: a numeric literal spelled with a `.` or a decimal exponent is
 /// fractional.
-fn is_fractional(n: &ast::Number) -> bool {
+fn is_fractional(n: &ast::NumericLiteral) -> bool {
     let raw: &str = n.raw.as_ref().map(|a| a.as_ref()).unwrap_or("");
     let hex = raw.starts_with("0x") || raw.starts_with("0X");
     raw.contains('.') || (!hex && (raw.contains('e') || raw.contains('E')))
+}
+
+/// The flag text keeps source order in the HIR (compiler.md §341 rule 5).
+fn regex_literal_flags(regex: &ast::RegExpLiteral<'_>) -> String {
+    regex
+        .raw
+        .as_ref()
+        .and_then(|raw| raw.rsplit_once('/').map(|(_, flags)| flags.to_owned()))
+        .unwrap_or_else(|| regex.regex.flags.to_string())
 }
 
 /// The type that C4 gives a literal with no context (`compiler.md`
 /// §198.1 rule 6): `i32` or `f64` for a numeric literal, also under a
 /// unary minus as the checker folds it, `string`, or `boolean`. Any
 /// other expression gives `None`.
-pub(in crate::check) fn literal_default_type(expr: &ast::Expr) -> Option<Type> {
+pub(in crate::check) fn literal_default_type(expr: &ast::Expression) -> Option<Type> {
     let mut expr = expr;
-    while let ast::Expr::Paren(paren) = expr {
-        expr = &paren.expr;
+    while let ast::Expression::ParenthesizedExpression(paren) = expr {
+        expr = &paren.expression;
     }
-    if let ast::Expr::Unary(ast::UnaryExpr {
-        op: ast::UnaryOp::Minus,
-        arg,
-        ..
-    }) = expr
-    {
-        let mut arg: &ast::Expr = arg;
-        while let ast::Expr::Paren(paren) = arg {
-            arg = &paren.expr;
+    if let ast::Expression::UnaryExpression(unary) = expr {
+        if unary.operator != ast::UnaryOperator::UnaryNegation {
+            return None;
         }
-        return match arg {
-            ast::Expr::Lit(ast::Lit::Num(n)) => Some(numeric_literal_type(n)),
+        let mut argument = &unary.argument;
+        while let ast::Expression::ParenthesizedExpression(paren) = argument {
+            argument = &paren.expression;
+        }
+        return match argument {
+            ast::Expression::NumericLiteral(n) => Some(numeric_literal_type(n)),
             _ => None,
         };
     }
     match expr {
-        ast::Expr::Lit(ast::Lit::Num(n)) => Some(numeric_literal_type(n)),
-        ast::Expr::Lit(ast::Lit::Str(_)) => Some(Type::Str),
-        ast::Expr::Lit(ast::Lit::Bool(_)) => Some(Type::Bool),
+        ast::Expression::NumericLiteral(n) => Some(numeric_literal_type(n)),
+        ast::Expression::StringLiteral(_) => Some(Type::Str),
+        ast::Expression::BooleanLiteral(_) => Some(Type::Bool),
         _ => None,
     }
 }
 
-fn numeric_literal_type(n: &ast::Number) -> Type {
+fn numeric_literal_type(n: &ast::NumericLiteral) -> Type {
     if is_fractional(n) {
         Type::F64
     } else {
@@ -62,13 +70,13 @@ fn numeric_literal_type(n: &ast::Number) -> Type {
 impl<'p> Checker<'p> {
     pub(in crate::check) fn check_lit(
         &mut self,
-        lit: &ast::Lit,
+        lit: &oxc_ast::ast::Expression<'_>,
         ctx: Option<&Type>,
         pos: Pos,
     ) -> hir::Expr {
         match lit {
-            ast::Lit::Num(n) => self.check_num_lit(n, false, ctx, pos),
-            ast::Lit::Str(s) => {
+            ast::Expression::NumericLiteral(n) => self.check_num_lit(n, false, ctx, pos),
+            ast::Expression::StringLiteral(s) => {
                 let value = s.value.to_string();
                 if let Some(Type::StringAlias(id)) = ctx.map(|ty| self.apparent_type(ty)).as_ref() {
                     if let Some(discriminant) = self.string_aliases.get(id.0).and_then(|alias| {
@@ -93,21 +101,21 @@ impl<'p> Checker<'p> {
                     pos,
                 }
             }
-            ast::Lit::Bool(b) => hir::Expr {
+            ast::Expression::BooleanLiteral(b) => hir::Expr {
                 pending_work: None,
                 kind: ExprKind::Bool(b.value),
                 ty: Type::Bool,
                 pos,
             },
-            ast::Lit::Null(_) => hir::Expr {
+            ast::Expression::NullLiteral(_) => hir::Expr {
                 pending_work: None,
                 kind: ExprKind::Null,
                 ty: Type::Null,
                 pos,
             },
-            ast::Lit::Regex(regex) => {
-                let pattern = regex.exp.to_string();
-                let flags = regex.flags.to_string();
+            ast::Expression::RegExpLiteral(regex) => {
+                let pattern = regex.regex.pattern.text.to_string();
+                let flags = regex_literal_flags(regex);
                 if flags.contains('v') {
                     self.reject_subset(RejectionSite::RegexLiteralUnicodeSetsFlag, "the `v` flag requires ES2024 in a regex literal; use `new RegExp(pattern, \"v\")`", pos.clone());
                     return self.err_expr(pos);
@@ -200,7 +208,7 @@ impl<'p> Checker<'p> {
     /// integer context. Context-free defaults: `i32` / `f64`.
     pub(super) fn check_num_lit(
         &mut self,
-        n: &ast::Number,
+        n: &ast::NumericLiteral,
         negate: bool,
         ctx: Option<&Type>,
         pos: Pos,
@@ -293,18 +301,24 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(super) fn check_template(&mut self, tpl: &ast::Tpl, fx: &mut FnCtx, pos: Pos) -> hir::Expr {
+    pub(super) fn check_template(
+        &mut self,
+        tpl: &ast::TemplateLiteral,
+        fx: &mut FnCtx<'p>,
+        pos: Pos,
+    ) -> hir::Expr {
         let mut parts = Vec::new();
         for (i, quasi) in tpl.quasis.iter().enumerate() {
             let text = quasi
+                .value
                 .cooked
                 .as_ref()
                 .map(|c| c.to_string())
-                .unwrap_or_else(|| quasi.raw.to_string());
+                .unwrap_or_else(|| quasi.value.raw.to_string());
             if !text.is_empty() {
                 parts.push(TplPart::Text(text));
             }
-            if let Some(e) = tpl.exprs.get(i) {
+            if let Some(e) = tpl.expressions.get(i) {
                 let mut checked = self.check_expr(e, None, fx);
                 if matches!(self.apparent_type(&checked.ty), Type::Array(_)) {
                     checked = self.template_array_join(checked, e.span(), fx);
@@ -355,21 +369,20 @@ impl<'p> Checker<'p> {
     fn template_array_join(
         &mut self,
         operand: hir::Expr,
-        span: swc_common::Span,
-        fx: &mut FnCtx,
+        span: oxc_span::Span,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         // `join` with no argument takes the separator ",".
-        let call = ast::CallExpr {
+        let builder = oxc_ast::builder::AstBuilder::new(self.prog.allocator);
+        let call = ast::CallExpression::new(
             span,
-            ctxt: Default::default(),
-            callee: ast::Callee::Expr(Box::new(ast::Expr::Invalid(ast::Invalid { span }))),
-            args: Vec::new(),
-            type_args: None,
-        };
-        let property = ast::IdentName {
-            span,
-            sym: "join".into(),
-        };
+            ast::Expression::new_identifier(span, "join", &builder),
+            None,
+            oxc_allocator::Vec::new_in(&self.prog.allocator),
+            false,
+            &builder,
+        );
+        let property = ast::IdentifierName::new(span, "join", &builder);
         let pos = operand.pos.clone();
         self.check_method_call_on(operand, &property, &call, fx, pos)
     }
@@ -384,44 +397,75 @@ impl<'p> Checker<'p> {
         &mut self,
         receiver: hir::Expr,
         element: Type,
-        span: swc_common::Span,
-        fx: &mut FnCtx,
+        span: oxc_span::Span,
+        fx: &mut FnCtx<'p>,
         pos: &Pos,
     ) -> hir::Expr {
-        let ident = ast::Ident::new("__element".into(), span, Default::default());
-        let text = ast::Expr::Tpl(ast::Tpl {
-            span,
-            exprs: vec![Box::new(ast::Expr::Ident(ident.clone()))],
-            quasis: [false, true]
-                .into_iter()
-                .map(|tail| ast::TplElement {
+        let builder = oxc_ast::builder::AstBuilder::new(self.prog.allocator);
+        let quasis = oxc_allocator::Vec::from_iter_in(
+            [false, true].into_iter().map(|tail| {
+                ast::TemplateElement::new(
                     span,
+                    ast::TemplateElementValue {
+                        raw: "".into(),
+                        cooked: Some("".into()),
+                    },
                     tail,
-                    cooked: Some("".into()),
-                    raw: "".into(),
-                })
-                .collect(),
-        });
-        let callback = ast::ArrowExpr {
+                    &builder,
+                )
+            }),
+            &self.prog.allocator,
+        );
+        let expressions = oxc_allocator::Vec::from_iter_in(
+            [ast::Expression::new_identifier(span, "__element", &builder)],
+            &self.prog.allocator,
+        );
+        let text = ast::Expression::new_template_literal(span, quasis, expressions, &builder);
+        let pattern = ast::BindingPattern::BindingIdentifier(ast::BindingIdentifier::boxed(
             span,
-            ctxt: Default::default(),
-            params: vec![ast::Pat::Ident(ident.into())],
-            body: Box::new(ast::BlockStmtOrExpr::Expr(Box::new(text))),
-            is_async: false,
-            is_generator: false,
-            type_params: None,
-            return_type: None,
-        };
-        let call = ast::CallExpr {
+            "__element",
+            &builder,
+        ));
+        let parameter = ast::FormalParameter::new(
             span,
-            ctxt: Default::default(),
-            callee: ast::Callee::Expr(Box::new(ast::Expr::Invalid(ast::Invalid { span }))),
-            args: vec![ast::ExprOrSpread {
-                spread: None,
-                expr: Box::new(ast::Expr::Arrow(callback)),
-            }],
-            type_args: None,
-        };
+            oxc_allocator::Vec::new_in(&self.prog.allocator),
+            pattern,
+            None,
+            None,
+            false,
+            None,
+            false,
+            false,
+            &builder,
+        );
+        let parameters = ast::FormalParameters::boxed(
+            span,
+            ast::FormalParameterKind::ArrowFormalParameters,
+            oxc_allocator::Vec::from_iter_in([parameter], &self.prog.allocator),
+            None,
+            &builder,
+        );
+        let callback = ast::ArrowFunctionExpression::boxed(
+            span,
+            false,
+            None,
+            parameters,
+            None,
+            ast::ArrowFunctionBody::from(text),
+            &builder,
+        );
+        let arguments = oxc_allocator::Vec::from_iter_in(
+            [ast::Argument::ArrowFunctionExpression(callback)],
+            &self.prog.allocator,
+        );
+        let call = ast::CallExpression::new(
+            span,
+            ast::Expression::new_identifier(span, "map", &builder),
+            None,
+            arguments,
+            false,
+            &builder,
+        );
         self.check_array_method(
             receiver,
             element,
@@ -486,16 +530,22 @@ impl<'p> Checker<'p> {
 
     pub(super) fn check_ident(
         &mut self,
-        id: &ast::Ident,
+        id: &ast::IdentifierReference,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
-        let name = id.sym.to_string();
+        let name = id.name.to_string();
         let pos = self.pos(id.span);
         // §306: a completed local result can join a cycle when its caller is checked.
         if !self.result_dependencies.rejected.is_empty()
             && self
-                .lambda_value_sources(&ast::Expr::Ident(id.clone()), fx)
+                .lambda_value_sources(
+                    &ast::Expression::Identifier(oxc_allocator::Box::new_in(
+                        id.clone_in(self.prog.allocator),
+                        &self.prog.allocator,
+                    )),
+                    fx,
+                )
                 .into_iter()
                 .flatten()
                 .any(|(span, _)| self.result_dependencies.rejected.contains(&span))
@@ -792,7 +842,7 @@ impl<'p> Checker<'p> {
 
     /// Rewrites a nullable expression to its narrowed type when its
     /// path is in the current non-null set (C7).
-    pub(super) fn apply_narrowing(&self, e: &mut hir::Expr, fx: &FnCtx) {
+    pub(super) fn apply_narrowing(&self, e: &mut hir::Expr, fx: &FnCtx<'p>) {
         if matches!(self.apparent_type(&e.ty), Type::Nullable(_, _)) {
             if let Some(key) = path_key(e) {
                 if fx
@@ -811,20 +861,52 @@ impl<'p> Checker<'p> {
 mod tests {
     use super::literal_default_type;
     use crate::types::Type;
-    use swc_ecma_ast as ast;
+    use oxc_ast::ast;
 
-    fn default_of(source: &str) -> ast::Expr {
-        let program = crate::parse::parse_program(&[crate::SourceFile::entry(
-            "main.ts",
-            &format!("const x = {source};"),
-        )])
+    fn default_of(source: &str) -> Option<Type> {
+        let allocator = oxc_allocator::Allocator::default();
+        let program = crate::parse::parse_program(
+            &allocator,
+            &[crate::SourceFile::entry(
+                "main.ts",
+                &format!("const x = {source};"),
+            )],
+        )
         .expect("parse");
-        let ast::ModuleItem::Stmt(ast::Stmt::Decl(ast::Decl::Var(var))) =
-            &program.files[0].module.body[0]
-        else {
+        let ast::Statement::VariableDeclaration(var) = &program.files[0].module.body[0] else {
             panic!("the item must be a declaration");
         };
-        *var.decls[0].init.clone().expect("initializer")
+        literal_default_type(var.declarations[0].init.as_ref().expect("initializer"))
+    }
+
+    // Cost: less than 0.01 s in debug; no code generation.
+    #[test]
+    fn regex_flags_keep_source_order() {
+        let allocator = oxc_allocator::Allocator::default();
+        let program = crate::parse::parse_program(
+            &allocator,
+            &[crate::SourceFile::entry(
+                "main.ts",
+                "const a = /a/ig; const b = /a/gi;",
+            )],
+        )
+        .expect("parse");
+        let flags: Vec<_> = program.files[0]
+            .module
+            .body
+            .iter()
+            .map(|statement| {
+                let ast::Statement::VariableDeclaration(declaration) = statement else {
+                    panic!("variable");
+                };
+                let Some(ast::Expression::RegExpLiteral(regex)) = &declaration.declarations[0].init
+                else {
+                    panic!("regex");
+                };
+                super::regex_literal_flags(regex)
+            })
+            .collect();
+        assert_eq!(flags, ["ig", "gi"]);
     }
 
     #[test]
@@ -844,11 +926,7 @@ mod tests {
             ("`s`", None),
             ("-x", None),
         ] {
-            assert_eq!(
-                literal_default_type(&default_of(source)),
-                expected,
-                "{source}"
-            );
+            assert_eq!(default_of(source), expected, "{source}");
         }
     }
 }

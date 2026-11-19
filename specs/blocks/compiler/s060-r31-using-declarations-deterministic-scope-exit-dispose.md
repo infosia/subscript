@@ -20,6 +20,9 @@ Measurements at the pin, on this host:
    fail with S100 ("nested declarations are not in the decided
    surface"; "computed method names are not decided"). The parser
    needs no change.
+   *(Amended 2026-11-20 by §341: this measurement is of `swc` at that
+   pin. `oxc` parses the same forms; a `using` declaration directly in a
+   case clause keeps its AST (§341 rule 4).)*
 2. `tsc` 5.9.2 with `lib: ["ES2022"]` fails the hook member with
    TS2318/TS2550; with `lib: ["ES2022", "ESNext.Disposable"]` the
    same program exits 0.

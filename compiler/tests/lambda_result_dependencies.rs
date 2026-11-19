@@ -64,7 +64,7 @@ fn undefined_is_not_a_type_parameter_name() {
         assert_eq!(errors[0].code, RuleCode::S100);
         assert_eq!(
             errors[0].message,
-            "a type parameter cannot have the name `undefined`"
+            "parse error: Type parameter name cannot be 'undefined'"
         );
         assert!(errors[0].divergence.is_none());
     }
@@ -167,7 +167,7 @@ fn reserved_type_parameter_names_are_rejected() {
                 if errors.len() == 1
                     && errors[0].code == RuleCode::S100
                     && errors[0].message
-                        == format!("a type parameter cannot have the name `{name}`")
+                        == format!("parse error: Type parameter name cannot be '{name}'")
                     && errors[0].divergence.is_none() => {}
             Ok(_) => failures.push(format!("{name}: unexpectedly accepted")),
             Err(errors) => failures.push(format!("{name}: {errors:?}")),

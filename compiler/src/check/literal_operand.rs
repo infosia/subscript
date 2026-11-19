@@ -2,8 +2,8 @@
 
 use super::{Checker, FnCtx, ScopeItem};
 use crate::{hir, Type};
+use oxc_ast::ast;
 use std::collections::HashSet;
-use swc_ecma_ast as ast;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum LiteralOperand {
@@ -33,18 +33,22 @@ impl LiteralOperand {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     /// The source forms of §299 rule 2a and §316. Local lookup stops at the
     /// owning scope, including parameters and declarations that shadow a const.
-    pub(super) fn literal_operand(&self, source: &ast::Expr, fx: &FnCtx) -> Option<LiteralOperand> {
+    pub(super) fn literal_operand(
+        &self,
+        source: &ast::Expression,
+        fx: &FnCtx,
+    ) -> Option<LiteralOperand> {
         self.literal_source(source, Some(fx), self.cur_file, None, &mut HashSet::new())
     }
 
     pub(super) fn checked_literal_operand(
         &self,
-        source: &ast::Expr,
+        source: &ast::Expression,
         checked: &hir::Expr,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> Option<LiteralOperand> {
         if let hir::ExprKind::Field { obj, name } = &checked.kind {
             let Type::Class(class) = self.apparent_type(&obj.ty) else {
@@ -71,36 +75,41 @@ impl Checker<'_> {
 
     fn literal_source(
         &self,
-        source: &ast::Expr,
-        fx: Option<&FnCtx>,
+        source: &ast::Expression,
+        fx: Option<&FnCtx<'p>>,
         file: usize,
         field_class: Option<crate::types::ClassId>,
         seen: &mut HashSet<String>,
     ) -> Option<LiteralOperand> {
         match source {
-            ast::Expr::Lit(ast::Lit::Num(number)) => Some(LiteralOperand::Number(number.value)),
-            ast::Expr::Lit(ast::Lit::Bool(value)) => Some(LiteralOperand::Boolean(value.value)),
-            ast::Expr::Unary(unary) if unary.op == ast::UnaryOp::Minus => {
-                let ast::Expr::Lit(ast::Lit::Num(number)) = super::expr::unparen_expr(&unary.arg)
+            ast::Expression::NumericLiteral(number) => Some(LiteralOperand::Number(number.value)),
+            ast::Expression::BooleanLiteral(value) => Some(LiteralOperand::Boolean(value.value)),
+            ast::Expression::UnaryExpression(unary)
+                if unary.operator == ast::UnaryOperator::UnaryNegation =>
+            {
+                let ast::Expression::NumericLiteral(number) =
+                    super::expr::unparen_expr(&unary.argument)
                 else {
                     return None;
                 };
                 Some(LiteralOperand::Number(-number.value))
             }
-            ast::Expr::Lit(ast::Lit::Str(text)) => {
+            ast::Expression::StringLiteral(text) => {
                 Some(LiteralOperand::String(text.value.to_string()))
             }
-            ast::Expr::Tpl(tpl) if tpl.exprs.is_empty() => Some(LiteralOperand::String(
-                tpl.quasis
-                    .iter()
-                    .map(|q| q.cooked.as_ref().unwrap_or(&q.raw).as_ref())
-                    .collect(),
-            )),
-            ast::Expr::Paren(paren) => {
-                self.literal_source(&paren.expr, fx, file, field_class, seen)
+            ast::Expression::TemplateLiteral(tpl) if tpl.expressions.is_empty() => {
+                Some(LiteralOperand::String(
+                    tpl.quasis
+                        .iter()
+                        .map(|q| q.value.cooked.as_ref().map(|value| value.as_str()))
+                        .collect::<Option<String>>()?,
+                ))
             }
-            ast::Expr::Ident(id) => {
-                let name = id.sym.as_ref();
+            ast::Expression::ParenthesizedExpression(paren) => {
+                self.literal_source(&paren.expression, fx, file, field_class, seen)
+            }
+            ast::Expression::Identifier(id) => {
+                let name = id.name.as_ref();
                 if let Some(scope) = fx.and_then(|fx| fx.scopes.iter().rev().find(|s| s.owns(name)))
                 {
                     return scope.literal_operands.get(name).cloned();
@@ -119,24 +128,22 @@ impl Checker<'_> {
                 let init = sig.initializer.as_ref()?;
                 self.literal_source(&init.expression, None, init.file, None, seen)
             }
-            ast::Expr::Member(member) => {
-                let ast::MemberProp::Ident(name) = &member.prop else {
-                    return None;
-                };
-                let (class, is_static) = match super::expr::unparen_expr(&member.obj) {
-                    ast::Expr::Ident(id) => {
+            ast::Expression::StaticMemberExpression(member) => {
+                let name = &member.property;
+                let (class, is_static) = match super::expr::unparen_expr(&member.object) {
+                    ast::Expression::Identifier(id) => {
                         let local = fx.and_then(|fx| {
-                            fx.scopes.iter().rev().find(|s| s.owns(id.sym.as_ref()))
+                            fx.scopes.iter().rev().find(|s| s.owns(id.name.as_ref()))
                         });
                         if let Some(scope) = local {
                             let Type::Class(class) =
-                                self.apparent_type(&scope.vars.get(id.sym.as_ref())?.ty)
+                                self.apparent_type(&scope.vars.get(id.name.as_ref())?.ty)
                             else {
                                 return None;
                             };
                             (class, false)
                         } else {
-                            let binding = self.file_scopes.get(file)?.get(id.sym.as_ref())?;
+                            let binding = self.file_scopes.get(file)?.get(id.name.as_ref())?;
                             if binding.type_only {
                                 return None;
                             }
@@ -154,7 +161,7 @@ impl Checker<'_> {
                             }
                         }
                     }
-                    ast::Expr::This(_) => {
+                    ast::Expression::ThisExpression(_) => {
                         (fx.and_then(|fx| fx.lexical_class).or(field_class)?, false)
                     }
                     _ => return None,
@@ -165,11 +172,11 @@ impl Checker<'_> {
                 } else {
                     &signatures.fields
                 }
-                .get(name.sym.as_ref())?;
+                .get(name.name.as_ref())?;
                 if signature.mutable || signature.annotated {
                     return None;
                 }
-                let key = format!("field:{}:{is_static}:{}", class.0, name.sym);
+                let key = format!("field:{}:{is_static}:{}", class.0, name.name);
                 if !seen.insert(key) {
                     return None;
                 }
@@ -204,33 +211,24 @@ impl Checker<'_> {
     pub(super) fn literal_test_precedes(
         &self,
         value: &hir::Expr,
-        before: swc_common::BytePos,
+        before: u32,
         include_cases: bool,
-        fx: &FnCtx,
+        fx: &FnCtx<'p>,
     ) -> bool {
         let Some(key) = Self::literal_binding_key(value, fx) else {
             return false;
         };
         fx.scopes.iter().any(|scope| {
-            scope
-                .literal_tests
-                .get(&key)
-                .is_some_and(|at| *at < before.0)
+            scope.literal_tests.get(&key).is_some_and(|at| *at < before)
                 || (include_cases
                     && scope
                         .literal_case_tests
                         .get(&key)
-                        .is_some_and(|at| *at < before.0))
+                        .is_some_and(|at| *at < before))
         })
     }
 
-    fn record_literal_test(
-        &self,
-        value: &hir::Expr,
-        at: swc_common::BytePos,
-        case: bool,
-        fx: &mut FnCtx,
-    ) {
+    fn record_literal_test(&self, value: &hir::Expr, at: u32, case: bool, fx: &mut FnCtx<'p>) {
         if let Some(key) = Self::literal_binding_key(value, fx) {
             if let Some(scope) = fx.scopes.last_mut() {
                 let tests = if case {
@@ -238,8 +236,8 @@ impl Checker<'_> {
                 } else {
                     &mut scope.literal_tests
                 };
-                let prior = tests.entry(key).or_insert(at.0);
-                *prior = (*prior).min(at.0);
+                let prior = tests.entry(key).or_insert(at);
+                *prior = (*prior).min(at);
             }
         }
     }
@@ -247,17 +245,17 @@ impl Checker<'_> {
     /// compiler.md §330 rules 2 and 3a: compare values before alias conversion.
     pub(super) fn check_literal_equality(
         &mut self,
-        binary: &ast::BinExpr,
+        binary: &ast::BinaryExpression,
         left: &hir::Expr,
         right: &hir::Expr,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
         if !matches!(
-            binary.op,
-            ast::BinaryOp::EqEqEq
-                | ast::BinaryOp::NotEqEq
-                | ast::BinaryOp::EqEq
-                | ast::BinaryOp::NotEq
+            binary.operator,
+            ast::BinaryOperator::StrictEquality
+                | ast::BinaryOperator::StrictInequality
+                | ast::BinaryOperator::Equality
+                | ast::BinaryOperator::Inequality
         ) {
             return;
         }
@@ -268,11 +266,11 @@ impl Checker<'_> {
             return;
         };
         if a == b {
-            self.record_literal_test(left, binary.span.hi, false, fx);
-            self.record_literal_test(right, binary.span.hi, false, fx);
+            self.record_literal_test(left, binary.span.end, false, fx);
+            self.record_literal_test(right, binary.span.end, false, fx);
         } else if a.differs(&b)
-            && !self.literal_test_precedes(left, binary.span.lo, true, fx)
-            && !self.literal_test_precedes(right, binary.span.lo, true, fx)
+            && !self.literal_test_precedes(left, binary.span.start, true, fx)
+            && !self.literal_test_precedes(right, binary.span.start, true, fx)
         {
             self.reject_subset(
                 super::rejection::RejectionSite::DisjointLiteralEquality,
@@ -292,15 +290,15 @@ impl Checker<'_> {
         subject: &hir::Expr,
         literals: (Option<&LiteralOperand>, Option<&LiteralOperand>),
         prior_test: bool,
-        label: &ast::Expr,
-        fx: &mut FnCtx,
+        label: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) {
-        use swc_common::Spanned;
+        use oxc_span::GetSpan;
         let (Some(a), Some(b)) = literals else {
             return;
         };
         if a == b {
-            self.record_literal_test(subject, label.span().hi, true, fx);
+            self.record_literal_test(subject, label.span().end, true, fx);
         } else if a.differs(b) && !prior_test {
             self.reject_subset(
                 super::rejection::RejectionSite::DisjointLiteralCase,

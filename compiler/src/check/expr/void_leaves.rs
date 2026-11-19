@@ -1,7 +1,7 @@
 //! Discarded leaves in a statement place (compiler.md §300), and `void`
 //! leaves of a conditional body of a lambda with no result (§258 rule 3).
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use crate::check::{Checker, FnCtx};
 use crate::hir::{self, BinOp, ExprKind};
@@ -24,14 +24,14 @@ pub(crate) enum VoidLeafPlace {
 
 /// True when `e` takes its leaves from `place`: a conditional in each
 /// place, and `&&` or `||` in a statement place only.
-fn takes_leaf_place(e: &ast::Expr, place: VoidLeafPlace) -> bool {
+fn takes_leaf_place(e: &ast::Expression, place: VoidLeafPlace) -> bool {
     match e {
-        ast::Expr::Cond(_) => true,
-        ast::Expr::Bin(binary) => {
+        ast::Expression::ConditionalExpression(_) => true,
+        ast::Expression::LogicalExpression(binary) => {
             place == VoidLeafPlace::Statement
                 && matches!(
-                    binary.op,
-                    ast::BinaryOp::LogicalAnd | ast::BinaryOp::LogicalOr
+                    binary.operator,
+                    ast::LogicalOperator::And | ast::LogicalOperator::Or
                 )
         }
         _ => false,
@@ -42,11 +42,11 @@ impl<'p> Checker<'p> {
     /// Sets `place` for `e` when `e` is a conditional, or `&&` or `||` in
     /// a statement place. A parenthesized expression keeps the place
     /// (§258 rule 1). Returns `e` without its parentheses.
-    pub(super) fn enter_void_leaf_place<'e>(
+    pub(super) fn enter_void_leaf_place<'e, 'a>(
         &mut self,
-        e: &'e ast::Expr,
+        e: &'e ast::Expression<'a>,
         place: VoidLeafPlace,
-    ) -> &'e ast::Expr {
+    ) -> &'e ast::Expression<'a> {
         let inner = unparen_expr(e);
         self.void_leaf_place = takes_leaf_place(inner, place).then_some(place);
         inner
@@ -56,16 +56,16 @@ impl<'p> Checker<'p> {
     /// `void` leaf keeps its type.
     pub(super) fn check_void_leaf(
         &mut self,
-        e: &ast::Expr,
+        e: &ast::Expression,
         ctx: Option<&Type>,
         kind: ContextKind,
         place: VoidLeafPlace,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) -> hir::Expr {
         let inner = self.enter_void_leaf_place(e, place);
         // compiler.md §339 rule 7: an optional call at a statement leaf is a statement.
         if place == VoidLeafPlace::Statement {
-            if let ast::Expr::OptChain(chain) = inner {
+            if let ast::Expression::ChainExpression(chain) = inner {
                 return self.check_optional_chain_leaf(chain, fx);
             }
         }

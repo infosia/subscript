@@ -6,7 +6,7 @@ use crate::check::rejection::RejectionSite;
 use crate::diag::Pos;
 use crate::hir::{self, BinOp, Callee, ExprKind, TextFn};
 use crate::types::Type;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 pub(crate) fn uri_function(name: &str) -> Option<TextFn> {
     Some(match name {
@@ -39,16 +39,16 @@ fn local(name: &str, ty: Type, pos: &Pos) -> hir::Expr {
     }
 }
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     pub(crate) fn check_uri_call(
         &mut self,
         function: TextFn,
-        c: &ast::CallExpr,
-        fx: &mut FnCtx,
+        c: &ast::CallExpression,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         name: &str,
     ) -> hir::Expr {
-        if c.type_args.is_some() {
+        if c.type_arguments.is_some() {
             self.reject_subset(
                 RejectionSite::UriCodecTypeArguments,
                 format!("`{name}` is not generic"),
@@ -58,7 +58,7 @@ impl Checker<'_> {
         let args = self.check_args(
             RejectionSite::UriCodecArgumentCount,
             &[ParamSig::positional(Type::Str)],
-            &c.args,
+            &c.arguments,
             fx,
             &pos,
             name,

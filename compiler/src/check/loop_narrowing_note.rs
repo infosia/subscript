@@ -6,7 +6,7 @@ use crate::hir;
 /// inheriting the outer binding's loop-entry fact.
 pub(super) type EndedLoopFacts = std::collections::HashMap<String, Option<usize>>;
 
-impl FnCtx {
+impl<'p> FnCtx<'p> {
     pub(super) fn path_scope(&self, key: &str) -> Option<usize> {
         let root = root_of(key);
         self.scopes

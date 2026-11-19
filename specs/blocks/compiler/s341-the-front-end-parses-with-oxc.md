@@ -193,3 +193,76 @@ a literal U+FFFD is `\u{FFFD}fffd` (measured).
   diagnostic of §96.2 item 2 is at the literal start (rule 4b).
 - `specs/blocks/stdlib.md` §15.3: the regular expression literal comes
   from the `oxc` parser.
+
+### 341.4 Phase Review
+
+Form.
+
+- `compiler/src/parse.rs`: `parse_program` parses each file with
+  `oxc`, runs the `oxc_semantic` syntax check
+  (`compiler/src/parse/syntax.rs`), decodes the surrogate encoding
+  (rule 4a), and moves each span by the file base (rule 3). The
+  position tables are built once per file; a lookup is a binary
+  search.
+- `compiler/src/lib.rs`: the syntax errors of rule 4c are returned only
+  when the checker reports no error.
+- The three rewrite passes and the checker read `oxc_ast` nodes. The
+  checker types carry the arena lifetime.
+- Rule 6a retired 9 rejection sites. Each form gives the `oxc` parse
+  error, and `tsc` rejects each one:
+
+  | Site | `oxc` message | `tsc` |
+  |---|---|---|
+  | `IndexSignatureParameterAnnotationMissing` | Unexpected token | TS1110 |
+  | `IndexSignatureParameterKind` | An index signature must have exactly one parameter. | TS1096 |
+  | `IndexSignatureElementAnnotationMissing` | An index signature must have a type annotation. | TS1021 |
+  | `RestAnnotation` | Unexpected token | TS1110 |
+  | `GeneratorArrowFunction` | Unexpected token | TS1005 |
+  | `WriteAccessorReturnAnnotation` | A 'set' accessor cannot have a return type annotation. | TS1095 |
+  | `WriteAccessorDefaultParameter` | A 'set' accessor cannot have an initializer. | TS1052 |
+  | `DescriptorRequiredInitializer` | Declarations with initializers cannot also have definite assignment assertions. | TS1263 |
+  | `UndefinedTypeParameterName` | Type parameter name cannot be 'undefined' | TS2368 |
+
+- Rule 6b: the checker checks unary and logical operators in separate
+  functions (`check/expr/unary.rs`, `check/expr/logical.rs`), so a
+  nested operator takes less stack per level.
+
+Measured:
+
+| Item | Pin `15068d44` | After |
+|---|---|---|
+| `check` differences over 1,109 corpus entries | — | 8: `r185` and `r518` message text; the column of `r188`–`r191`, `r196`, `r197` |
+| release `check`, 931 accept and reject entries, 3 interleaved runs | 8.09–8.91 s | 9.21–9.54 s (before rule 4c) |
+| release `check` of `a204`, median of 15 | 4.49 ms (after the table fix) | 4.71 ms |
+| release `check` of `a01`, median of 15 | 3.86 ms | 3.91 ms |
+| stack for `nesting` at depth 200, debug / release | 917,504–950,272 / 262,144–524,288 bytes | at most 1,003,520 / 774,144 bytes (margin 2.08 / 2.70) |
+| robustness mutations (§90 rule 3) | — | 41,936 inputs, 0 panics |
+| full gate | — | `debug 3845/0/5 release 3826/0/5`, exit 0 |
+
+Before the table fix, `position` scanned the file from byte 0 on each
+lookup: `a204` took 32.5 ms against 10.0 ms at the pin. The first
+Phase Review found that the `oxc` parser does not give the early
+errors (rule 4c), that a character above U+FFFF counted 1 column, and
+a decoder path with no diagnostic. A full gate found the `nesting`
+stack overflow in debug (rule 6b). Each is fixed. The second Phase
+Review found no CRITICAL or MAJOR finding.
+
+### 341.5 Open
+
+1. MINOR, contrived. Rule 3 follows `tsc`. For U+2028 in a string and
+   a lone CR in a comment, the line differs from the pin. No corpus
+   entry holds either.
+2. MINOR, realistic but rare. A `.d.ts` mirror class without `declare`
+   gives "Constructor implementation is missing." `tsc` gives TS1046
+   (the `declare` modifier is missing). The generator always writes
+   `declare`.
+3. MINOR, cost. `parse_import_specifiers` runs the whole
+   `parse_program` (the syntax check and the rewrite passes) and drops
+   the result; `check_program` parses each file again. No time change
+   measured on `a204`.
+4. MINOR, hygiene. `opt_call_as_call` (`check/expr.rs`) returns its
+   argument unchanged; its two callers in `check/expr/operator.rs` can
+   use the call.
+5. MINOR, contrived. `flatten_optional_operand` calls
+   `has_optional_step` at each level of one optional chain, which is
+   O(n²) in the length of that chain.

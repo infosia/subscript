@@ -1,12 +1,12 @@
 //! Statement checking: declarations, control flow, and the C7 flow
 //! narrowing that admits member access on `Ref | null` values.
 
-use super::FactSet;
+use super::{DeclarationName, FactSet};
 use crate::check::rejection::RejectionSite;
 use std::collections::HashSet;
 
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::hir;
 use crate::types::Type;
@@ -14,13 +14,10 @@ use crate::types::Type;
 use super::{Checker, FnCtx, Local};
 
 /// The type annotation a declaration writes on its whole pattern.
-fn pattern_type_ann(pat: &ast::Pat) -> Option<&ast::TsTypeAnn> {
-    match pat {
-        ast::Pat::Ident(binding) => binding.type_ann.as_deref(),
-        ast::Pat::Array(array) => array.type_ann.as_deref(),
-        ast::Pat::Object(object) => object.type_ann.as_deref(),
-        _ => None,
-    }
+fn pattern_type_ann<'a, 'p>(
+    declaration: &'a ast::VariableDeclarator<'p>,
+) -> Option<&'a ast::TSTypeAnnotation<'p>> {
+    declaration.type_annotation.as_deref()
 }
 
 pub(super) fn root_of(key: &str) -> &str {
@@ -32,17 +29,21 @@ impl<'p> Checker<'p> {
     /// function that reads no binding of an enclosing function, and
     /// records why each other one stays in its block. Binds the name and
     /// returns true if the front end has a record for the declaration.
-    fn check_local_function_outcome(&mut self, function: &ast::FnDecl, fx: &mut FnCtx) -> bool {
+    fn check_local_function_outcome(
+        &mut self,
+        function: &ast::Function,
+        fx: &mut FnCtx<'p>,
+    ) -> bool {
         use crate::parse::local_function::LocalFunctionOutcome;
         let Some(outcome) = self
             .prog
             .local_functions
             .outcomes
-            .get(&function.ident.span.lo)
+            .get(&function.declaration_name_span().start)
         else {
             return false;
         };
-        let name = function.ident.sym.as_ref();
+        let name = function.declaration_name();
         let local = Local {
             annotated: false,
             ty: Type::Error,
@@ -53,7 +54,7 @@ impl<'p> Checker<'p> {
         };
         match outcome {
             LocalFunctionOutcome::Duplicate => {
-                let pos = self.pos(function.ident.span);
+                let pos = self.pos(function.declaration_name_span());
                 self.declare_local(name, local, pos, fx);
             }
             LocalFunctionOutcome::Poisoned => {
@@ -75,8 +76,8 @@ impl<'p> Checker<'p> {
     /// always terminates the enclosing flow (return/break/continue).
     pub(crate) fn check_stmt(
         &mut self,
-        s: &ast::Stmt,
-        fx: &mut FnCtx,
+        s: &ast::Statement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) -> bool {
         fx.ended_shared_narrowing
@@ -91,11 +92,17 @@ impl<'p> Checker<'p> {
         let (_terminates, prefix) = fx.with_synthetic_owner(
             super::SyntheticOwnerKind::Statement(self.pos(s.span())),
             |fx| match s {
-                ast::Stmt::Decl(ast::Decl::Var(v)) => {
+                ast::Statement::VariableDeclaration(v)
+                    if !matches!(
+                        v.kind,
+                        ast::VariableDeclarationKind::Using
+                            | ast::VariableDeclarationKind::AwaitUsing
+                    ) =>
+                {
                     self.check_let(v, fx, out);
                     false
                 }
-                ast::Stmt::Decl(ast::Decl::Using(using)) => {
+                ast::Statement::VariableDeclaration(using) => {
                     if fx.frames.last().is_some_and(|frame| frame.is_lambda) {
                         self.reject_subset(
                             RejectionSite::LambdaUsingDeclaration,
@@ -107,8 +114,11 @@ impl<'p> Checker<'p> {
                     }
                     false
                 }
-                ast::Stmt::Decl(other) => {
-                    if let ast::Decl::Fn(function) = other {
+                other if other.as_declaration().is_some() => {
+                    let Some(other) = other.as_declaration() else {
+                        return false;
+                    };
+                    if let ast::Declaration::FunctionDeclaration(function) = other {
                         if self.check_local_function_outcome(function, fx) {
                             return false;
                         }
@@ -116,7 +126,7 @@ impl<'p> Checker<'p> {
                     let pos = self.pos(other.span());
                     for name in super::exports::declaration_names(other) {
                         self.declare_in_context(
-                            name.sym.as_ref(),
+                            name.name.as_ref(),
                             Local {
                                 annotated: false,
                                 ty: Type::Error,
@@ -130,11 +140,23 @@ impl<'p> Checker<'p> {
                     }
                     self.reject_subset(
                         match other {
-                            ast::Decl::Class(_) => RejectionSite::LocalClassDeclaration,
-                            ast::Decl::TsEnum(_) => RejectionSite::LocalEnumDeclaration,
-                            ast::Decl::TsTypeAlias(_) => RejectionSite::LocalAliasDeclaration,
-                            ast::Decl::TsInterface(_) => RejectionSite::LocalInterfaceDeclaration,
-                            ast::Decl::TsModule(_) => RejectionSite::LocalNamespaceDeclaration,
+                            ast::Declaration::ClassDeclaration(_) => {
+                                RejectionSite::LocalClassDeclaration
+                            }
+                            ast::Declaration::TSEnumDeclaration(_) => {
+                                RejectionSite::LocalEnumDeclaration
+                            }
+                            ast::Declaration::TSTypeAliasDeclaration(_) => {
+                                RejectionSite::LocalAliasDeclaration
+                            }
+                            ast::Declaration::TSInterfaceDeclaration(_) => {
+                                RejectionSite::LocalInterfaceDeclaration
+                            }
+                            ast::Declaration::TSNamespaceDeclaration(_)
+                            | ast::Declaration::TSExternalModuleDeclaration(_)
+                            | ast::Declaration::TSGlobalDeclaration(_) => {
+                                RejectionSite::LocalNamespaceDeclaration
+                            }
                             _ => RejectionSite::LocalRejectedDeclaration,
                         },
                         "nested declarations are not in the decided surface",
@@ -142,12 +164,12 @@ impl<'p> Checker<'p> {
                     );
                     false
                 }
-                ast::Stmt::Expr(e) => {
+                ast::Statement::ExpressionStatement(e) => {
                     // §289 rule 1a: only this call can discard a non-void catch result.
-                    let statement_call = match super::expr::unparen_expr(&e.expr) {
-                        ast::Expr::Await(awaited) => {
-                            match super::expr::unparen_expr(&awaited.arg) {
-                                ast::Expr::Call(call) => Some(call.span),
+                    let statement_call = match super::expr::unparen_expr(&e.expression) {
+                        ast::Expression::AwaitExpression(awaited) => {
+                            match super::expr::unparen_expr(&awaited.argument) {
+                                ast::Expression::CallExpression(call) => Some(call.span),
                                 _ => None,
                             }
                         }
@@ -155,32 +177,32 @@ impl<'p> Checker<'p> {
                     };
                     let previous =
                         std::mem::replace(&mut self.void_catch_statement, statement_call);
-                    out.extend(self.check_expr_stmt(&e.expr, fx));
+                    out.extend(self.check_expr_stmt(&e.expression, fx));
                     self.void_catch_statement = previous;
                     false
                 }
-                ast::Stmt::Return(r) => {
+                ast::Statement::ReturnStatement(r) => {
                     self.check_return(r, fx, out);
                     true
                 }
-                ast::Stmt::If(i) => self.check_if(i, fx, out),
-                ast::Stmt::While(w) => {
+                ast::Statement::IfStatement(i) => self.check_if(i, fx, out),
+                ast::Statement::WhileStatement(w) => {
                     self.check_while(w, fx, out);
                     false
                 }
-                ast::Stmt::DoWhile(d) => {
+                ast::Statement::DoWhileStatement(d) => {
                     self.check_do_while(d, fx, out);
                     false
                 }
-                ast::Stmt::For(f) => {
+                ast::Statement::ForStatement(f) => {
                     self.check_for(f, fx, out);
                     false
                 }
-                ast::Stmt::Switch(sw) => {
+                ast::Statement::SwitchStatement(sw) => {
                     self.check_switch(sw, fx, out);
                     false
                 }
-                ast::Stmt::Break(b) => {
+                ast::Statement::BreakStatement(b) => {
                     let pos = self.pos(b.span);
                     if b.label.is_some() {
                         self.reject_subset(
@@ -217,7 +239,7 @@ impl<'p> Checker<'p> {
                     out.push(hir::Stmt::Break(pos));
                     true
                 }
-                ast::Stmt::Continue(c) => {
+                ast::Statement::ContinueStatement(c) => {
                     let pos = self.pos(c.span);
                     if c.label.is_some() {
                         self.reject_subset(
@@ -237,11 +259,11 @@ impl<'p> Checker<'p> {
                     out.push(hir::Stmt::Continue(pos));
                     true
                 }
-                ast::Stmt::Block(b) => {
+                ast::Statement::BlockStatement(b) => {
                     fx.scopes.push(Default::default());
-                    self.reserve_block_declarations(&b.stmts, fx);
+                    self.reserve_block_declarations(&b.body, fx);
                     let mut inner = Vec::new();
-                    for s in &b.stmts {
+                    for s in &b.body {
                         self.check_stmt(s, fx, &mut inner);
                     }
                     let terminates = !super::fallthrough::sequence_can_fall_through(&inner);
@@ -250,21 +272,21 @@ impl<'p> Checker<'p> {
                     out.push(hir::Stmt::Block(inner));
                     terminates
                 }
-                ast::Stmt::Throw(t) => self.check_throw(t, fx, out),
-                ast::Stmt::Try(t) => self.check_try(t, fx, out),
-                ast::Stmt::ForOf(for_of) => {
+                ast::Statement::ThrowStatement(t) => self.check_throw(t, fx, out),
+                ast::Statement::TryStatement(t) => self.check_try(t, fx, out),
+                ast::Statement::ForOfStatement(for_of) => {
                     self.check_for_of(for_of, fx, out);
                     false
                 }
                 // compiler.md §204 rule 4: `debugger;` is an empty statement.
-                ast::Stmt::Empty(_) | ast::Stmt::Debugger(_) => false,
+                ast::Statement::EmptyStatement(_) | ast::Statement::DebuggerStatement(_) => false,
                 other => {
                     let pos = self.pos(other.span());
                     self.reject_subset(
                         match other {
-                            ast::Stmt::ForIn(_) => RejectionSite::ForInStatement,
-                            ast::Stmt::Labeled(_) => RejectionSite::LabeledStatement,
-                            ast::Stmt::With(_) => RejectionSite::WithStatement,
+                            ast::Statement::ForInStatement(_) => RejectionSite::ForInStatement,
+                            ast::Statement::LabeledStatement(_) => RejectionSite::LabeledStatement,
+                            ast::Statement::WithStatement(_) => RejectionSite::WithStatement,
                             _ => RejectionSite::UnsupportedStatementKind,
                         },
                         "statement form outside the decided surface",
@@ -289,51 +311,67 @@ impl<'p> Checker<'p> {
         terminates
     }
 
-    pub(super) fn check_let(&mut self, v: &ast::VarDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
-        if v.kind == ast::VarDeclKind::Var {
+    pub(super) fn check_let(
+        &mut self,
+        v: &ast::VariableDeclaration,
+        fx: &mut FnCtx<'p>,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        if v.kind == ast::VariableDeclarationKind::Var {
             let pos = self.pos(v.span);
             self.reject_subset(
                 RejectionSite::LocalVarDeclaration,
                 "`var` is not in the language; use `let` or `const`",
                 pos,
             );
-            for declaration in &v.decls {
-                let names = super::pattern::collect_names(&declaration.name);
+            for declaration in &v.declarations {
+                let names = super::pattern::collect_names(&declaration.id);
                 self.bind_error_names(&names, fx);
             }
             return;
         }
-        let mutable = v.kind == ast::VarDeclKind::Let;
-        self.check_bindings(&v.decls, mutable, false, fx, out);
+        let mutable = v.kind == ast::VariableDeclarationKind::Let;
+        self.check_bindings(&v.declarations, mutable, false, fx, out);
     }
 
-    fn check_using(&mut self, using: &ast::UsingDecl, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
-        if using.is_await {
+    fn check_using(
+        &mut self,
+        using: &ast::VariableDeclaration,
+        fx: &mut FnCtx<'p>,
+        out: &mut Vec<hir::Stmt>,
+    ) {
+        if using.kind == ast::VariableDeclarationKind::AwaitUsing {
             self.reject_subset(
                 RejectionSite::AwaitUsingDeclaration,
                 "`await using` is not in the decided surface",
                 self.pos(using.span),
             );
         }
-        self.check_bindings(&using.decls, false, !using.is_await, fx, out);
+        self.check_bindings(
+            &using.declarations,
+            false,
+            !(using.kind == ast::VariableDeclarationKind::AwaitUsing),
+            fx,
+            out,
+        );
     }
 
     fn check_bindings(
         &mut self,
-        declarations: &[ast::VarDeclarator],
+        declarations: &[ast::VariableDeclarator],
         mutable: bool,
         dispose: bool,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         for d in declarations {
-            let pattern = super::pattern::classify(&d.name);
+            let pattern = super::pattern::classify(&d.id);
             if let super::pattern::Pattern::Rejected(rejection) = &pattern {
                 self.reject_pattern(rejection, fx);
                 continue;
             }
             let name = match &pattern {
-                super::pattern::Pattern::Name(binding) => binding.id.sym.to_string(),
+                super::pattern::Pattern::Name(binding) => binding.name.to_string(),
                 _ => String::new(),
             };
             let pos = self.pos(pattern.span());
@@ -342,15 +380,15 @@ impl<'p> Checker<'p> {
                 .replace(RejectionSite::AggregateAnnotationLimit);
             let group_local = !mutable
                 && !dispose
-                && matches!(d.init.as_deref(),
-                Some(ast::Expr::New(new)) if matches!(&*new.callee,
-                    ast::Expr::Ident(id) if id.sym.as_ref() == "TaskGroup"));
+                && matches!(d.init.as_ref(),
+                Some(ast::Expression::NewExpression(new)) if matches!(&new.callee,
+                    ast::Expression::Identifier(id) if id.name.as_ref() == "TaskGroup"));
             let saved_group_type = self.task_group_type;
             self.task_group_type = group_local
-                && pattern_type_ann(&d.name).is_some_and(|ann| {
-                    super::type_reference_name(Some(&ann.type_ann)) == Some("TaskGroup")
+                && pattern_type_ann(d).is_some_and(|ann| {
+                    super::type_reference_name(Some(&ann.type_annotation)) == Some("TaskGroup")
                 });
-            let ann = pattern_type_ann(&d.name).map(|ann| self.resolve_type(&ann.type_ann));
+            let ann = pattern_type_ann(d).map(|ann| self.resolve_type(&ann.type_annotation));
             self.task_group_type = saved_group_type;
             let saved_group_local = self.task_group_local;
             self.task_group_local = group_local;
@@ -360,7 +398,7 @@ impl<'p> Checker<'p> {
                     .as_ref()
                     .is_some_and(|ty| self.apparent_type(ty) == Type::Error)
             {
-                self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
+                self.bind_error_names(&super::pattern::collect_names(&d.id), fx);
                 self.task_group_local = saved_group_local;
                 continue;
             }
@@ -390,7 +428,7 @@ impl<'p> Checker<'p> {
                     "a local without an initializer requires a type annotation",
                     pos.clone(),
                 );
-                self.bind_error_names(&super::pattern::collect_names(&d.name), fx);
+                self.bind_error_names(&super::pattern::collect_names(&d.id), fx);
                 fx.lambda_initializer = saved_lambda_initializer;
                 self.task_group_local = saved_group_local;
                 continue;
@@ -398,7 +436,7 @@ impl<'p> Checker<'p> {
             fx.lambda_initializer = saved_lambda_initializer;
             self.task_group_local = saved_group_local;
             let annotated =
-                pattern_type_ann(&d.name).is_some_and(|ann| self.written_type(&ann.type_ann));
+                pattern_type_ann(d).is_some_and(|ann| self.written_type(&ann.type_annotation));
             let ty = match ann {
                 Some(ann) => {
                     if !matches!(init.kind, hir::ExprKind::Unassigned) {
@@ -455,17 +493,17 @@ impl<'p> Checker<'p> {
             }
             // Only direct integer literals and their const aliases share a value identity.
             let integer_key = if !mutable {
-                match d.init.as_deref() {
-                    Some(ast::Expr::Lit(ast::Lit::Num(_))) => match &init.kind {
+                match d.init.as_ref() {
+                    Some(ast::Expression::NumericLiteral(_)) => match &init.kind {
                         hir::ExprKind::Int(value) => Some(format!("int:{value}")),
                         _ => None,
                     },
-                    Some(ast::Expr::Ident(ident)) => fx
+                    Some(ast::Expression::Identifier(ident)) => fx
                         .scopes
                         .iter()
                         .rev()
-                        .find(|scope| scope.vars.contains_key(ident.sym.as_ref()))
-                        .and_then(|scope| scope.const_keys.get(ident.sym.as_ref()))
+                        .find(|scope| scope.vars.contains_key(ident.name.as_ref()))
+                        .and_then(|scope| scope.const_keys.get(ident.name.as_ref()))
                         .filter(|identity| identity.starts_with("int:"))
                         .cloned(),
                     _ => None,
@@ -473,19 +511,19 @@ impl<'p> Checker<'p> {
             } else {
                 None
             };
-            let literal_operand = (!mutable && !dispose && pattern_type_ann(&d.name).is_none())
+            let literal_operand = (!mutable && !dispose && pattern_type_ann(d).is_none())
                 .then(|| {
                     d.init
-                        .as_deref()
+                        .as_ref()
                         .and_then(|source| self.checked_literal_operand(source, &init, fx))
                 })
                 .flatten();
             let async_origins = self.expr_async_origins(&init, fx);
-            let function_value_required = if pattern_type_ann(&d.name).is_some() {
+            let function_value_required = if pattern_type_ann(d).is_some() {
                 None
             } else {
                 d.init
-                    .as_deref()
+                    .as_ref()
                     .and_then(|source| self.inferred_function_required(source, &init, fx))
             };
             self.declare_local(
@@ -504,18 +542,17 @@ impl<'p> Checker<'p> {
             if let (Some(text), Some(scope)) = (literal_operand, fx.scopes.last_mut()) {
                 scope.literal_operands.insert(name.clone(), text);
             }
-            if pattern_type_ann(&d.name).is_none() {
+            if pattern_type_ann(d).is_none() {
                 if let Some(source) = &d.init {
                     // An element captured in a callable alias has its decided
                     // signature; calling the alias does not read the list again.
-                    let sources =
-                        if matches!(super::expr::unparen_expr(source), ast::Expr::Member(_))
-                            && matches!(self.apparent_type(&init.ty), Type::Func(_))
-                        {
-                            None
-                        } else {
-                            self.lambda_value_sources(source, fx)
-                        };
+                    let sources = if super::expr::unparen_expr(source).is_member_expression()
+                        && matches!(self.apparent_type(&init.ty), Type::Func(_))
+                    {
+                        None
+                    } else {
+                        self.lambda_value_sources(source, fx)
+                    };
                     if let Some(scope) = fx.scopes.last_mut() {
                         scope.result_sources.insert(name.clone(), sources);
                     }
@@ -554,8 +591,8 @@ impl<'p> Checker<'p> {
 
     pub(in crate::check) fn check_return(
         &mut self,
-        r: &ast::ReturnStmt,
-        fx: &mut FnCtx,
+        r: &ast::ReturnStatement,
+        fx: &mut FnCtx<'p>,
         out: &mut Vec<hir::Stmt>,
     ) {
         let pos = self.pos(r.span);
@@ -566,7 +603,7 @@ impl<'p> Checker<'p> {
             .unwrap_or((Type::Error, false));
         let poisoned_result = self.apparent_type(&ret) == Type::Error
             && fx.frames.last().is_some_and(|frame| frame.is_lambda);
-        if let Some(arg) = &r.arg {
+        if let Some(arg) = &r.argument {
             if fx
                 .frames
                 .last()
@@ -576,7 +613,7 @@ impl<'p> Checker<'p> {
                 return;
             }
         }
-        let value = match &r.arg {
+        let value = match &r.argument {
             Some(arg) if poisoned_result => Some(self.err_expr(self.pos(arg.span()))),
             Some(arg) if !is_generator && ret != Type::Void && self.is_undefined_token(arg, fx) => {
                 Some(self.check_return_undefined(arg, &ret))
@@ -661,8 +698,8 @@ impl<'p> Checker<'p> {
     /// 5), and the rejected return is returned for the caller to place.
     fn check_void_return(
         &mut self,
-        arg: &ast::Expr,
-        fx: &mut FnCtx,
+        arg: &ast::Expression,
+        fx: &mut FnCtx<'p>,
         pos: &crate::Pos,
         out: &mut Vec<hir::Stmt>,
     ) -> Option<hir::Expr> {
@@ -692,7 +729,7 @@ impl<'p> Checker<'p> {
         let arg = super::expr::unparen_expr(arg);
         let ret = Type::Void;
         let context = self.return_context(arg, &ret, fx);
-        if context == ret && matches!(arg, ast::Expr::Cond(_)) {
+        if context == ret && matches!(arg, ast::Expression::ConditionalExpression(_)) {
             // The leaves of one return give one diagnostic at the return.
             let outer = fx.frames.last_mut().and_then(|frame| {
                 frame
@@ -729,7 +766,7 @@ impl<'p> Checker<'p> {
         let diagnostics = self.diags.len();
         let (statements, ty) = self.check_void_operand(arg, fx);
         // compiler.md §318 rule 2: the present path adopts through §236.
-        if matches!(arg, ast::Expr::OptChain(_))
+        if matches!(arg, ast::Expression::ChainExpression(_))
             && fx.frames.last().is_some_and(|frame| frame.is_async)
             && matches!(self.apparent_type(&ty), Type::AsyncHandle(inner) if self.apparent_type(&inner) == Type::Void)
         {
@@ -757,7 +794,12 @@ impl<'p> Checker<'p> {
     /// `void` result (compiler.md §237 rule 5). An operand that gave a
     /// diagnostic gives no second one. The leaves of a split return give
     /// one diagnostic, at the return.
-    fn reject_void_return_value(&mut self, diagnostics: usize, fx: &mut FnCtx, pos: &crate::Pos) {
+    fn reject_void_return_value(
+        &mut self,
+        diagnostics: usize,
+        fx: &mut FnCtx<'p>,
+        pos: &crate::Pos,
+    ) {
         if self.diags.len() != diagnostics {
             return;
         }
@@ -785,7 +827,7 @@ impl<'p> Checker<'p> {
     pub(in crate::check) fn read_statement_handles(
         &mut self,
         statements: &[hir::Stmt],
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
     ) {
         for statement in statements {
             match statement {
@@ -802,7 +844,7 @@ impl<'p> Checker<'p> {
     /// Checks `return undefined;` (compiler.md §195.2 rule 1). In a
     /// function whose result is `T | undefined`, the value is the HIR of
     /// `return null;`.
-    fn check_return_undefined(&mut self, arg: &ast::Expr, ret: &Type) -> hir::Expr {
+    fn check_return_undefined(&mut self, arg: &ast::Expression, ret: &Type) -> hir::Expr {
         let pos = self.pos(arg.span());
         match self.apparent_type(ret) {
             Type::Nullable(_, crate::types::Absence::Undefined) => hir::Expr {
@@ -851,14 +893,18 @@ impl<'p> Checker<'p> {
 
     /// Checks a branch body (a block or a single statement) in its own
     /// scope. Returns the statements and whether the branch terminates.
-    pub(super) fn check_branch(&mut self, s: &ast::Stmt, fx: &mut FnCtx) -> (Vec<hir::Stmt>, bool) {
+    pub(super) fn check_branch(
+        &mut self,
+        s: &ast::Statement,
+        fx: &mut FnCtx<'p>,
+    ) -> (Vec<hir::Stmt>, bool) {
         let reachable = fx.flow_reachable;
         fx.scopes.push(Default::default());
         let mut out = Vec::new();
         let _terminates = match s {
-            ast::Stmt::Block(b) => {
-                self.reserve_block_declarations(&b.stmts, fx);
-                for s in &b.stmts {
+            ast::Statement::BlockStatement(b) => {
+                self.reserve_block_declarations(&b.body, fx);
+                for s in &b.body {
                     self.check_stmt(s, fx, &mut out);
                 }
                 !super::fallthrough::sequence_can_fall_through(&out)
@@ -872,7 +918,12 @@ impl<'p> Checker<'p> {
         (out, terminates)
     }
 
-    fn check_if(&mut self, i: &ast::IfStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) -> bool {
+    fn check_if(
+        &mut self,
+        i: &ast::IfStatement,
+        fx: &mut FnCtx<'p>,
+        out: &mut Vec<hir::Stmt>,
+    ) -> bool {
         let pos = self.pos(i.span);
         let cond = self.check_truth_expr(&i.test, fx);
         self.require_bool(&cond);
@@ -887,7 +938,7 @@ impl<'p> Checker<'p> {
         fx.narrowed.retain(|key| !else_extra.contains(key));
         fx.narrowed.extend_facts(then_extra.clone());
         fx.replace_finally_causes_at_facts();
-        let (then_stmts, _) = self.check_branch(&i.cons, fx);
+        let (then_stmts, _) = self.check_branch(&i.consequent, fx);
         let then_term = !super::fallthrough::sequence_can_fall_through(&then_stmts);
         let then_finally = fx.finally_ended_narrowing.clone();
         let then_loop_notes = fx.loop_ended_narrowing.clone();
@@ -900,7 +951,7 @@ impl<'p> Checker<'p> {
         fx.narrowed.retain(|key| !then_extra.contains(key));
         fx.narrowed.extend_facts(else_extra);
         fx.replace_finally_causes_at_facts();
-        let (els_stmts, _) = match &i.alt {
+        let (els_stmts, _) = match &i.alternate {
             Some(alt) => {
                 let (stmts, term) = self.check_branch(alt, fx);
                 (Some(stmts), term)
@@ -958,7 +1009,7 @@ impl<'p> Checker<'p> {
     /// `for…of`.
     pub(super) fn for_of_binding<'a>(
         &mut self,
-        head: &'a ast::ForHead,
+        head: &'a ast::ForStatementLeft,
     ) -> Option<(
         super::pattern::Pattern<'a>,
         bool,
@@ -966,8 +1017,13 @@ impl<'p> Checker<'p> {
         Option<Type>,
     )> {
         let (declarations, mutable, declaration_pos) = match head {
-            ast::ForHead::VarDecl(decl) => {
-                if decl.kind == ast::VarDeclKind::Var {
+            ast::ForStatementLeft::VariableDeclaration(decl)
+                if !matches!(
+                    decl.kind,
+                    ast::VariableDeclarationKind::Using | ast::VariableDeclarationKind::AwaitUsing
+                ) =>
+            {
+                if decl.kind == ast::VariableDeclarationKind::Var {
                     self.reject_subset(
                         RejectionSite::ForOfVarBinding,
                         "`var` is not in the language; use `let` or `const`",
@@ -975,22 +1031,22 @@ impl<'p> Checker<'p> {
                     );
                 }
                 (
-                    &decl.decls,
-                    decl.kind == ast::VarDeclKind::Let,
+                    &decl.declarations,
+                    decl.kind == ast::VariableDeclarationKind::Let,
                     self.pos(decl.span),
                 )
             }
-            ast::ForHead::UsingDecl(using) => {
+            ast::ForStatementLeft::VariableDeclaration(using) => {
                 self.reject_subset(
                     RejectionSite::ForOfAwaitUsing,
-                    if using.is_await {
+                    if using.kind == ast::VariableDeclarationKind::AwaitUsing {
                         "`await using` in a `for` head is not in the decided surface"
                     } else {
                         "`using` in a `for` head is not in the decided surface"
                     },
                     self.pos(using.span),
                 );
-                (&using.decls, false, self.pos(using.span))
+                (&using.declarations, false, self.pos(using.span))
             }
             _ => {
                 self.reject_subset(
@@ -1017,10 +1073,10 @@ impl<'p> Checker<'p> {
                 self.pos(binding.span),
             );
         }
-        let pattern = super::pattern::classify(&binding.name);
+        let pattern = super::pattern::classify(&binding.id);
         let pos = self.pos(pattern.span());
         let annotation =
-            pattern_type_ann(&binding.name).map(|ann| self.resolve_type(&ann.type_ann));
+            pattern_type_ann(binding).map(|ann| self.resolve_type(&ann.type_annotation));
         Some((pattern, mutable, pos, annotation))
     }
 
@@ -1032,8 +1088,8 @@ impl<'p> Checker<'p> {
     /// through the subject, the fused views included.
     pub(super) fn check_for_of_subject(
         &mut self,
-        expression: &ast::Expr,
-        fx: &mut FnCtx,
+        expression: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
         let saved_for_of_subject = self.in_for_of_subject;
         self.in_for_of_subject = true;
@@ -1046,10 +1102,10 @@ impl<'p> Checker<'p> {
     /// `in_for_of_subject` set on every path.
     pub(super) fn check_for_of_subject_under_flag(
         &mut self,
-        expression: &ast::Expr,
-        fx: &mut FnCtx,
+        expression: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
-        if let ast::Expr::Call(call) = expression {
+        if let ast::Expression::CallExpression(call) = expression {
             // A fused view call enters the checker here (compiler.md §230 rule 3).
             type Subject = (hir::Expr, Option<hir::ForOfKind>, Type, bool);
             let poisoned = |checker: &Self, (subject, _, element, _): &Subject| {
@@ -1067,16 +1123,17 @@ impl<'p> Checker<'p> {
     /// [`Self::check_for_of_subject_under_flag`] for a call subject.
     fn check_for_of_call_subject(
         &mut self,
-        call: &ast::CallExpr,
-        expression: &ast::Expr,
-        fx: &mut FnCtx,
+        call: &ast::CallExpression,
+        expression: &ast::Expression,
+        fx: &mut FnCtx<'p>,
     ) -> (hir::Expr, Option<hir::ForOfKind>, Type, bool) {
-        if let ast::Callee::Expr(callee) = &call.callee {
-            if let ast::Expr::Member(member) = &**callee {
-                if let ast::MemberProp::Ident(prop) = &member.prop {
-                    let name = prop.sym.as_ref();
+        {
+            if let ast::Expression::StaticMemberExpression(member) = &call.callee {
+                {
+                    let prop = &member.property;
+                    let name = prop.name.as_ref();
                     if matches!(name, "keys" | "values" | "entries") {
-                        let recv = self.check_expr(&member.obj, None, fx);
+                        let recv = self.check_expr(&member.object, None, fx);
                         // The view rules reach the §14.1 containers
                         // only. On any other receiver the three names
                         // are ordinary members (compiler.md §103.2).
@@ -1094,9 +1151,11 @@ impl<'p> Checker<'p> {
                             );
                             return (recv, None, Type::Error, false);
                         }
-                        if !call.args.is_empty() {
+                        if !call.arguments.is_empty() {
                             self.reject_subset(
-                                if call.args.iter().all(|argument| argument.spread.is_some()) {
+                                if call.arguments.iter().all(|argument| {
+                                    matches!(argument, ast::Argument::SpreadElement(_))
+                                }) {
                                     RejectionSite::IteratorMethodArgumentCount
                                 } else {
                                     RejectionSite::IteratorMethodValueArgumentCount
@@ -1212,11 +1271,16 @@ impl<'p> Checker<'p> {
         (subject, None, Type::Error, false)
     }
 
-    fn check_switch(&mut self, sw: &ast::SwitchStmt, fx: &mut FnCtx, out: &mut Vec<hir::Stmt>) {
+    fn check_switch(
+        &mut self,
+        sw: &ast::SwitchStatement,
+        fx: &mut FnCtx<'p>,
+        out: &mut Vec<hir::Stmt>,
+    ) {
         let pos = self.pos(sw.span);
         let mut disc = self.check_expr(&sw.discriminant, None, fx);
         let subject_literal = self.checked_literal_operand(&sw.discriminant, &disc, fx);
-        let prior_literal_test = self.literal_test_precedes(&disc, sw.span.lo, false, fx);
+        let prior_literal_test = self.literal_test_precedes(&disc, sw.span.start, false, fx);
         if !self.instance_restriction(
             crate::check::opaque::InstanceRestriction::SwitchKind,
             &disc.ty,
@@ -1250,26 +1314,25 @@ impl<'p> Checker<'p> {
             ..Default::default()
         });
         for (case_index, case) in sw.cases.iter().enumerate() {
-            self.reserve_block_declarations(&case.cons, fx);
+            self.reserve_block_declarations(&case.consequent, fx);
             if let Some(scope) = fx.scopes.last_mut() {
-                for statement in &case.cons {
-                    let ast::Stmt::Decl(declaration) = statement else {
+                for statement in &case.consequent {
+                    let Some(declaration) = super::module_decl(statement) else {
                         continue;
                     };
                     let declarators = match declaration {
-                        ast::Decl::Var(declaration)
-                            if declaration.kind != ast::VarDeclKind::Var =>
+                        ast::Declaration::VariableDeclaration(declaration)
+                            if declaration.kind != ast::VariableDeclarationKind::Var =>
                         {
-                            &declaration.decls
+                            &declaration.declarations
                         }
-                        ast::Decl::Using(declaration) => &declaration.decls,
                         _ => continue,
                     };
                     for declarator in declarators {
-                        if let ast::Pat::Ident(binding) = &declarator.name {
+                        if let ast::BindingPattern::BindingIdentifier(binding) = &declarator.id {
                             scope
                                 .switch_declarations
-                                .entry(binding.id.sym.to_string())
+                                .entry(binding.name.to_string())
                                 .or_insert(case_index);
                         }
                     }
@@ -1319,7 +1382,7 @@ impl<'p> Checker<'p> {
                 fx.narrowed.retain(|key| previous.facts.contains(key));
             }
             let mut body = Vec::new();
-            for s in &case.cons {
+            for s in &case.consequent {
                 self.check_stmt(s, fx, &mut body);
             }
             let terminates = !super::fallthrough::sequence_can_fall_through(&body);

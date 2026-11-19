@@ -5,7 +5,7 @@
 //! it can name a later declaration (rule 3). A reference that reaches the
 //! alias again is one S100 at that alias (rule 4).
 
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
 
 use super::{module_decl, Checker, ScopeItem};
 use crate::check::rejection::{diagnostic, RejectionSite};
@@ -46,47 +46,53 @@ impl SourceAlias {
 /// direct reference: one that only unions and parentheses enclose.
 /// `tsc` defers the other references, so a cycle through one of them is
 /// a cycle that `tsc` accepts.
-fn references<'a>(ty: &'a ast::TsType, direct: bool, out: &mut Vec<(&'a str, bool)>) {
+fn references<'a>(ty: &'a ast::TSType, direct: bool, out: &mut Vec<(&'a str, bool)>) {
     match ty {
-        ast::TsType::TsTypeRef(reference) => {
-            if let ast::TsEntityName::Ident(ident) = &reference.type_name {
-                out.push((ident.sym.as_ref(), direct));
+        ast::TSType::TSTypeReference(reference) => {
+            if let ast::TSTypeName::IdentifierReference(ident) = &reference.type_name {
+                out.push((ident.name.as_ref(), direct));
             }
-            if let Some(arguments) = &reference.type_params {
+            if let Some(arguments) = &reference.type_arguments {
                 for argument in &arguments.params {
                     references(argument, false, out);
                 }
             }
         }
-        ast::TsType::TsParenthesizedType(inner) => references(&inner.type_ann, direct, out),
-        ast::TsType::TsUnionOrIntersectionType(ast::TsUnionOrIntersectionType::TsUnionType(
-            union,
-        )) => {
+        ast::TSType::TSParenthesizedType(inner) => references(&inner.type_annotation, direct, out),
+        ast::TSType::TSUnionType(union) => {
             for member in &union.types {
                 references(member, direct, out);
             }
         }
-        ast::TsType::TsUnionOrIntersectionType(
-            ast::TsUnionOrIntersectionType::TsIntersectionType(intersection),
-        ) => {
+        ast::TSType::TSIntersectionType(intersection) => {
             for member in &intersection.types {
                 references(member, direct, out);
             }
         }
-        ast::TsType::TsArrayType(array) => references(&array.elem_type, false, out),
-        ast::TsType::TsFnOrConstructorType(ast::TsFnOrConstructorType::TsFnType(function)) => {
-            for parameter in &function.params {
-                let annotation = match parameter {
-                    ast::TsFnParam::Ident(binding) => binding.type_ann.as_deref(),
-                    ast::TsFnParam::Rest(rest) => rest.type_ann.as_deref(),
-                    ast::TsFnParam::Array(array) => array.type_ann.as_deref(),
-                    ast::TsFnParam::Object(object) => object.type_ann.as_deref(),
-                };
-                if let Some(annotation) = annotation {
-                    references(&annotation.type_ann, false, out);
-                }
+        ast::TSType::TSArrayType(array) => references(&array.element_type, false, out),
+        ast::TSType::TSFunctionType(function) => {
+            for annotation in function
+                .this_param
+                .iter()
+                .filter_map(|p| p.type_annotation.as_ref())
+                .chain(
+                    function
+                        .params
+                        .items
+                        .iter()
+                        .filter_map(|p| p.type_annotation.as_ref()),
+                )
+                .chain(
+                    function
+                        .params
+                        .rest
+                        .iter()
+                        .filter_map(|p| p.type_annotation.as_ref()),
+                )
+            {
+                references(&annotation.type_annotation, false, out);
             }
-            references(&function.type_ann.type_ann, false, out);
+            references(&function.return_type.type_annotation, false, out);
         }
         _ => {}
     }
@@ -139,8 +145,8 @@ impl<'p> Checker<'p> {
 
     /// The aliased type of alias `id`, read from the program form that
     /// the namespace pass rewrote.
-    fn source_alias_type(&self, id: usize) -> Option<&'p ast::TsType> {
-        let prog = self.prog;
+    fn source_alias_type(&self, id: usize) -> Option<&'p ast::TSType<'p>> {
+        let prog: &'p crate::parse::ParsedProgram<'p> = self.prog;
         let alias = &self.source_aliases[id];
         prog.files
             .get(alias.file)?
@@ -149,10 +155,10 @@ impl<'p> Checker<'p> {
             .iter()
             .filter_map(module_decl)
             .find_map(|decl| match decl {
-                ast::Decl::TsTypeAlias(declaration)
-                    if declaration.id.sym.as_ref() == alias.name =>
+                ast::Declaration::TSTypeAliasDeclaration(declaration)
+                    if declaration.id.name.as_ref() == alias.name =>
                 {
-                    Some(&*declaration.type_ann)
+                    Some(&declaration.type_annotation)
                 }
                 _ => None,
             })

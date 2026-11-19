@@ -7,11 +7,12 @@
 //! tree before constructing any language value. Representation-neutral
 //! leaves go through the shared `subscript_rt_json_*` runtime.
 
+use super::argument_expression;
 use crate::check::rejection::{RejectionFailure, RejectionSite};
 use std::collections::HashSet;
 
-use swc_common::Spanned;
-use swc_ecma_ast as ast;
+use oxc_ast::ast;
+use oxc_span::GetSpan;
 
 use crate::diag::Pos;
 use crate::hir::{self, BinOp, Callee, ExprKind, JsonFn, UnOp};
@@ -20,7 +21,7 @@ use crate::types::{ClassId, Type};
 use super::exception::ErrorKind;
 use super::{Checker, FnCtx};
 
-impl Checker<'_> {
+impl<'p> Checker<'p> {
     fn json_call(&self, function: JsonFn, args: Vec<hir::Expr>, ty: Type, pos: &Pos) -> hir::Expr {
         hir::Expr {
             pending_work: None,
@@ -34,7 +35,7 @@ impl Checker<'_> {
     }
 
     /// True when `obj` denotes the unshadowed ambient `JSON` namespace.
-    pub(crate) fn is_json_namespace(&self, obj: &ast::Expr, fx: &FnCtx) -> bool {
+    pub(crate) fn is_json_namespace(&self, obj: &ast::Expression, fx: &FnCtx) -> bool {
         self.ambient_namespace(obj, fx) == Some("JSON")
     }
 
@@ -42,9 +43,9 @@ impl Checker<'_> {
     pub(crate) fn check_json_call(
         &mut self,
         member: &str,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         member_pos: Pos,
     ) -> hir::Expr {
@@ -59,19 +60,19 @@ impl Checker<'_> {
             );
             return self.err_expr(pos);
         }
-        if call.args.len() != 1 {
+        if call.arguments.len() != 1 {
             self.reject_subset(
                 RejectionSite::JsonStringifyCount,
                 format!(
                     "`JSON.stringify` expects exactly 1 argument, got {}",
-                    call.args.len()
+                    call.arguments.len()
                 ),
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
-        if let Some(spread) = call.args[0].spread {
-            let spread_pos = self.pos(spread);
+        if let ast::Argument::SpreadElement(spread) = &call.arguments[0] {
+            let spread_pos = self.pos(spread.span);
             self.reject_subset(
                 RejectionSite::JsonStringifySpread,
                 "spread arguments require variadic parameters, which the language does not have",
@@ -81,7 +82,7 @@ impl Checker<'_> {
         }
         let saved_json_argument = self.in_json_argument;
         self.in_json_argument = true;
-        let value = self.check_expr(&call.args[0].expr, None, fx);
+        let value = self.check_expr(argument_expression(&call.arguments[0]), None, fx);
         self.in_json_argument = saved_json_argument;
         if self.apparent_type(&(value.ty)) == Type::Error {
             return self.err_expr(pos);
@@ -147,13 +148,16 @@ impl Checker<'_> {
 
     fn check_json_parse(
         &mut self,
-        call: &ast::CallExpr,
+        call: &ast::CallExpression,
         ctx: Option<&Type>,
-        fx: &mut FnCtx,
+        fx: &mut FnCtx<'p>,
         pos: Pos,
         member_pos: Pos,
     ) -> hir::Expr {
-        if let Some(spread) = call.args.iter().find_map(|argument| argument.spread) {
+        if let Some(spread) = call.arguments.iter().find_map(|argument| match argument {
+            ast::Argument::SpreadElement(spread) => Some(spread.span),
+            _ => None,
+        }) {
             let spread_pos = self.pos(spread);
             self.reject_subset(
                 RejectionSite::JsonParseSpread,
@@ -163,23 +167,23 @@ impl Checker<'_> {
             return self.err_expr(spread_pos);
         }
 
-        if call.args.len() != 1 {
+        if call.arguments.len() != 1 {
             self.reject_subset(
-                if call.args.len() == 2 {
+                if call.arguments.len() == 2 {
                     RejectionSite::JsonParseReviver
                 } else {
                     RejectionSite::JsonParseCount
                 },
                 format!(
                     "`JSON.parse` expects exactly 1 argument, got {}",
-                    call.args.len()
+                    call.arguments.len()
                 ),
                 pos.clone(),
             );
             return self.err_expr(pos);
         }
         // `spelling` is the target as the source spells it (§115.7 rule 5).
-        let (target, spelling) = if let Some(type_args) = &call.type_args {
+        let (target, spelling) = if let Some(type_args) = &call.type_arguments {
             if type_args.params.len() != 1 {
                 self.reject_subset(
                     RejectionSite::JsonParseTypeCount,
@@ -209,7 +213,11 @@ impl Checker<'_> {
         if self.apparent_type(&(target)) == Type::Error {
             return self.err_expr(pos);
         }
-        let mut text = self.check_expr(&call.args[0].expr, Some(&Type::Str), fx);
+        let mut text = self.check_expr(
+            argument_expression(&call.arguments[0]),
+            Some(&Type::Str),
+            fx,
+        );
         self.require_expr_assignable(&mut text, &Type::Str, fx, "`JSON.parse` text");
         if self.apparent_type(&(text.ty)) == Type::Error {
             return self.err_expr(pos);

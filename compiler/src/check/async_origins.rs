@@ -105,7 +105,7 @@ impl AsyncOrigin {
     }
 }
 
-impl FnCtx {
+impl FnCtx<'_> {
     pub(crate) fn register_async_origin(&mut self, pos: Pos) -> u32 {
         let id = self.async_origins.len() as u32;
         self.async_origins.push(AsyncOrigin {
