@@ -145,3 +145,4 @@ v24.18.0):
    (C25): its error lines differ from `node`, and the gate's `node`
    runner gives no scratch directory. The read and write path is not
    compared with `node` yet.
+   *(Closed 2026-11-19 by §340: `a492` runs under `node`.)*

@@ -347,10 +347,10 @@ a time, cost about 73 s debug and 57 s release of codegen + CLI wall.
 
 - MINOR 10: `isolation.rs` and `entry.rs` hold `expect` calls on
   invariants of a live temporary file. They do not fail for a valid
-  run.
+  run. *(Closed 2026-11-19 by `compiler.md` §340 rule 3.)*
 - MINOR 11: if `waitpid` returns an error other than `EINTR`,
   `collect_child` returns `RunError::Internal` and does not reap the
-  child.
+  child. *(Closed 2026-11-19 by `compiler.md` §340 rule 4.)*
 - D: the request form encodes `SourceFile` and `CheckOptions` field by
   field. Both are `non_exhaustive` structs of another crate, so a new
   field does not fail the build here; the round-trip test compares the
@@ -438,3 +438,30 @@ after.
 
 Open: Apple targets keep the 2 ms re-read; no Apple run under load is
 measured.
+
+## macOS: a joined thread leaves the count at once
+
+Date: 2026-11-19. Revision: `eaaecee4`. Host: arm64 macOS, 8 cores.
+
+### Fact
+
+The release gate of 2026-11-18 at `4239b6af` failed
+`a_pointer_target_is_written_back` in `cli/tests/read_root.rs` once,
+with the §190.1 rule 3 error "(the process has 2 threads)". The next
+run passed. The message did not name the thread.
+
+### Measurement
+
+A C program starts and joins one thread, then counts with
+`task_threads` at once, 5,000 cycles a run. If the count is above 1, it
+counts again until the count is 1.
+
+| Load | Count above 1, each run | Longest time to count 1 |
+|---|---|---:|
+| none | 820, 404 | 0.028 ms |
+| 16 busy processes | 1,004, 520, 3,767 | 0.027 ms |
+
+The 2 ms re-read of the Apple form covers a joined thread. So the
+second thread of the failure was a live thread. §340 rule 5 makes the
+rule 1 and rule 3 messages name each other thread, so the next failure
+gives its source.

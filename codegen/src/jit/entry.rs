@@ -224,12 +224,13 @@ pub(super) fn execute_entry_retained(
     let mut protocol = TemporaryFile::new("protocol")?;
     let mut stderr = TemporaryFile::new("stderr")?;
 
+    let stderr_fd = stderr.file_mut()?.as_raw_fd();
+    let protocol_writer = protocol.file_mut()?;
     let threads = isolation::thread_count_for_run(settle);
     if threads != Some(1) {
-        return Err(RunError::Internal(internal(format!(
-            "{} (the process has {} threads)",
+        return Err(RunError::Internal(internal(isolation::thread_failure(
             isolation::RULE_1_MESSAGE,
-            isolation::describe_count(threads)
+            threads,
         ))));
     }
     // SAFETY: the process has one thread, so no other thread holds a lock
@@ -245,11 +246,6 @@ pub(super) fn execute_entry_retained(
         ))));
     }
     if child == 0 {
-        let stderr_fd = stderr
-            .file
-            .as_ref()
-            .expect("live JIT child stderr")
-            .as_raw_fd();
         // SAFETY: both descriptors are live in the forked child. Redirecting
         // stderr keeps panic and signal diagnostics with the returned error.
         if unsafe { libc::dup2(stderr_fd, libc::STDERR_FILENO) } < 0 {
@@ -258,11 +254,7 @@ pub(super) fn execute_entry_retained(
             unsafe { libc::_exit(122) };
         }
         let outcome = execute_entry(module, lowered, options, Some(writer));
-        let written = write_outcome(
-            protocol.file.as_mut().expect("live JIT child protocol"),
-            &outcome,
-        )
-        .is_ok();
+        let written = write_outcome(protocol_writer, &outcome).is_ok();
         // SAFETY: this is the forked child. `_exit` avoids running inherited
         // parent destructors or freeing the parent's JIT mappings.
         unsafe { libc::_exit(if written { 0 } else { 121 }) };
@@ -281,21 +273,46 @@ pub(super) fn collect_child(
     stderr: &mut TemporaryFile,
     protocol: &mut TemporaryFile,
 ) -> Result<Vec<u8>, RunError> {
+    collect_child_with_wait(child, output, stderr, protocol, wait_child)
+}
+
+#[cfg(unix)]
+fn wait_child(child: libc::pid_t, status: &mut libc::c_int) -> std::io::Result<libc::pid_t> {
+    // SAFETY: the caller supplies a child PID and live status storage.
+    let waited = unsafe { libc::waitpid(child, status, 0) };
+    if waited < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(waited)
+    }
+}
+
+#[cfg(unix)]
+fn collect_child_with_wait(
+    child: libc::pid_t,
+    output: &mut RetainedOutput,
+    stderr: &mut TemporaryFile,
+    protocol: &mut TemporaryFile,
+    mut wait: impl FnMut(libc::pid_t, &mut libc::c_int) -> std::io::Result<libc::pid_t>,
+) -> Result<Vec<u8>, RunError> {
     let mut status = 0;
     loop {
-        // SAFETY: `child` is the positive PID of a child of this process;
-        // `status` is live writable storage and this parent waits for that
-        // child only.
-        let waited = unsafe { libc::waitpid(child, &mut status, 0) };
-        if waited == child {
-            break;
-        }
-        if waited < 0 && std::io::Error::last_os_error().kind() == std::io::ErrorKind::Interrupted {
-            continue;
+        let error = match wait(child, &mut status) {
+            Ok(waited) if waited == child => break,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => error,
+            Ok(waited) => std::io::Error::other(format!("unexpected child PID {waited}")),
+        };
+        // SAFETY: `child` is the owned child PID. SIGKILL stops a live child.
+        unsafe { libc::kill(child, libc::SIGKILL) };
+        loop {
+            match wait_child(child, &mut status) {
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+                _ => break,
+            }
         }
         return Err(RunError::Internal(internal(format!(
-            "wait for JIT child: {}",
-            std::io::Error::last_os_error()
+            "wait for JIT child: {error}"
         ))));
     }
 
@@ -434,5 +451,55 @@ mod retained_output_tests {
         assert!(message.contains("trap ["), "{message}");
         // SAFETY: no entry or Context refers to the finalized code.
         unsafe { module.free_memory() };
+    }
+}
+
+#[cfg(all(test, unix))]
+mod wait_tests {
+    use super::*;
+
+    // compiler.md §340 rule 4: debug 9.1 ms; 0 C builds.
+    #[test]
+    fn a_wait_error_stops_and_reaps_a_live_child() {
+        let measured = std::time::Instant::now();
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let pid = child.id() as libc::pid_t;
+        let mut output = RetainedOutput::open(None).unwrap();
+        let mut stderr = TemporaryFile::new("stderr").unwrap();
+        let mut protocol = TemporaryFile::new("protocol").unwrap();
+        let mut calls = 0;
+        let outcome =
+            collect_child_with_wait(pid, &mut output, &mut stderr, &mut protocol, |_, _| {
+                calls += 1;
+                Err(std::io::Error::from_raw_os_error(libc::EINVAL))
+            });
+        let mut status = 0;
+        // SAFETY: pid identifies this test's child; status is live writable storage.
+        let waited = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+        let error = std::io::Error::last_os_error();
+        if waited == 0 {
+            // SAFETY: the test owns this live child. Reap it even if the assertion fails.
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+                libc::waitpid(pid, &mut status, 0);
+            }
+        }
+        // compiler.md §340 rule 4: waitpid above supplies the independent reap observation.
+        // Child also completes its ownership protocol after that observation and any cleanup.
+        assert_eq!(child.wait().unwrap_err().raw_os_error(), Some(libc::ECHILD));
+        assert_eq!(calls, 1);
+        assert!(
+            matches!(outcome, Err(RunError::Internal(ref message)) if message.contains("wait for JIT child")),
+            "{outcome:?}"
+        );
+        assert_eq!(waited, -1, "the child was not reaped");
+        assert_eq!(error.raw_os_error(), Some(libc::ECHILD));
+        eprintln!(
+            "a_wait_error_stops_and_reaps_a_live_child cost: {:?}",
+            measured.elapsed()
+        );
     }
 }

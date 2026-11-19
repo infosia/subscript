@@ -30,6 +30,17 @@ pub(super) const RULE_3_MESSAGE: &str = "compiler.md §190.1 rule 3: a dev run w
     library or a file provider needs a single-threaded caller; run it on the main thread of a \
     process that has no other thread";
 
+#[path = "thread_names.rs"]
+mod thread_names;
+
+pub(super) fn thread_failure(rule: &str, threads: Option<usize>) -> String {
+    format!(
+        "{rule} (the process has {} threads; other threads: {})",
+        describe_count(threads),
+        thread_names::other_threads()
+    )
+}
+
 /// The number of threads in this process, or `None` if the platform
 /// does not give it.
 #[cfg(target_vendor = "apple")]
@@ -197,9 +208,9 @@ pub(super) fn run_multithreaded(
     hir.runner_main()
         .map_err(|diagnostic| RunError::Rejected(vec![diagnostic]))?;
     if !native_libraries.is_empty() || file_provider.is_some() {
-        return Err(RunError::Internal(internal(format!(
-            "{RULE_3_MESSAGE} (the process has {} threads)",
-            describe_count(threads)
+        return Err(RunError::Internal(internal(thread_failure(
+            RULE_3_MESSAGE,
+            threads,
         ))));
     }
     #[cfg(any(target_vendor = "apple", all(target_os = "linux", target_env = "gnu")))]
@@ -343,7 +354,7 @@ mod runner {
         let mut protocol = TemporaryFile::new("protocol")?;
         let mut stderr = TemporaryFile::new("stderr")?;
         {
-            let file = request_file.file.as_mut().expect("live JIT runner request");
+            let file = request_file.file_mut()?;
             file.write_all(&request.encode())
                 .and_then(|()| file.flush())
                 .map_err(|error| {
@@ -355,9 +366,9 @@ mod runner {
         let args = [
             runner_path.clone(),
             RUNNER_SENTINEL.to_owned(),
-            path_c_string(request_file.path(), "request path")?,
+            path_c_string(request_file.path()?, "request path")?,
             path_c_string(output.path(), "output path")?,
-            path_c_string(protocol.path(), "protocol path")?,
+            path_c_string(protocol.path()?, "protocol path")?,
         ];
         let mut argv: Vec<*mut libc::c_char> =
             args.iter().map(|arg| arg.as_ptr().cast_mut()).collect();
@@ -380,7 +391,7 @@ mod runner {
             .map(|pair| pair.as_ptr().cast_mut())
             .collect();
         envp.push(std::ptr::null_mut());
-        let stderr_path = path_c_string(stderr.path(), "stderr path")?;
+        let stderr_path = path_c_string(stderr.path()?, "stderr path")?;
 
         let mut actions = std::mem::MaybeUninit::<libc::posix_spawn_file_actions_t>::uninit();
         // SAFETY: `actions` is storage for one file-actions object.

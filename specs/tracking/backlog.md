@@ -1,6 +1,6 @@
 # Backlog: open items in priority order
 
-Status: triage at `2551f81a` (2026-11-17), updated by §324–§339. It
+Status: triage at `2551f81a` (2026-11-17), updated by §324–§340. It
 comes from the Open lists of the contract sections, `specs/tracking/`, and `specs/blocks/collisions.md`.
 The triage read the repository. It did not run the CLI, so re-measure
 an item before a section starts it.
@@ -39,14 +39,6 @@ No item is open in this group.
 
 20. Platform runs not recorded: §298.4 item 1 (`cl`), §280.4 item 3
     (Windows), §226.4 items 1–3 (x86-64), §225.4 item 1, C4029 (§183).
-21. `a355` has no `node` run (§185.4 item 2); `jit-runner-fork.md`
-    Open MINOR items; the `bound-call` benchmark exits 2 on its
-    decomposition check at the pin of §325 and after (§325.5 item 5);
-    one release gate run (2026-11-18) failed
-    `a_pointer_target_is_written_back` in `cli/tests/read_root.rs`
-    because the process had two threads at a development run that
-    needs one (§190.1 rule 3), and the next run passed (cause not
-    found).
 
 ## 4. Diagnostic messages
 
@@ -88,6 +80,7 @@ No item is open in this group.
 - Tutorial: §323.4 item 4.
 - Tests: §337.5 item 1, §338.5 items 1–5.
 - Diagnostics: §339.5 item 1.
+- Gate and runner: §340.5 items 1–4.
 
 ## 7. Process and tooling
 

@@ -109,23 +109,36 @@ fn native_program() -> (Vec<SourceFile>, NativeLibrary) {
 /// Windows runs the dev tier in process (§190.1 rule 7), so the rule
 /// applies on Unix only.
 #[cfg(unix)]
+// compiler.md §340 rule 5: debug 5.0 ms; 0 C builds.
 fn a_native_run_with_a_second_thread_is_the_rule_3_error() {
+    let measured = std::time::Instant::now();
     use subscript_codegen::RunError;
 
     let (files, library) = native_program();
     let (stop, wait) = std::sync::mpsc::channel::<()>();
-    let second = std::thread::spawn(move || {
-        let _ = wait.recv();
-    });
+    let (ready, started) = std::sync::mpsc::channel();
+    let second = std::thread::Builder::new()
+        .name("s340-native".into())
+        .spawn(move || {
+            ready.send(()).unwrap();
+            let _ = wait.recv();
+        })
+        .expect("start the named thread");
+    started.recv().unwrap();
     let outcome = run_jit_with_native_libraries(&files, std::slice::from_ref(&library));
     stop.send(()).expect("stop the second thread");
     second.join().expect("join the second thread");
     match outcome {
         Err(RunError::Internal(message)) => {
             assert!(message.contains("§190.1 rule 3"), "{message}");
+            assert!(message.contains("s340-native"), "{message}");
         }
         other => panic!("expected the rule 3 error, got {other:?}"),
     }
+    eprintln!(
+        "a_native_run_with_a_second_thread_is_the_rule_3_error cost: {:?}",
+        measured.elapsed()
+    );
 }
 
 /// §190.1 rule 3: a native run listed in phase 1 runs on a harness

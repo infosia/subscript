@@ -84,3 +84,64 @@ Problem, measured at `eaaecee4`:
    names it. A control without the second thread runs.
 5. The implementation commit records the macOS measurement of
    problem 5 in `specs/tracking/jit-runner-fork.md`.
+
+### 340.3 Sections this one amends
+
+- §185.4 item 2 closes. §325.5 item 5 closes.
+- `specs/tracking/jit-runner-fork.md` MINOR 10 and MINOR 11 close.
+
+### 340.4 Phase Review
+
+Form.
+
+- Rule 1: `corpus/node/run-js-corpus.cjs` resolves the entry path,
+  makes a new directory for an entry with `file-provider: scratch`,
+  and in `finally` restores the directory and removes the new one.
+- Rule 2: the `bound-call` mimic, no-trap, and hoisted subjects hold
+  the operations of the emitted region (`benchmarks/src/bin/bound-call.rs`).
+- Rules 3 and 4: `codegen/src/jit/output.rs`, `entry.rs`, and
+  `isolation.rs` return errors, and the parent checks each file
+  before the `fork`. `collect_child` stops and reaps the child after a
+  wait error.
+- Rule 5: `codegen/src/jit/thread_names.rs` collects the names only
+  when the count is not 1, so a run that passes costs the same.
+
+Measured at the pin `1664091b` and after:
+
+| Item | Pin | After |
+|---|---|---|
+| `a492` under `node` | output equal, `text.txt` and `copy.txt` left in the repository root | output equal, no file left |
+| `bound-call`, release, arm64 macOS | script 8,834 ns, mimic 6,417 ns, 27.36%, exit 2 | 2.29%, 0.94%, 0.01%, each "decomposition: valid", exit 0 |
+| rule 3 message with a named second thread | "(the process has 2 threads)" | names `s340-native` |
+
+At the pin the mimic did not hold these operations of the emitted
+region: the boundary scope mark, the borrow, and the scope release
+(§323 rules 1 and 2), the trap checks after `bnMoreSamples`,
+`bnReport`, and `bnBindGroupRelease`, the wrapping index update, and
+the root clears. Its trapped path also released the group, and the
+emitted region does not. One later attempt failed on the spread of
+one hoisted sample (78.73%); its decomposition was valid (0.48%).
+
+Each of the tests of rules 1, 4, and 5 fails with its subject changed
+(the pin runner; the reap removed; the names removed). The Linux form
+of rule 5 is not compiled here: the target is not installed. The owner
+runs the Linux gate.
+
+One fresh review found no CRITICAL or MAJOR finding. Its five MINOR
+findings: the table header of the tracking note is fixed; the other
+four are in §340.5.
+
+### 340.5 Open
+
+1. Contrived. The queue label read copies one byte for each call and
+   has no length limit. A queue that is released during the read can
+   make the failure path slow. It cannot stop the process: the kernel
+   does the copy.
+2. Contrived. If the host sets `SIGCHLD` to `SIG_IGN`, `waitpid`
+   returns `ECHILD`, and `collect_child` still sends `SIGKILL` to a pid
+   that is free.
+3. Contrived. `TemporaryFile::path` gives an error that does not name
+   the file. No caller reaches it, because `take_parts` consumes the
+   value.
+4. Style. `codegen/src/jit/isolation.rs` declares `thread_names` with
+   `#[path]` to a sibling file.

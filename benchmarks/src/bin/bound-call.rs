@@ -58,6 +58,9 @@ fn mimic_c(header: &str) -> Result<String, Fail> {
 
 extern void subscript_rt_shadow_push(void *ctx, void *base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void *ctx);
+extern uint64_t subscript_rt_boundary_scope_mark(void *ctx);
+extern void subscript_rt_boundary_borrow(void *ctx, void *value, uint32_t kind);
+extern void subscript_rt_boundary_scope_release(void *ctx, uint64_t mark);
 extern void *subscript_rt_array_new(void *ctx, uint64_t elem_size, uint32_t pos_id);
 extern int32_t subscript_rt_array_push(void *ctx, void *a, const void *src, uint32_t pos_id);
 extern int32_t subscript_rt_array_len(void *ctx, const void *a);
@@ -72,24 +75,27 @@ int main(void) {
     subscript_rt_shadow_push(ctx, roots, 2u);
     roots[0] = bnBindGroupCreate();
     if (*(const uint32_t *)ctx != 0u) goto trapped;
-    roots[1] = subscript_rt_array_new(ctx, sizeof(uint32_t), 0u);
+    roots[1] = subscript_rt_array_new(ctx, sizeof(uint32_t), 2u);
     if (*(const uint32_t *)ctx != 0u) goto trapped;
     {
         uint32_t value = 7u;
-        (void)subscript_rt_array_push(ctx, roots[1], &value, 1u);
+        (void)subscript_rt_array_push(ctx, roots[1], &value, 3u);
     }
     if (*(const uint32_t *)ctx != 0u) goto trapped;
 
-    while (bnMoreSamples() != 0) {
+    for (;;) {
+        int32_t more = bnMoreSamples();
+        if (*(const uint32_t *)ctx != 0u) goto trapped;
+        if (more == 0) break;
         int64_t t0 = bnNow();
         if (*(const uint32_t *)ctx != 0u) goto trapped;
-        for (int32_t i = 0; i < 1000; ++i) {
-            uint32_t index = 3u;
-            void *group = roots[0];
-            void *array = roots[1];
-            const void *data = subscript_rt_array_data(ctx, array);
-            size_t count = (size_t)subscript_rt_array_len(ctx, array);
-            bnSetBindGroup(index, group, (BnOffsets){ data, count });
+        for (int32_t i = 0; i < 1000; i = (int32_t)((uint32_t)i + (uint32_t)1)) {
+            uint64_t mark = subscript_rt_boundary_scope_mark(ctx);
+            subscript_rt_boundary_borrow(ctx, roots[1], 1);
+            const void *data = subscript_rt_array_data(ctx, roots[1]);
+            int32_t count = subscript_rt_array_len(ctx, roots[1]);
+            bnSetBindGroup(3u, roots[0], (BnOffsets){ (const uint32_t *)data, (size_t)count });
+            subscript_rt_boundary_scope_release(ctx, mark);
             if (*(const uint32_t *)ctx != 0u) goto trapped;
             bnDraw(1u, 2u, 3u, 4u);
             if (*(const uint32_t *)ctx != 0u) goto trapped;
@@ -102,15 +108,18 @@ int main(void) {
         }
     }
 
+    roots[1] = NULL;
     bnReport();
+    if (*(const uint32_t *)ctx != 0u) goto trapped;
     bnBindGroupRelease(roots[0]);
+    if (*(const uint32_t *)ctx != 0u) goto trapped;
+    roots[0] = NULL;
     subscript_rt_shadow_pop(ctx);
     subscript_rt_ctx_exit_script(ctx);
     subscript_rt_ctx_release(ctx);
     return 0;
 
 trapped:
-    if (roots[0] != NULL) bnBindGroupRelease(roots[0]);
     subscript_rt_shadow_pop(ctx);
     subscript_rt_ctx_exit_script(ctx);
     subscript_rt_ctx_release(ctx);
@@ -132,6 +141,9 @@ fn no_trap_c(header: &str) -> Result<String, Fail> {
 
 extern void subscript_rt_shadow_push(void *ctx, void *base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void *ctx);
+extern uint64_t subscript_rt_boundary_scope_mark(void *ctx);
+extern void subscript_rt_boundary_borrow(void *ctx, void *value, uint32_t kind);
+extern void subscript_rt_boundary_scope_release(void *ctx, uint64_t mark);
 extern void *subscript_rt_array_new(void *ctx, uint64_t elem_size, uint32_t pos_id);
 extern int32_t subscript_rt_array_push(void *ctx, void *a, const void *src, uint32_t pos_id);
 extern int32_t subscript_rt_array_len(void *ctx, const void *a);
@@ -146,24 +158,27 @@ int main(void) {
     subscript_rt_shadow_push(ctx, roots, 2u);
     roots[0] = bnBindGroupCreate();
     if (*(const uint32_t *)ctx != 0u) goto trapped;
-    roots[1] = subscript_rt_array_new(ctx, sizeof(uint32_t), 0u);
+    roots[1] = subscript_rt_array_new(ctx, sizeof(uint32_t), 2u);
     if (*(const uint32_t *)ctx != 0u) goto trapped;
     {
         uint32_t value = 7u;
-        (void)subscript_rt_array_push(ctx, roots[1], &value, 1u);
+        (void)subscript_rt_array_push(ctx, roots[1], &value, 3u);
     }
     if (*(const uint32_t *)ctx != 0u) goto trapped;
 
-    while (bnMoreSamples() != 0) {
+    for (;;) {
+        int32_t more = bnMoreSamples();
+        if (*(const uint32_t *)ctx != 0u) goto trapped;
+        if (more == 0) break;
         int64_t t0 = bnNow();
         if (*(const uint32_t *)ctx != 0u) goto trapped;
-        for (int32_t i = 0; i < 1000; ++i) {
-            uint32_t index = 3u;
-            void *group = roots[0];
-            void *array = roots[1];
-            const void *data = subscript_rt_array_data(ctx, array);
-            size_t count = (size_t)subscript_rt_array_len(ctx, array);
-            bnSetBindGroup(index, group, (BnOffsets){ data, count });
+        for (int32_t i = 0; i < 1000; i = (int32_t)((uint32_t)i + (uint32_t)1)) {
+            uint64_t mark = subscript_rt_boundary_scope_mark(ctx);
+            subscript_rt_boundary_borrow(ctx, roots[1], 1);
+            const void *data = subscript_rt_array_data(ctx, roots[1]);
+            int32_t count = subscript_rt_array_len(ctx, roots[1]);
+            bnSetBindGroup(3u, roots[0], (BnOffsets){ (const uint32_t *)data, (size_t)count });
+            subscript_rt_boundary_scope_release(ctx, mark);
             bnDraw(1u, 2u, 3u, 4u);
         }
         {
@@ -174,15 +189,18 @@ int main(void) {
         }
     }
 
+    roots[1] = NULL;
     bnReport();
+    if (*(const uint32_t *)ctx != 0u) goto trapped;
     bnBindGroupRelease(roots[0]);
+    if (*(const uint32_t *)ctx != 0u) goto trapped;
+    roots[0] = NULL;
     subscript_rt_shadow_pop(ctx);
     subscript_rt_ctx_exit_script(ctx);
     subscript_rt_ctx_release(ctx);
     return 0;
 
 trapped:
-    if (roots[0] != NULL) bnBindGroupRelease(roots[0]);
     subscript_rt_shadow_pop(ctx);
     subscript_rt_ctx_exit_script(ctx);
     subscript_rt_ctx_release(ctx);
@@ -204,6 +222,9 @@ fn hoisted_c(header: &str) -> Result<String, Fail> {
 
 extern void subscript_rt_shadow_push(void *ctx, void *base, uint64_t slots);
 extern void subscript_rt_shadow_pop(void *ctx);
+extern uint64_t subscript_rt_boundary_scope_mark(void *ctx);
+extern void subscript_rt_boundary_borrow(void *ctx, void *value, uint32_t kind);
+extern void subscript_rt_boundary_scope_release(void *ctx, uint64_t mark);
 extern void *subscript_rt_array_new(void *ctx, uint64_t elem_size, uint32_t pos_id);
 extern int32_t subscript_rt_array_push(void *ctx, void *a, const void *src, uint32_t pos_id);
 extern int32_t subscript_rt_array_len(void *ctx, const void *a);
@@ -218,24 +239,27 @@ int main(void) {
     subscript_rt_shadow_push(ctx, roots, 2u);
     roots[0] = bnBindGroupCreate();
     if (*(const uint32_t *)ctx != 0u) goto trapped;
-    roots[1] = subscript_rt_array_new(ctx, sizeof(uint32_t), 0u);
+    roots[1] = subscript_rt_array_new(ctx, sizeof(uint32_t), 2u);
     if (*(const uint32_t *)ctx != 0u) goto trapped;
     {
         uint32_t value = 7u;
-        (void)subscript_rt_array_push(ctx, roots[1], &value, 1u);
+        (void)subscript_rt_array_push(ctx, roots[1], &value, 3u);
     }
     if (*(const uint32_t *)ctx != 0u) goto trapped;
 
-    void *array = roots[1];
-    const void *data = subscript_rt_array_data(ctx, array);
-    size_t count = (size_t)subscript_rt_array_len(ctx, array);
-    while (bnMoreSamples() != 0) {
+    const void *data = subscript_rt_array_data(ctx, roots[1]);
+    int32_t count = subscript_rt_array_len(ctx, roots[1]);
+    for (;;) {
+        int32_t more = bnMoreSamples();
+        if (*(const uint32_t *)ctx != 0u) goto trapped;
+        if (more == 0) break;
         int64_t t0 = bnNow();
         if (*(const uint32_t *)ctx != 0u) goto trapped;
-        for (int32_t i = 0; i < 1000; ++i) {
-            uint32_t index = 3u;
-            void *group = roots[0];
-            bnSetBindGroup(index, group, (BnOffsets){ data, count });
+        for (int32_t i = 0; i < 1000; i = (int32_t)((uint32_t)i + (uint32_t)1)) {
+            uint64_t mark = subscript_rt_boundary_scope_mark(ctx);
+            subscript_rt_boundary_borrow(ctx, roots[1], 1);
+            bnSetBindGroup(3u, roots[0], (BnOffsets){ (const uint32_t *)data, (size_t)count });
+            subscript_rt_boundary_scope_release(ctx, mark);
             if (*(const uint32_t *)ctx != 0u) goto trapped;
             bnDraw(1u, 2u, 3u, 4u);
             if (*(const uint32_t *)ctx != 0u) goto trapped;
@@ -248,15 +272,18 @@ int main(void) {
         }
     }
 
+    roots[1] = NULL;
     bnReport();
+    if (*(const uint32_t *)ctx != 0u) goto trapped;
     bnBindGroupRelease(roots[0]);
+    if (*(const uint32_t *)ctx != 0u) goto trapped;
+    roots[0] = NULL;
     subscript_rt_shadow_pop(ctx);
     subscript_rt_ctx_exit_script(ctx);
     subscript_rt_ctx_release(ctx);
     return 0;
 
 trapped:
-    if (roots[0] != NULL) bnBindGroupRelease(roots[0]);
     subscript_rt_shadow_pop(ctx);
     subscript_rt_ctx_exit_script(ctx);
     subscript_rt_ctx_release(ctx);

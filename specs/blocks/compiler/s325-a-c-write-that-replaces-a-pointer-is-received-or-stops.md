@@ -203,4 +203,5 @@ field reached an internal error.
    the spread is not known.
 5. The `bound-call` benchmark exits 2 on its decomposition check at
    the pin and after, so it gives no valid comparison here.
+   *(Closed 2026-11-19 by §340 rule 2.)*
 

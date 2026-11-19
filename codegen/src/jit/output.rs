@@ -61,7 +61,7 @@ impl TemporaryFile {
 
     #[cfg(unix)]
     pub(super) fn bytes(&mut self) -> Result<Vec<u8>, RunError> {
-        let file = self.file.as_mut().expect("live temporary file");
+        let file = self.file_mut()?;
         file.seek(SeekFrom::Start(0)).map_err(|error| {
             RunError::Internal(internal(format!("seek JIT temporary file: {error}")))
         })?;
@@ -74,15 +74,36 @@ impl TemporaryFile {
 
     /// The path of the file. A runner opens it by this path.
     #[cfg(unix)]
-    pub(super) fn path(&self) -> &Path {
-        self.path.as_deref().expect("live temporary path")
+    pub(super) fn path(&self) -> Result<&Path, RunError> {
+        self.path
+            .as_deref()
+            .ok_or_else(|| RunError::Internal(internal("JIT temporary file has no path")))
     }
 
-    fn take_parts(mut self) -> (PathBuf, File) {
-        (
-            self.path.take().expect("live temporary path"),
-            self.file.take().expect("live temporary file"),
-        )
+    #[cfg(any(unix, test))]
+    pub(super) fn file_mut(&mut self) -> Result<&mut File, RunError> {
+        self.file.as_mut().ok_or_else(|| {
+            RunError::Internal(internal(format!(
+                "JIT temporary file {} is closed",
+                self.path
+                    .as_deref()
+                    .map_or_else(|| "(no path)".into(), |path| path.display().to_string())
+            )))
+        })
+    }
+
+    fn take_parts(mut self) -> Result<(PathBuf, File), RunError> {
+        let file = self.file.take().ok_or_else(|| {
+            RunError::Internal(internal(format!(
+                "JIT temporary file {:?} is closed",
+                self.path
+            )))
+        })?;
+        let path = self
+            .path
+            .take()
+            .ok_or_else(|| RunError::Internal(internal("JIT temporary file has no path")))?;
+        Ok((path, file))
     }
 }
 
@@ -139,7 +160,7 @@ impl RetainedOutput {
     }
 
     pub(super) fn temporary() -> Result<Self, RunError> {
-        let (path, file) = TemporaryFile::new("output")?.take_parts();
+        let (path, file) = TemporaryFile::new("output")?.take_parts()?;
         Ok(Self {
             file,
             #[cfg(unix)]
@@ -304,5 +325,31 @@ mod tests {
         assert_eq!(stdout.bytes, b"first\nsecond\n");
         assert_eq!(stdout.write_error.as_ref().unwrap().to_string(), first);
         assert!(output.bytes().unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod temporary_file_tests {
+    use super::*;
+
+    // compiler.md §340 rule 3: debug 0.32 ms; 0 C builds.
+    #[test]
+    fn a_closed_temporary_file_returns_an_error_that_names_its_path() {
+        let measured = std::time::Instant::now();
+        let mut file = TemporaryFile::new("request").unwrap();
+        let path = file.path.as_ref().unwrap().display().to_string();
+        drop(file.file.take());
+        let error = file.file_mut().unwrap_err();
+        assert!(
+            matches!(error, RunError::Internal(ref message) if message.contains(&path)),
+            "{error}"
+        );
+        assert!(
+            matches!(file.take_parts(), Err(RunError::Internal(message)) if message.contains(&path))
+        );
+        eprintln!(
+            "a_closed_temporary_file_returns_an_error_that_names_its_path cost: {:?}",
+            measured.elapsed()
+        );
     }
 }

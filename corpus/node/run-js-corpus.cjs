@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const Module = require("node:module");
+const os = require("node:os");
 const pathModule = require("node:path");
 const ts = require("typescript");
 
@@ -37,6 +38,9 @@ function bytes(value, encoding) {
 }
 
 async function runEntry(path) {
+  path = pathModule.resolve(path);
+  const previousDirectory = process.cwd();
+  let scratch;
   const chunks = [];
   process.stdout.write = (value, encoding, callback) => {
     chunks.push(bytes(value, encoding));
@@ -49,6 +53,11 @@ async function runEntry(path) {
   };
 
   try {
+    // compiler.md §340 rule 1: each file entry starts in an empty directory.
+    if (fs.readFileSync(path, "utf8").split(/\r?\n/).some((line) => line === "// file-provider: scratch")) {
+      scratch = fs.mkdtempSync(pathModule.join(os.tmpdir(), "subscript-node-"));
+      process.chdir(scratch);
+    }
     for (const filename of scriptModules) delete require.cache[filename];
     scriptModules.clear();
     path = pathModule.resolve(path);
@@ -68,6 +77,8 @@ async function runEntry(path) {
     return ["error", Buffer.concat(chunks), Buffer.from(detail, "utf8")];
   } finally {
     process.stdout.write = write;
+    process.chdir(previousDirectory);
+    if (scratch !== undefined) fs.rmSync(scratch, { recursive: true, force: true });
   }
 }
 

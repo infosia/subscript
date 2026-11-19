@@ -853,3 +853,82 @@ fn collision_index_checks_trap_evidence_and_missing_trap_entries() {
         ["C23 references absent corpus entry `t76` at collisions.md line 5"]
     );
 }
+
+// compiler.md §340 rule 1: debug 157 ms; 0 C builds.
+#[test]
+fn scratch_file_entries_have_empty_separate_directories_and_cleanup() {
+    let measured = std::time::Instant::now();
+    let root = project_root();
+    let directory =
+        std::env::temp_dir().join(format!("subscript-node-scratch-{}", std::process::id()));
+    fs::create_dir(&directory).expect("create fixture directory");
+    let first = directory.join("first.ts");
+    let second = directory.join("second.ts");
+    let failing = directory.join("failing.ts");
+    let control = directory.join("control.ts");
+    let probe = r#"// file-provider: scratch
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
+export const main = (): void => {
+  if (readdirSync(".").length !== 0 || existsSync("shared.txt")) throw new Error("directory is not empty");
+  writeFileSync("shared.txt", "entry");
+  console.log(process.cwd());
+}
+"#;
+    fs::write(&first, probe).unwrap();
+    fs::write(&second, probe).unwrap();
+    fs::write(
+        &failing,
+        r#"// file-provider: scratch
+import { writeFileSync } from "node:fs";
+export const main = (): void => {
+  writeFileSync("failed.txt", "entry");
+  console.log(process.cwd());
+  throw new Error("fixture failure");
+}
+"#,
+    )
+    .unwrap();
+    fs::write(&control, r#"import { existsSync } from "node:fs";
+export const main = (): void => {
+  if (!existsSync("first.ts") || existsSync("shared.txt") || existsSync("failed.txt")) throw new Error("caller directory was not restored");
+  console.log("restored");
+}
+"#).unwrap();
+    let output = Command::new("node")
+        .arg(root.join("corpus/node/run-js-corpus.cjs"))
+        .args([&first, &second, &failing, &control])
+        .current_dir(&directory)
+        .output()
+        .expect("run the node runner");
+    fs::remove_dir_all(&directory).expect("remove fixtures");
+    assert!(output.status.success(), "{:?}", output);
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let records: Vec<_> = stdout
+        .lines()
+        .skip(1)
+        .map(|line| line.split('\t').collect::<Vec<_>>())
+        .collect();
+    assert_eq!(records.len(), 4, "{stdout}");
+    assert_eq!(records[3][1], "ok", "{stdout}");
+    assert_eq!(decode_hex(records[3][2]).unwrap(), b"restored\n");
+    let mut paths = BTreeSet::new();
+    for (index, record) in records.iter().take(3).enumerate() {
+        assert_eq!(
+            record[1],
+            if index == 2 { "error" } else { "ok" },
+            "{stdout}"
+        );
+        let path = String::from_utf8(decode_hex(record[2]).unwrap()).unwrap();
+        let path = PathBuf::from(path.trim());
+        assert!(
+            !path.exists(),
+            "scratch directory remains: {}",
+            path.display()
+        );
+        assert!(paths.insert(path), "entries reused a scratch directory");
+    }
+    eprintln!(
+        "scratch_file_entries_have_empty_separate_directories_and_cleanup cost: {:?}",
+        measured.elapsed()
+    );
+}
