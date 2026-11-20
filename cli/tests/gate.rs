@@ -188,6 +188,19 @@ fn diagnostic(stdout: &str) -> String {
     stdout.lines().map(|line| format!("| {line}\n")).collect()
 }
 
+fn command_argument(argument: &str) -> String {
+    // Quote empty arguments or characters outside [a-zA-Z0-9_./:=+-].
+    if !argument.is_empty()
+        && argument
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_./:=+-".contains(c))
+    {
+        argument.to_owned()
+    } else {
+        format!("'{}'", argument.replace('\'', "'\\''"))
+    }
+}
+
 fn assert_record(output: &std::process::Output, shape: &str, expected: &str) -> String {
     let stdout = String::from_utf8(output.stdout.clone()).unwrap();
     let lines: Vec<_> = stdout.lines().collect();
@@ -314,7 +327,7 @@ fn full_fails_on_release_skip() {
     assert!(release.contains("release sweep: 1"));
     assert!(release.contains(&format!(
         "## hygiene\ncommand: {}\n",
-        stubs.dir.join("hygiene").display()
+        command_argument(&stubs.dir.join("hygiene").display().to_string())
     )));
 }
 
@@ -364,7 +377,7 @@ fn full_continues_after_failed_tests() {
 
     assert!(record.contains(&format!(
         "## hygiene\ncommand: {}\nenvironment: none\n",
-        stubs.dir.join("hygiene").display()
+        command_argument(&stubs.dir.join("hygiene").display().to_string())
     )));
 }
 
@@ -384,7 +397,7 @@ fn full_fails_above_codegen_clippy_baseline() {
     assert!(record.contains("warning: `subscript-codegen` (lib) generated 14 warnings"));
     assert!(record.contains(&format!(
         "## hygiene\ncommand: {}\n",
-        stubs.dir.join("hygiene").display()
+        command_argument(&stubs.dir.join("hygiene").display().to_string())
     )));
 }
 
@@ -431,7 +444,7 @@ fn full_passes_at_all_clippy_baselines() {
     );
     assert!(record.contains(&format!(
         "## hygiene\ncommand: {}\nenvironment: none\n",
-        stubs.dir.join("hygiene").display()
+        command_argument(&stubs.dir.join("hygiene").display().to_string())
     )));
     assert!(record.contains("tests: 5/0/3\ngate-skip count: 0\n"));
 }
@@ -450,7 +463,7 @@ fn full_fails_above_compiler_clippy_baseline() {
     assert!(record.contains("warning: `subscript-compiler` (lib) generated 8 warnings"));
     assert!(record.contains(&format!(
         "## hygiene\ncommand: {}\n",
-        stubs.dir.join("hygiene").display()
+        command_argument(&stubs.dir.join("hygiene").display().to_string())
     )));
 }
 
@@ -468,7 +481,7 @@ fn full_fails_above_runtime_clippy_baseline() {
     assert!(record.contains("warning: `subscript-runtime` (lib) generated 19 warnings"));
     assert!(record.contains(&format!(
         "## hygiene\ncommand: {}\n",
-        stubs.dir.join("hygiene").display()
+        command_argument(&stubs.dir.join("hygiene").display().to_string())
     )));
 }
 

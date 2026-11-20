@@ -95,8 +95,10 @@ impl TemporaryFile {
     fn take_parts(mut self) -> Result<(PathBuf, File), RunError> {
         let file = self.file.take().ok_or_else(|| {
             RunError::Internal(internal(format!(
-                "JIT temporary file {:?} is closed",
+                "JIT temporary file {} is closed",
                 self.path
+                    .as_deref()
+                    .map_or_else(|| "(no path)".into(), |path| path.display().to_string())
             )))
         })?;
         let path = self
