@@ -60,3 +60,38 @@ Problem, measured at the §342 landing:
 - `warnings.md` §1, §2 (W001 and the W003 reference to it), §3, §4,
   and §6.
 - `collisions.md` Q6 and Q7 do not change.
+
+### 343.4 Phase Review
+
+Form. `compiler/src/warn.rs` has no W001 analysis. `WarnCode::ALL` is
+W002, W003, and W004. The functions that W003 uses did not change;
+`is_reference_allocation` joined `is_reference_new_allocation`, which
+gives the same result, because the Map and Set branch of the first
+could not apply under the guard of the second. The program of the
+removed entry is an inline test program in `cli/tests/commands.rs` and
+in `compiler/src/warn/tests.rs`: an accept entry needs a golden, a
+three-tier run, and an index row, and the net needs one silent program.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| The program of the removed entry, CLI built from the §342 commit | one W001 report; `--deny-warnings` exits 1 |
+| The same program, this section | `no errors`; exit 0 with and without `--deny-warnings` |
+| `corpus/warn/` | `w02`, `w03`, `w04`, `w05` report their pinned code and line; the `w03` pin did not move |
+| Size | 138 lines added and 626 removed in the first implementation |
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 4
+MINOR, each closed.
+
+| Finding | Close |
+|---|---|
+| The CLI sample ran a use after `Context.free` and pinned its output (Q6: undefined) | the free and the use are in a function that `main` does not call |
+| The C tutorial gave an exit code for `run` on a program that reads after the free | the sentence gives `check` and `build`, and names Q6 for `run` |
+| `Expr::flow_leaves` and one parameter of `walk_statements` had no reader | removed |
+| History wording in a test comment | corrected |
+
+`tools/hygiene.sh`: exit 0. `tools/gate.sh full` on the tree before
+this record: exit 0, debug 3905 passed, release 3886 passed, 0 failed,
+5 ignored in each. No golden moved.
+

@@ -711,13 +711,14 @@ outer work
 close 1
 ```
 
-The compiler warns where it proves unbounded growth. `W001` flags an
-allocation that a loop repeats and that neither escapes the iteration
-nor is released. The Context grows with each iteration until a
-collection runs. `W002` flags a local read after `Context.free`. `W003`
-flags fresh callback userdata registered in a loop. `W004` flags a
-value copy that a function writes through and never reads. Warnings do
-not fail a build. `subscript check --deny-warnings` makes them fail in
+The compiler warns where it proves unbounded growth. `W003` is the one
+growth warning: it flags fresh callback userdata registered in a loop,
+which roots a new binding record in each iteration. A loop that
+allocates gets no warning. At the automatic level, the polls that the
+compiler places reclaim the unreachable allocations of each iteration.
+`W002` flags a local read after `Context.free`. `W004` flags a value
+copy that a function writes through and never reads. Warnings do not
+fail a build. `subscript check --deny-warnings` makes them fail in
 CI.
 
 ## Exceptions, result values, and traps
@@ -1583,8 +1584,7 @@ pinned corpus example, is in
 | S018 | A member the receiver type does not declare |
 | S100 | Constructs outside the decided surface |
 
-Four warnings exist. `W001` flags a loop allocation that neither
-escapes nor is released. `W002` flags a use after `Context.free`.
+Three warnings exist. `W002` flags a use after `Context.free`.
 `W003` flags fresh callback userdata registered in a loop. `W004`
 flags a value copy that a function writes through and never reads.
 

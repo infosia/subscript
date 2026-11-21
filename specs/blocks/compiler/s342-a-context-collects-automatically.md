@@ -357,5 +357,5 @@ golden moved.
    loop and has roots.
 5. The dev tier compares the exit count with the interpreter only. The
    ship tier has no function that reads the count (acceptance 8).
-6. `Context.free` and W001: W001 states that the Context grows until a
-   collection. That is false in mode 1. Its change is the next section.
+6. W001 stated that the Context grows until a collection. §343
+   retires it.

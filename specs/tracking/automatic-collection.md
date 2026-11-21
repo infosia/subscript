@@ -1,7 +1,8 @@
 # Automatic collection — trial on the branch `gc-auto`
 
-Status: **§342 COMPLETE on the branch `gc-auto`.** The measurements of
-the implementation and the Phase Review are in `compiler.md` §342.4a.
+Status: **§342 and §343 COMPLETE on the branch `gc-auto`.** The
+measurements of the implementation and the Phase Reviews are in
+`compiler.md` §342.4a and §343.4.
 The prototype is on the branch `gc-auto-proto` and does not land. The
 branch is not merged.
 
@@ -362,6 +363,7 @@ the runtime library from that directory.
 
 ## Next
 
-- W001 (`specs/blocks/warnings.md`) states that the Context grows
-  until a collection. Its change is the next section.
 - `compiler.md` §342.5 holds the open items.
+- The `perf-gate` figure of `a22` on the ship tier (1.44x against a
+  limit of 1.50x) has no measurement at the pin `ca3fc9ed` to compare
+  with.

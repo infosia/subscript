@@ -66,32 +66,6 @@ impl From<IterKind> for ForOfKind {
 }
 
 impl Expr {
-    /// Returns the leaves that can flow into this expression's value.
-    pub fn flow_leaves(&self) -> impl Iterator<Item = &Expr> {
-        fn collect<'a>(expression: &'a Expr, leaves: &mut Vec<&'a Expr>) {
-            match &expression.kind {
-                ExprKind::Cast(inner) | ExprKind::Assign { value: inner, .. } => {
-                    collect(inner, leaves);
-                }
-                ExprKind::Cond { then, els, .. } => {
-                    collect(then, leaves);
-                    collect(els, leaves);
-                }
-                ExprKind::Seq { value, .. } => collect(value, leaves),
-                ExprKind::ArrayLit(elements) => {
-                    for element in elements {
-                        collect(element, leaves);
-                    }
-                }
-                _ => leaves.push(expression),
-            }
-        }
-
-        let mut leaves = Vec::new();
-        collect(self, &mut leaves);
-        leaves.into_iter()
-    }
-
     /// Returns every immediate expression or statement child in source order.
     pub fn children(&self) -> Vec<HirChild<'_>> {
         use ExprKind as K;

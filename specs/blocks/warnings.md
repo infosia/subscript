@@ -52,8 +52,9 @@ early error" for the statically obvious case.
 Fires on a callback-info aggregate **constructed inside a loop body**
 with a userdata slot holding an allocation made in the same
 iteration (a `new` expression as the argument, or a local whose
-initializer is a `new` in the same loop body). Rationale: binding identity is `(code, userdata1, userdata2)`
-(compiler.md §14.4a), so a fresh userdata address per iteration
+initializer is a `new` in the same loop body). Rationale: binding
+identity is `(code, userdata1, userdata2)` (compiler.md §14.4a), so a
+fresh userdata address per iteration
 interns a new record per iteration, and §14.4b roots its userdata —
 growth per iteration with no release verb, hence no mute.
 

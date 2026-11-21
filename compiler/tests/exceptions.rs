@@ -1,7 +1,7 @@
 //! The checked exception surface of `compiler.md` §115.1–§115.3.
 
 use subscript_compiler::hir::{self, Stmt};
-use subscript_compiler::{check_program, check_warnings, Diagnostic, RuleCode, SourceFile};
+use subscript_compiler::{check_program, Diagnostic, RuleCode, SourceFile};
 
 fn check(source: &str) -> Result<hir::Module, Vec<Diagnostic>> {
     check_program(&[SourceFile::new("exception.ts", source)])
@@ -208,34 +208,6 @@ fn instanceof_accepts_only_the_error_family() {
         "  const n: i32 = 1;\n  print(`${n instanceof Error}`);",
     ));
     assert_eq!(operand.code, RuleCode::S100);
-}
-
-#[test]
-fn a_thrown_allocation_escapes_its_loop_iteration() {
-    let module = check(&in_main(
-        "  for (let i: i32 = 0; i < 3; i++) {\n\
-         \x20   try {\n\
-         \x20     if (i === 1) { throw new Error(`${i}`); }\n\
-         \x20     const held: Error = new Error(\"held\");\n\
-         \x20     if (i === 2) { throw held; }\n\
-         \x20   } catch {\n\
-         \x20   }\n\
-         \x20 }",
-    ))
-    .expect("checks clean");
-    assert!(
-        check_warnings(&module).is_empty(),
-        "a thrown object leaves the iteration: {:?}",
-        check_warnings(&module)
-    );
-    let positive = check(&in_main(
-        "  for (let i: i32 = 0; i < 3; i++) {\n\
-         \x20   const held: Error = new Error(\"held\");\n\
-         \x20   print(held.message);\n\
-         \x20 }",
-    ))
-    .expect("checks clean");
-    assert_eq!(check_warnings(&positive).len(), 1, "the control warns");
 }
 
 /// §115.1 rule 6: the Error classes are not JSON types, at any depth.

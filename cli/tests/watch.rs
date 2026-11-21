@@ -259,17 +259,19 @@ class Token {
     this.value = value;
   }
 }
+function release(token: Token): void {
+  Context.free(token);
+  const alias: Token = token;
+}
 export function main(): void {
-  for (let i: i32 = 0; i < 2; i += 1) {
-    const token: Token = new Token(i);
-    print(`${token.value}`);
-  }
+  print(\"clean\");
 }
 ";
     let clean = warned.replace(
-        "  for (let i: i32 = 0; i < 2; i += 1) {\n    const token: Token = new Token(i);\n    print(`${token.value}`);\n  }",
-        "  print(\"clean\");",
+        "function release(token: Token): void {\n  Context.free(token);\n  const alias: Token = token;\n}\n",
+        "",
     );
+    assert_ne!(clean, warned, "the clean edit removes the use after free");
     let mut watch = WatchSession::new(true);
     let denied = watch.step(&files(warned));
     assert!(matches!(denied.outcome, WatchOutcome::WaitingForFix));

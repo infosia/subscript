@@ -295,10 +295,8 @@ if !warnings.is_empty() {
 ```
 
 `Warning` carries `code: WarnCode`, `message: String`, and
-`pos: Pos`. There are four codes:
+`pos: Pos`. There are three codes:
 
-- `W001` — a reference-class allocation repeats in a loop, and
-  neither escapes the iteration nor is released.
 - `W002` — a local is used after `Context.free(local)` in the same
   block.
 - `W003` — a callback-info aggregate registers freshly allocated

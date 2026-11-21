@@ -33,38 +33,6 @@ fn child_values(children: Vec<HirChild<'_>>) -> Vec<i64> {
         .collect()
 }
 
-#[test]
-fn flow_leaves_follow_only_value_positions() {
-    let expression = Expr {
-        pending_work: None,
-        kind: ExprKind::Cond {
-            cond: Box::new(child_expr(0)),
-            then: Box::new(Expr {
-                pending_work: None,
-                kind: ExprKind::Cast(Box::new(child_expr(1))),
-                ty: Type::I32,
-                pos: Pos::new("flow.ts", 1, 1),
-            }),
-            els: Box::new(Expr {
-                pending_work: None,
-                kind: ExprKind::ArrayLit(vec![child_expr(2), child_expr(3)]),
-                ty: Type::Array(Box::new(Type::I32)),
-                pos: Pos::new("flow.ts", 1, 1),
-            }),
-        },
-        ty: Type::I32,
-        pos: Pos::new("flow.ts", 1, 1),
-    };
-    let values = expression
-        .flow_leaves()
-        .map(|leaf| match leaf.kind {
-            ExprKind::Int(value) => value,
-            _ => -1,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(values, vec![1, 2, 3]);
-}
-
 fn test_expr(kind: ExprKind) -> Expr {
     Expr {
         pending_work: None,

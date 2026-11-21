@@ -3,16 +3,16 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::hir::{self, AmbientFn, Callee, Expr, ExprKind, MapFn, SetFn, Stmt};
+use crate::hir::{self, AmbientFn, Callee, Expr, ExprKind, Stmt};
 use crate::Pos;
 
 /// Stable code carried by every warning.
+///
+/// The code W001 is reserved: no warning takes it
+/// (`specs/blocks/compiler.md` §343 rule 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum WarnCode {
-    /// A reference-class allocation repeats in a loop without escaping or
-    /// being released.
-    W001,
     /// A local is used after `Context.free(local)` in the same block.
     W002,
     /// A callback-info aggregate registers freshly allocated userdata in a
@@ -24,13 +24,12 @@ pub enum WarnCode {
 
 impl WarnCode {
     /// Every stable warning code, in numeric order.
-    pub const ALL: [Self; 4] = [Self::W001, Self::W002, Self::W003, Self::W004];
+    pub const ALL: [Self; 3] = [Self::W002, Self::W003, Self::W004];
 
-    /// The stable textual form of the code, e.g. `"W001"`.
+    /// The stable textual form of the code, e.g. `"W002"`.
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
-            WarnCode::W001 => "W001",
             WarnCode::W002 => "W002",
             WarnCode::W003 => "W003",
             WarnCode::W004 => "W004",
@@ -41,9 +40,6 @@ impl WarnCode {
     #[must_use]
     pub fn explanation(self) -> &'static str {
         match self {
-            WarnCode::W001 => {
-                "If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection."
-            }
             WarnCode::W002 => {
                 "A use of a local after `Context.free(local)`, with no reassignment between them, reads a freed object."
             }
@@ -122,14 +118,13 @@ struct WarningChecker<'m> {
     warnings: Vec<Warning>,
 }
 
-fn walk_statements<S: Clone>(
+fn walk_statements(
     statements: &[Stmt],
     loop_depth: usize,
-    state: &mut S,
-    visit: &mut impl FnMut(&Stmt, &[Stmt], usize, &mut S),
+    state: &mut HashSet<String>,
+    visit: &mut impl FnMut(&Stmt, usize, &mut HashSet<String>),
 ) {
-    for (index, statement) in statements.iter().enumerate() {
-        let remaining = &statements[index + 1..];
+    for statement in statements {
         match statement {
             Stmt::While {
                 body,
@@ -158,7 +153,7 @@ fn walk_statements<S: Clone>(
                 pos: _,
             } => {
                 let mut nested = state.clone();
-                visit(statement, remaining, loop_depth, &mut nested);
+                visit(statement, loop_depth, &mut nested);
                 walk_statements(body, loop_depth + 1, &mut nested, visit);
             }
             Stmt::For {
@@ -177,7 +172,7 @@ fn walk_statements<S: Clone>(
                         visit,
                     );
                 }
-                visit(statement, remaining, loop_depth, &mut nested);
+                visit(statement, loop_depth, &mut nested);
                 walk_statements(body, loop_depth + 1, &mut nested, visit);
             }
             Stmt::If {
@@ -187,7 +182,7 @@ fn walk_statements<S: Clone>(
                 pos: _,
             } => {
                 let mut branch = state.clone();
-                visit(statement, remaining, loop_depth, &mut branch);
+                visit(statement, loop_depth, &mut branch);
                 walk_statements(then, loop_depth, &mut branch.clone(), visit);
                 if let Some(els) = els {
                     walk_statements(els, loop_depth, &mut branch, visit);
@@ -199,14 +194,14 @@ fn walk_statements<S: Clone>(
                 pos: _,
             } => {
                 let mut branch = state.clone();
-                visit(statement, remaining, loop_depth, &mut branch);
+                visit(statement, loop_depth, &mut branch);
                 for case in cases {
                     walk_statements(&case.body, loop_depth, &mut branch.clone(), visit);
                 }
             }
             Stmt::Block(body) => {
                 let mut nested = state.clone();
-                visit(statement, remaining, loop_depth, &mut nested);
+                visit(statement, loop_depth, &mut nested);
                 walk_statements(body, loop_depth, &mut nested, visit);
             }
             Stmt::Using {
@@ -216,7 +211,7 @@ fn walk_statements<S: Clone>(
                 pos: _,
             } => {
                 let mut nested = state.clone();
-                visit(statement, remaining, loop_depth, &mut nested);
+                visit(statement, loop_depth, &mut nested);
                 walk_statements(body, loop_depth, &mut nested, visit);
                 if let Some(finalizer) = finalizer {
                     walk_statements(finalizer, loop_depth, &mut nested, visit);
@@ -229,19 +224,17 @@ fn walk_statements<S: Clone>(
                 pos: _,
             } => {
                 let mut branch = state.clone();
-                visit(statement, remaining, loop_depth, &mut branch);
+                visit(statement, loop_depth, &mut branch);
                 walk_statements(body, loop_depth, &mut branch.clone(), visit);
                 walk_statements(handler, loop_depth, &mut branch, visit);
             }
-            _ => visit(statement, remaining, loop_depth, state),
+            _ => visit(statement, loop_depth, state),
         }
     }
 }
 
 impl WarningChecker<'_> {
     fn analyze_body(&mut self, body: &[Stmt], params: &[hir::Param]) {
-        let collect_mutes = contains_collect_in_stmts(body);
-        self.analyze_w001_stmts(body, 0, collect_mutes);
         self.analyze_w003_stmts(body, 0, &HashSet::new());
         self.analyze_w002_block(body);
         self.analyze_w004_body(body, params);
@@ -251,230 +244,6 @@ impl WarningChecker<'_> {
     fn push(&mut self, warning: Warning) {
         if !self.warnings.contains(&warning) {
             self.warnings.push(warning);
-        }
-    }
-
-    fn analyze_w001_stmts(&mut self, stmts: &[Stmt], loop_depth: usize, collect_mutes: bool) {
-        walk_statements(
-            stmts,
-            loop_depth,
-            &mut (),
-            &mut |stmt, remaining, loop_depth, _| match stmt {
-                Stmt::Let { name, init, .. } => {
-                    if !collect_mutes
-                        && loop_depth > 0
-                        && is_reference_allocation(self.module, init)
-                    {
-                        let mut use_state = CandidateUse::default();
-                        scan_candidate_stmts(remaining, name, &mut use_state);
-                        if !use_state.escaped && !use_state.released {
-                            self.push(Warning::new(
-                                WarnCode::W001,
-                                format!(
-                                    "`{name}` is allocated in each loop iteration but neither escapes the iteration nor is released"
-                                ),
-                                init.pos.clone(),
-                            ));
-                        }
-                        self.scan_allocation_children(init, loop_depth, collect_mutes);
-                    } else {
-                        self.scan_w001_expr(
-                            init,
-                            loop_depth,
-                            collect_mutes,
-                            AllocationSink::LocalBinding,
-                        );
-                    }
-                }
-                Stmt::Return { value, .. } => {
-                    if let Some(value) = value {
-                        self.scan_w001_expr(
-                            value,
-                            loop_depth,
-                            collect_mutes,
-                            AllocationSink::Escape,
-                        );
-                    }
-                }
-                // A thrown object leaves the iteration (compiler.md §115.2).
-                Stmt::Throw { value, .. } => {
-                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-                _ => {
-                    for child in stmt.children() {
-                        if let hir::HirChild::Expr(expr) = child {
-                            self.scan_w001_expr(
-                                expr,
-                                loop_depth,
-                                collect_mutes,
-                                AllocationSink::Use,
-                            );
-                        }
-                    }
-                }
-            },
-        );
-    }
-
-    fn scan_w001_expr(
-        &mut self,
-        expr: &Expr,
-        loop_depth: usize,
-        collect_mutes: bool,
-        sink: AllocationSink,
-    ) {
-        if is_reference_allocation(self.module, expr) {
-            if !collect_mutes && loop_depth > 0 && sink == AllocationSink::Use {
-                self.push(Warning::new(
-                    WarnCode::W001,
-                    "this reference-class allocation is repeated by the loop but neither escapes the iteration nor is released",
-                    expr.pos.clone(),
-                ));
-            }
-            self.scan_allocation_children(expr, loop_depth, collect_mutes);
-            return;
-        }
-
-        match &expr.kind {
-            ExprKind::Assign { target, value, .. } => {
-                self.scan_w001_expr(target, loop_depth, collect_mutes, AllocationSink::Use);
-                let value_sink = match target.kind {
-                    ExprKind::Global(_, _)
-                    | ExprKind::Field { .. }
-                    | ExprKind::Index { .. }
-                    | ExprKind::Local(..) => AllocationSink::Escape,
-                    _ => AllocationSink::Use,
-                };
-                self.scan_w001_expr(value, loop_depth, collect_mutes, value_sink);
-                return;
-            }
-            ExprKind::Cast(inner) => {
-                self.scan_w001_expr(inner, loop_depth, collect_mutes, sink);
-                return;
-            }
-            ExprKind::Call { callee, args } => {
-                match callee {
-                    Callee::Value(value) | Callee::NamedLambda { value, .. } => self
-                        .scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape),
-                    Callee::Method { recv, .. } => {
-                        self.scan_w001_expr(recv, loop_depth, collect_mutes, AllocationSink::Escape)
-                    }
-                    _ => {}
-                }
-                let argument_sink = if matches!(callee, Callee::Ambient(AmbientFn::UnsafeDelete)) {
-                    AllocationSink::Release
-                } else {
-                    AllocationSink::Escape
-                };
-                for arg in args {
-                    self.scan_w001_expr(arg, loop_depth, collect_mutes, argument_sink);
-                }
-                return;
-            }
-            ExprKind::AsyncCall { callee, args }
-            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.scan_w001_expr(
-                        receiver,
-                        loop_depth,
-                        collect_mutes,
-                        AllocationSink::Escape,
-                    );
-                }
-                for arg in args {
-                    self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-                return;
-            }
-            ExprKind::New { args, .. } => {
-                for arg in args {
-                    self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-                return;
-            }
-            ExprKind::DescriptorLit { fields, .. } => {
-                for value in fields.iter().flatten() {
-                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-                return;
-            }
-            ExprKind::ArrayLit(elems) => {
-                for elem in elems {
-                    self.scan_w001_expr(elem, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-                return;
-            }
-            ExprKind::ArraySpreadLit(elems) => {
-                for elem in elems {
-                    self.scan_w001_expr(
-                        &elem.expr,
-                        loop_depth,
-                        collect_mutes,
-                        AllocationSink::Escape,
-                    );
-                }
-                return;
-            }
-            ExprKind::Lambda { .. } => return,
-            ExprKind::Yield(value) => {
-                if let Some(value) = value {
-                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-                return;
-            }
-            ExprKind::Cond { cond, then, els } => {
-                self.scan_w001_expr(cond, loop_depth, collect_mutes, AllocationSink::Use);
-                self.scan_w001_expr(then, loop_depth, collect_mutes, sink);
-                self.scan_w001_expr(els, loop_depth, collect_mutes, sink);
-                return;
-            }
-            ExprKind::Seq { effects, value } => {
-                for effect in effects {
-                    self.scan_w001_expr(effect, loop_depth, collect_mutes, AllocationSink::Use);
-                }
-                self.scan_w001_expr(value, loop_depth, collect_mutes, sink);
-                return;
-            }
-            _ => {}
-        }
-        for child in expr.children() {
-            if let hir::HirChild::Expr(child) = child {
-                self.scan_w001_expr(child, loop_depth, collect_mutes, AllocationSink::Use);
-            }
-        }
-    }
-
-    fn scan_allocation_children(&mut self, expr: &Expr, loop_depth: usize, collect_mutes: bool) {
-        match &expr.kind {
-            ExprKind::New { args, .. } | ExprKind::Call { args, .. } => {
-                for arg in args {
-                    self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-            }
-            ExprKind::AsyncCall { callee, args }
-            | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-                if let Some(receiver) = callee.receiver() {
-                    self.scan_w001_expr(
-                        receiver,
-                        loop_depth,
-                        collect_mutes,
-                        AllocationSink::Escape,
-                    );
-                }
-                for arg in args {
-                    self.scan_w001_expr(arg, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-            }
-            ExprKind::AsyncHandleAwait(handle)
-            | ExprKind::AsyncHandleTransfer { value: handle, .. } => {
-                self.scan_w001_expr(handle, loop_depth, collect_mutes, AllocationSink::Use);
-            }
-            ExprKind::DescriptorLit { fields, .. } => {
-                for value in fields.iter().flatten() {
-                    self.scan_w001_expr(value, loop_depth, collect_mutes, AllocationSink::Escape);
-                }
-            }
-            _ => {}
         }
     }
 
@@ -489,7 +258,7 @@ impl WarningChecker<'_> {
             stmts,
             loop_depth,
             &mut fresh,
-            &mut |stmt, _, loop_depth, fresh| match stmt {
+            &mut |stmt, loop_depth, fresh| match stmt {
                 Stmt::Let { name, init, .. } => {
                     self.scan_w003_expr(init, loop_depth, fresh);
                     fresh.remove(name);
@@ -1583,33 +1352,17 @@ fn mark_w004_read(bindings: &mut [CopyBinding], name: &str) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AllocationSink {
-    Use,
-    Escape,
-    Release,
-    LocalBinding,
-}
-
-fn is_reference_allocation(module: &hir::Module, expr: &Expr) -> bool {
+/// A `new` expression or a descriptor literal of a reference class: the
+/// allocation of the same iteration that W003 tracks
+/// (`specs/blocks/compiler.md` §343 rule 3).
+fn is_reference_new_allocation(module: &hir::Module, expr: &Expr) -> bool {
     match &expr.kind {
         ExprKind::New { class, .. } | ExprKind::DescriptorLit { class, .. } => module
             .classes
             .get(class.0)
             .is_some_and(|definition| !definition.is_value),
-        ExprKind::Call {
-            callee: Callee::Map(MapFn::New) | Callee::Set(SetFn::New),
-            ..
-        } => true,
         _ => false,
     }
-}
-
-fn is_reference_new_allocation(module: &hir::Module, expr: &Expr) -> bool {
-    matches!(
-        expr.kind,
-        ExprKind::New { .. } | ExprKind::DescriptorLit { .. }
-    ) && is_reference_allocation(module, expr)
 }
 
 fn is_callback_userdata_slot(ty: &crate::types::Type) -> bool {
@@ -1679,235 +1432,6 @@ fn is_fresh_userdata_argument(module: &hir::Module, expr: &Expr, fresh: &HashSet
         ExprKind::Local(name, _, _) => fresh.contains(name),
         _ => is_reference_new_allocation(module, expr),
     }
-}
-
-fn contains_collect_in_stmts(stmts: &[Stmt]) -> bool {
-    stmts.iter().any(contains_collect_in_stmt)
-}
-
-fn contains_collect_in_stmt(stmt: &Stmt) -> bool {
-    stmt.children().into_iter().any(|child| match child {
-        hir::HirChild::Expr(expr) => contains_collect_in_expr(expr),
-        hir::HirChild::Stmt(stmt) => contains_collect_in_stmt(stmt),
-    })
-}
-
-fn contains_collect_in_expr(expr: &Expr) -> bool {
-    if matches!(expr.kind, ExprKind::Lambda { .. }) {
-        return false;
-    }
-    matches!(
-        &expr.kind,
-        ExprKind::Call {
-            callee: Callee::Ambient(AmbientFn::Collect),
-            ..
-        }
-    ) || expr.children().into_iter().any(|child| match child {
-        hir::HirChild::Expr(expr) => contains_collect_in_expr(expr),
-        hir::HirChild::Stmt(stmt) => contains_collect_in_stmt(stmt),
-    })
-}
-
-#[derive(Debug, Default)]
-struct CandidateUse {
-    escaped: bool,
-    released: bool,
-}
-
-fn scan_candidate_stmts(stmts: &[Stmt], name: &str, state: &mut CandidateUse) {
-    for stmt in stmts {
-        match stmt {
-            Stmt::Let {
-                name: declared,
-                init,
-                ..
-            } => {
-                scan_candidate_expr(init, name, state);
-                if declared == name {
-                    return;
-                }
-                if value_is_candidate(init, name) {
-                    state.escaped = true;
-                }
-                continue;
-            }
-            Stmt::Return { value, .. } => {
-                if let Some(value) = value {
-                    if value_is_candidate(value, name) {
-                        state.escaped = true;
-                    }
-                    scan_candidate_expr(value, name, state);
-                }
-                continue;
-            }
-            Stmt::Throw { value, .. } => {
-                if value_is_candidate(value, name) {
-                    state.escaped = true;
-                }
-                scan_candidate_expr(value, name, state);
-                continue;
-            }
-            // Each exit of the scope calls the hook of each binding
-            // (compiler.md §115.5 rule 5).
-            Stmt::Using {
-                bindings,
-                body: _,
-                finalizer: _,
-                pos: _,
-            } => {
-                for binding in bindings {
-                    scan_candidate_stmts(&[binding.hook()], name, state);
-                }
-            }
-            Stmt::Expr(_)
-            | Stmt::If {
-                cond: _,
-                then: _,
-                els: _,
-                pos: _,
-            }
-            | Stmt::While {
-                cond: _,
-                body: _,
-                pos: _,
-            }
-            | Stmt::DoWhile {
-                cond: _,
-                body: _,
-                pos: _,
-            }
-            | Stmt::For {
-                init: _,
-                cond: _,
-                step: _,
-                body: _,
-                pos: _,
-            }
-            | Stmt::ForOf {
-                name: _,
-                ty: _,
-                subject: _,
-                kind: _,
-                body: _,
-                pos: _,
-            }
-            | Stmt::GeneratorForOf {
-                name: _,
-                ty: _,
-                mutable: _,
-                subject: _,
-                body: _,
-                pos: _,
-            }
-            | Stmt::Switch {
-                disc: _,
-                cases: _,
-                pos: _,
-            }
-            | Stmt::Break(_)
-            | Stmt::Continue(_)
-            | Stmt::Block(_)
-            | Stmt::Try {
-                body: _,
-                binding: _,
-                handler: _,
-                pos: _,
-            } => {}
-        }
-        for child in stmt.children() {
-            match child {
-                hir::HirChild::Expr(expr) => scan_candidate_expr(expr, name, state),
-                hir::HirChild::Stmt(stmt) => {
-                    scan_candidate_stmts(std::slice::from_ref(stmt), name, state);
-                }
-            }
-        }
-    }
-}
-
-fn scan_candidate_expr(expr: &Expr, name: &str, state: &mut CandidateUse) {
-    match &expr.kind {
-        ExprKind::Call { callee, args } => {
-            if matches!(callee, Callee::Ambient(AmbientFn::UnsafeDelete))
-                && args
-                    .first()
-                    .is_some_and(|arg| value_is_candidate(arg, name))
-            {
-                state.released = true;
-            } else if args.iter().any(|arg| value_is_candidate(arg, name)) {
-                state.escaped = true;
-            }
-            if let Callee::Method { recv, .. } = callee {
-                if value_is_candidate(recv, name) {
-                    state.escaped = true;
-                }
-            }
-        }
-        ExprKind::AsyncCall { callee, args } | ExprKind::AsyncHandleCreate { callee, args, .. } => {
-            state.escaped |= callee
-                .receiver()
-                .is_some_and(|receiver| value_is_candidate(receiver, name))
-                || args.iter().any(|arg| value_is_candidate(arg, name));
-        }
-        ExprKind::Assign { target, value, .. } => {
-            if value_is_candidate(value, name)
-                && matches!(
-                    target.kind,
-                    ExprKind::Local(..)
-                        | ExprKind::Global(_, _)
-                        | ExprKind::Field { .. }
-                        | ExprKind::Index { .. }
-                )
-            {
-                state.escaped = true;
-            }
-            if matches!(&target.kind, ExprKind::Local(target_name, _, _) if target_name == name) {
-                state.escaped = true;
-            }
-        }
-        ExprKind::Lambda { captures, .. } => {
-            if captures.iter().any(|capture| capture.name == name) {
-                state.escaped = true;
-            }
-            return;
-        }
-        ExprKind::ArrayLit(elems) => {
-            state.escaped |= elems.iter().any(|elem| value_is_candidate(elem, name));
-        }
-        ExprKind::ArraySpreadLit(elems) => {
-            state.escaped |= elems
-                .iter()
-                .any(|element| value_is_candidate(&element.expr, name));
-        }
-        ExprKind::New { args, .. } => {
-            state.escaped |= args.iter().any(|arg| value_is_candidate(arg, name));
-        }
-        ExprKind::DescriptorLit { fields, .. } => {
-            state.escaped |= fields
-                .iter()
-                .flatten()
-                .any(|value| value_is_candidate(value, name));
-        }
-        ExprKind::Yield(value) => {
-            state.escaped |= value
-                .as_deref()
-                .is_some_and(|value| value_is_candidate(value, name));
-        }
-        _ => {}
-    }
-    for child in expr.children() {
-        match child {
-            hir::HirChild::Expr(expr) => scan_candidate_expr(expr, name, state),
-            hir::HirChild::Stmt(stmt) => {
-                scan_candidate_stmts(std::slice::from_ref(stmt), name, state);
-            }
-        }
-    }
-}
-
-fn value_is_candidate(expr: &Expr, name: &str) -> bool {
-    expr.flow_leaves()
-        .any(|leaf| matches!(&leaf.kind, ExprKind::Local(local, _, _) if local == name))
 }
 
 fn directly_reassigned_local(stmt: &Stmt) -> Option<&str> {

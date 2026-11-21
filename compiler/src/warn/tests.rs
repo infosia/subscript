@@ -36,16 +36,30 @@ fn every_warning_code_has_a_single_line_explanation() {
     }
 }
 
+/// The code W001 is reserved and no variant carries it
+/// (`specs/blocks/compiler.md` §343 rule 2).
+#[test]
+fn every_warning_code_lists_w002_to_w004() {
+    assert_eq!(
+        WarnCode::ALL.map(WarnCode::as_str),
+        ["W002", "W003", "W004"]
+    );
+}
+
 #[test]
 fn warning_constructor_preserves_fields() {
-    let warning = Warning::new(WarnCode::W001, "message", Pos::new("test.ts", 2, 3));
-    assert_eq!(warning.code.as_str(), "W001");
+    let warning = Warning::new(WarnCode::W002, "message", Pos::new("test.ts", 2, 3));
+    assert_eq!(warning.code.as_str(), "W002");
     assert_eq!(warning.message, "message");
     assert_eq!(warning.pos, Pos::new("test.ts", 2, 3));
 }
 
+/// A reference allocation in each loop iteration reports no warning
+/// (`specs/blocks/compiler.md` §343 rule 1). The firing control
+/// in the same shape is
+/// `fresh_callback_userdata_warns_for_local_and_direct_new_inside_loop_only`.
 #[test]
-fn loop_allocation_warns_but_one_shot_and_collect_do_not() {
+fn loop_allocation_reports_no_warning() {
     let source = "class Token { value: i32; constructor(value: i32) { this.value = value; } }\n\
                   export function main(): void {\n\
                   \x20 for (let i: i32 = 0; i < 2; i += 1) {\n\
@@ -54,22 +68,7 @@ fn loop_allocation_warns_but_one_shot_and_collect_do_not() {
                   \x20 }\n\
                   }\n";
     let result = warnings(source);
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].code, WarnCode::W001);
-    assert_eq!(result[0].pos.line, 4);
-
-    let one_shot = "class Token { value: i32; constructor(value: i32) { this.value = value; } }\n\
-         export function main(): void {\n\
-         \x20 const token: Token = new Token(1);\n\
-         \x20 print(`${token.value}`);\n\
-         }\n";
-    assert!(warnings(one_shot).is_empty());
-
-    let with_collect = source.replace(
-        "  print(`${token.value}`);\n",
-        "  print(`${token.value}`);\n  Context.collect();\n",
-    );
-    assert!(warnings(&with_collect).is_empty());
+    assert!(result.is_empty(), "{result:?}");
 }
 
 #[test]
@@ -127,10 +126,8 @@ fn fresh_callback_userdata_warns_for_local_and_direct_new_inside_loop_only() {
         2
     );
     assert!(
-        result
-            .iter()
-            .all(|warning| warning.code == WarnCode::W003),
-        "fresh userdata escapes through the callback aggregate, so W001 must stay muted: {result:?}"
+        result.iter().all(|warning| warning.code == WarnCode::W003),
+        "only W003 reports the callback aggregate: {result:?}"
     );
     assert_eq!(
         result

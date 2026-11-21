@@ -516,22 +516,25 @@ mod tests {
 
     #[test]
     fn warning_rendering_reuses_the_diagnostic_shape() {
-        let files = [SourceFile::entry("main.ts", "const token = allocate();\n")];
+        let files = [SourceFile::entry(
+            "main.ts",
+            "Context.free(token);\nconst alias: Token = token;\n",
+        )];
         let warnings = [Warning::new(
-            WarnCode::W001,
-            "allocation repeats",
-            Pos::new("main.ts", 1, 15),
+            WarnCode::W002,
+            "`token` is used after `Context.free(token)` without an intervening reassignment",
+            Pos::new("main.ts", 2, 22),
         )];
 
         assert_eq!(
             render_warnings(&files, &warnings),
             concat!(
-                "warning[W001]: allocation repeats\n",
-                " --> main.ts:1:15\n",
+                "warning[W002]: `token` is used after `Context.free(token)` without an intervening reassignment\n",
+                " --> main.ts:2:22\n",
                 "  |\n",
-                "1 | const token = allocate();\n",
-                "  |               ^\n",
-                "  = rule: If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection.\n",
+                "2 | const alias: Token = token;\n",
+                "  |                      ^\n",
+                "  = rule: A use of a local after `Context.free(local)`, with no reassignment between them, reads a freed object.\n",
                 "warning: 1 warning(s)",
             )
         );

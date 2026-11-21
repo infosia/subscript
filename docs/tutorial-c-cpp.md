@@ -369,9 +369,8 @@ The parts of the model:
   development-tier facility, and run the dev tier over the same
   program.
 
-The compiler also warns statically where growth or a lost write is
-provable. Four codes exist (`compiler/src/warn.rs`): `W001`, an
-allocation inside a loop that is neither released nor stored anywhere;
+The compiler also warns statically where growth, a use after free, or
+a lost write is provable. Three codes exist (`compiler/src/warn.rs`):
 `W002`, use of a variable after `Context.free` on the same straight
 line; `W003`, freshly allocated callback userdata registered inside a
 loop; `W004`, a value-type copy that is written through and never read.
@@ -379,13 +378,13 @@ loop; `W004`, a value-type copy that is written through and never read.
 `build`:
 
 ```text
-$ subscript check w01.ts --deny-warnings
-warning[W001]: `token` is allocated in each loop iteration but neither escapes the iteration nor is released
- --> w01.ts:17:26
+$ subscript check w02.ts --deny-warnings
+warning[W002]: `token` is used after `Context.free(token)` without an intervening reassignment
+ --> w02.ts:18:12
    |
-17 |     const token: Token = new Token(i);
-   |                          ^
-   = rule: If a loop repeats a reference-class allocation that does not escape the iteration and is not released, the Context grows per iteration until a collection.
+18 |   print(`${token.value}`);
+   |            ^
+   = rule: A use of a local after `Context.free(local)`, with no reassignment between them, reads a freed object.
 warning: 1 warning(s)
 ```
 
@@ -1745,8 +1744,10 @@ error: 1 error(s)
 
 Exit codes are 0 (clean), 1 (program diagnostics), and 2 (usage or
 environment). `--deny-warnings` turns the static warnings into a
-failure for CI: `check`, `run` and `build` each exit 1 on the `W001`
-program above, and each exits 0 without the flag.
+failure for CI: `check` and `build` each exit 1 on the `W002` program
+above, and each exits 0 without the flag. `run` executes that program,
+and so executes its read after `Context.free`, which is undefined
+(`collisions.md` Q6).
 
 For iteration speed, `subscript run --watch file.ts` keeps a program
 running while you edit it. A function-body edit is swapped into the
