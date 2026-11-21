@@ -354,10 +354,10 @@ the runtime library from that directory.
 ## At the merge
 
 - The repository description on the hosting site states "no implicit
-  GC". The owner decided the new text on 2026-11-21: "Embeddable
+  GC". The owner decided the new text on 2026-11-22: "Embeddable
   statically-typed TypeScript-subset for native apps. C-ABI data
-  layout, zero-copy C interop, automatic host-controlled GC. JIT hot
-  reload in dev, ships as AOT C." The owner sets it.
+  layout, zero-copy C interop, automatic GC with host-controlled
+  pauses. JIT hot reload in dev, ships as AOT C." The owner sets it.
 - If `main` has a §342, this section takes the next free number, and
   each citation of §342 in the code and the documents moves with it.
 

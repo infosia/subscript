@@ -191,7 +191,9 @@ failed, 5 ignored in each. No golden moved. This run covers §345 and
 ### 346.5 Open
 
 1. The stress sweep failed one time with no record (§346.4). If it
-   fails again, keep the log before any other step.
+   fails again, keep the log before any other step. At `c2c5bcb7`, 20
+   runs in sequence with each log kept passed (45 to 52 s). The cause
+   of the one failure stays unknown.
 2. `subscript_rt_ctx_live_bytes` is the capacity on the ship tier and
    the payload on the dev tier (§18.2d). The trigger does not use it,
    but a host that compares it with the minimum headroom reads up to
