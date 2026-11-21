@@ -133,3 +133,103 @@ snapshot. The native tiers do not.
 An explicit `Context.collect()` in the callback reaches the same sites
 today. No corpus entry has these shapes, so the stress run did not
 reach them.
+
+## G0b — inline poll, failure delivery, runtime probes
+
+Prototype: commit `613b0a64` on `gc-auto-proto`. Host: aarch64, macOS.
+Each time is the middle of three release runs. The dev JIT figure times
+`main` only. The ship C figure times the whole process. Ship runs of
+about 10 ms vary by up to 60% between passes.
+
+### Failure delivery that does not depend on the poll
+
+Rule of the prototype:
+
+1. A poll collection does not trap. It records the failure and keeps
+   the error object reachable.
+2. An explicit `Context.collect()` reports as before, and reports the
+   recorded failures at its call position. The lowest task id is first.
+3. At each outermost exit from script code, if a recorded failure or a
+   failed unobserved task exists, one collection runs and the result is
+   reported at the throw position.
+4. `await` and the last-owner release report as before.
+
+| Run (498 entries per tier, `a22` not run) | Result |
+|---|---|
+| Stress against the run without polls | 495 of 498 equal in each tier |
+| Threshold against the run without polls | the same 495 of 498 |
+| Stress against threshold | 1,494 of 1,494 equal |
+
+The delivery does not depend on the poll where a collection runs. The
+three entries that change are `t97`, `t98`, and `t107`: an `await` ends
+a scheduler step, each step is an outermost exit, and that exit reports
+the failure at the throw position (`11:55`) before the program reaches
+its `Context.collect()` (`19:3`, `20:3`, `23:3`). Message and stdout
+are equal. The three tiers agree.
+
+Cost of rule 3 on the ship tier, rule off against rule on:
+`held-handles` 7.11 and 7.10 ms, `deep-chains` 12.50 and 12.61 ms,
+`settled-awaits` 16.36 and 16.34 ms, `callbacks` 289.3 and 288.9 ms.
+
+The interpreter has no shared form for its exit points. The prototype
+places them by hand to match the native tiers.
+
+### Poll cost with an inline flag test, no collection
+
+The poll is one load of a Context byte and one branch. The call is on
+the cold path. The headroom is set so that no collection runs.
+
+| Workload | dev JIT | ship C |
+|---|---|---|
+| `fib-recursive` | 1.05 | 1.23 |
+| `sort` | 1.13 | 1.16 |
+| `callbacks` | 1.27 | 1.94 |
+| `particles` | 1.10 | 1.49 |
+| tree without `free` | 1.01 | 1.09 |
+| `fib-loop` | 1.76 | 1.02 |
+| `mandelbrot` | 2.51 | 1.03 |
+
+The cause of the dev JIT figures on loops with no call, and of the ship
+figures on `callbacks` and `particles`, is not traced (G0c).
+
+A variant puts an entry poll only in a function that is in a call-graph
+cycle, has its address taken, or is async or a generator. The LIR
+carries the facts for that decision. `fib-recursive` and `sort` do not
+change, because their hot functions are recursive.
+
+### Cost with the default threshold
+
+| Workload | dev JIT | ship C |
+|---|---|---|
+| tree without `free`, against itself with no polls and no collection | 1.23 | 2.32 |
+| `callbacks` | 1.93 | 6.09 |
+| `held-handles` | 1.05 | 1.40 |
+| `collect` | 1.05 | 1.12 |
+| generators, `queen`, `tree` with `free`, other async | 0.96 to 1.06 | 0.96 to 1.04 |
+
+The run with no polls never collects, so the first two rows contain the
+collection work.
+
+### Runtime probes (function-value callbacks)
+
+The entry poll sees each parameter: both native tiers store the
+parameters into the shadow slots before the entry block.
+
+| Probe | Interpreter | dev JIT | ship C |
+|---|---|---|---|
+| `filter`, `find`, `findLast`, `Map.groupBy`: the callback empties the receiver | correct | runtime error "use of a deleted allocation", or a wrong value | wrong value |
+| `sort`: the comparator overwrites elements | correct | wrong value | wrong value |
+| `reduce` with a string accumulator | correct | correct | correct |
+
+The native results are the same under stress polls and under an
+explicit `Context.collect()` in the callback with no polls. The second
+case is a defect at `ca3fc9ed` that needs no automatic collection.
+The orchestrator read the recorded outputs of the `find` probe:
+interpreter `find 1` / `findLast 32`; ship C with an explicit collect
+`find 0` / `findLast 2055278416`.
+
+### Not measured
+
+- `bound-call` and the 93 entries that need a native library, in this
+  round.
+- The MSVC form of the cold-path hint.
