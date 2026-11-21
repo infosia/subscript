@@ -77,9 +77,13 @@ Problem, measured at `ca3fc9ed`:
 
 5. **An allocation never collects.** A successful allocation sets the
    pending flag of the Context if live bytes exceed the threshold.
+   *(Amended 2026-11-21, §346 rule 2: if the bytes requested since the
+   last collection exceed the limit.)*
 6. **The threshold follows the live set.** After each collection the
    threshold is live bytes plus the larger of live bytes and the
    minimum headroom. The default minimum headroom is 16 MiB.
+   *(Replaced 2026-11-21 by §346 rule 2: the trigger counts the bytes
+   that allocations request since the last collection.)*
 7. **A poll serves the pending flag.** A poll reads the flag. If the
    flag is set, the poll runs one automatic collection through the
    collection path of its tier, and the collection clears the flag.
@@ -197,7 +201,10 @@ failed task is unobserved at an outermost exit, then one at exits 3, 7,
     bytes and the new minimum headroom. In mode 1 the call sets the
     pending flag if live bytes exceed that threshold. A host that
     switches the mode at each frame gets the same collections as a
-    host that leaves mode 1 set.
+    host that leaves mode 1 set. *(Amended 2026-11-21, §346 rule 3:
+    the call keeps the requested count, and the limit is the larger of
+    the live bytes after the last collection and the new minimum
+    headroom.)*
 18. **A worker Context takes the mode and the headroom of its parent
     at the spawn.**
 19. **A host that keeps a pointer after the borrow ends has a defect.**
@@ -230,7 +237,8 @@ Each measurement names the result that fails the section.
 3. **Reclamation across host calls.** A host calls 10,000 times an
    entry that allocates in straight-line code. Live bytes stay under
    the threshold of rule 6 plus one call. Red at the pin: live bytes
-   grow with the call count.
+   grow with the call count. *(Amended 2026-11-21, §346.2 item 3: the
+   bound is in requested bytes.)*
 4. **Cost.** `perf-gate --gate` passes with its present limits. With
    mode 1 and no collection, no workload moves by more than the noise
    of §213.1 against the pin. Fail: a workload over its limit.

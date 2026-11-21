@@ -100,6 +100,8 @@ Problem, measured at `aef4cdd3`:
 
 ### 344.4 Recorded, not changed
 
+*(Closed 2026-11-21 by §346.)*
+
 `collect` in the ship tier went from 38 ms to 53 ms. The cause is 90
 automatic collections between the 105 explicit ones. The ship tier
 counts the size-class capacity as live bytes (§18.2d), and the
