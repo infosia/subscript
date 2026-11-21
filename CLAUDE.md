@@ -10,8 +10,10 @@ both.
 ## What this project is
 
 **subscript** is a statically-typed, AOT-compilable **embedded** scripting
-language for native host applications: a C-compatible execution and memory
-model wearing a TypeScript-subset syntax. The host owns its main loop and
+language for native host applications: a TypeScript-subset syntax with
+zero-copy C interop. Structs, arrays, and strings cross to C with no
+conversion and no copy, and the host controls each pause of the
+automatic collection. The host owns its main loop and
 exposes a C ABI; subscript supplies the user-authored logic. Game engines
 are the archetype and the origin of the design, not its boundary — the
 same shape fits real-time audio/DSP, creative and graphics tools,

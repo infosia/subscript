@@ -1,11 +1,15 @@
 # subscript
 
 A statically-typed, AOT-compilable **embedded scripting language for
-native applications**: a **C-compatible execution and memory model
-wearing a TypeScript-subset syntax**. Because the syntax is a subset of
-TypeScript, standard TypeScript editor tooling works against it; the
-compiler adds sound static types, C-ABI data layout, collection pauses
-that the host controls, and zero-copy C interop.
+native applications**: **TypeScript-subset syntax with zero-copy C
+interop**. Structs, arrays, and strings have the layout that C expects,
+so script code and its C host read the same bytes, with no conversion
+and no copy. Memory is collected automatically, and the host controls
+each collection pause.
+
+Because the syntax is a subset of TypeScript, standard TypeScript editor
+tooling works against it. The compiler adds sound static types, sized
+integers, and value types.
 
 It is built for a host that **owns its main loop and exposes a C ABI**,
 and that wants user-authored logic to be fast to iterate on and
