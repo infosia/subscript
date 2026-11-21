@@ -233,3 +233,88 @@ interpreter `find 1` / `findLast 32`; ship C with an explicit collect
 - `bound-call` and the 93 entries that need a native library, in this
   round.
 - The MSVC form of the cold-path hint.
+
+## G0c — polls only where an allocation can occur
+
+Prototype: commit on `gc-auto-proto` after `613b0a64` (see the branch
+log). Only an allocation sets the pending flag, so a poll in code that
+cannot allocate serves nothing.
+
+### Cause of the G0b poll cost
+
+| Figure | Cause |
+|---|---|
+| ship C `callbacks` 1.94 | The poll branch with its cold call stops vectorization of the `reduce` loop: 26 NEON `.4s` instructions with no polls, 0 with polls. The entry poll also gives each callee a `Call` trap, so each call site gets a trap test. |
+| ship C `particles` 1.49 | The cold call can write memory that the root slot reaches. The loop loads the root slot, the length, the data pointer, and the stride again in each iteration. |
+| dev JIT `mandelbrot` 2.51 | The function gets a frame, and the loop spills its f64 values: 5 loads and 4 stores per iteration. A second trap test runs on the hot path, because the poll carries a `Call` trap. |
+| dev JIT `fib-loop` 1.76 | No spill. A loop of about 4 instructions gets the flag test, the trap test, and copies of the Context pointer. |
+
+### Placement P
+
+- A function "can allocate" if it has an instruction that can allocate,
+  or a call to a function that can allocate. An indirect call can
+  allocate if any function with its address taken can. A foreign call
+  always can.
+- A backedge poll exists only if a block of the natural loop can
+  allocate.
+- An entry poll exists only if the function can allocate, and it is in
+  a call-graph cycle, or has its address taken, or is async, or is a
+  generator.
+
+The LIR does not carry the allocation fact of an intrinsic or of a
+builtin method. The prototype uses hand lists by operation name. The
+lists are not verified against the runtime code. A landed form needs
+the fact in the operation table (core principle 8).
+
+Paths that placement P does not cover:
+
+- A host-called entry that allocates in straight-line code. No poll
+  runs, and live bytes grow with each host call. One service at each
+  outermost exit closes it.
+- A generator resume and an async step are not verified to reach a
+  poll.
+
+### Poll sites
+
+| Set | G0b placement | P |
+|---|---|---|
+| Accept corpus, 480 entries, 4,358 functions | 5,034 sites | 1,462 sites; 206 entries have none |
+| `fib-recursive`, `fib-loop`, `mandelbrot` | 3, 5, 7 | 0, 0, 0 |
+| `sort`, `callbacks`, `particles` | 9, 11, 8 | 1, 2, 1 |
+
+Emitted C grows by 0.1% to 6.2% on six large entries with placement P
+(`a423`: 339,130 to 348,626 bytes; `a405`: 87,616 to 93,074).
+
+### Cost with placement P (ratio against no polls)
+
+| Workload | dev JIT, no collection | ship C, no collection | dev JIT, 1 MiB headroom | ship C, 1 MiB headroom |
+|---|---|---|---|---|
+| `fib-recursive` | 1.00 | 1.01 | 1.00 | 1.01 |
+| `sort` | 1.00 | 1.01 | 1.12 | 1.23 |
+| `callbacks` | 1.00 | 1.01 | 1.45 | 3.90 |
+| `particles` | 0.98 | 1.00 | 1.00 | 1.06 |
+| tree without `free` | 1.00 | 1.01 | 1.17 | 2.29 |
+| `fib-loop` | 1.00 | 1.01 | 0.99 | 0.99 |
+| `mandelbrot` | 1.00 | 1.00 | 1.00 | 1.00 |
+
+The run with no polls never collects, so each figure over 1.0 in the
+last two columns is collection work.
+
+### Minimum headroom
+
+| Workload | 1 MiB | 16 MiB | No polls |
+|---|---|---|---|
+| `callbacks`, ship C | 23 collections, 185 ms | 7 collections, 90 ms | 47.5 ms |
+| tree without `free`, ship C | 44 collections, 145 ms | 3 collections, 62.6 ms | 62.6 ms |
+| `particles`, ship C | 2 collections, 82.7 ms | 0 collections, 77.7 ms | 77.8 ms |
+
+The reference for the tree without `free` never releases memory. The
+`tree` workload with `Context.free` and no polls takes 108 to 112 ms
+on the ship tier (G0a, G0b). `callbacks` keeps about 6 ms for each
+collection with about 4 MiB live; the cause is not traced.
+
+### Stress with placement P
+
+Each tier: 495 of 498 equal to the run without polls. The differences
+are `t97`, `t98`, and `t107` (the delivery rule of G0b). The 78 native,
+hook, and file entries: 78 of 78 equal in the dev JIT and ship C.
