@@ -780,3 +780,33 @@ fn automatic_collection_with_collects_and_records() {
         }
     }
 }
+
+/// `compiler.md` §342 rule 12: the failure record is active only during a
+/// collection. A collection that unwinds restores it, so a later call
+/// records nothing. The firing control is the record during a collection.
+#[test]
+fn an_unwinding_collection_ends_the_failure_record() {
+    for ship in [false, true] {
+        let mut ctx = context(ship);
+        assert!(!ctx.record_task_failure(1, 0, "Error: 1".into(), 1));
+        let recorded = Context::automatic_collection_with(
+            &mut *ctx,
+            |ctx| ctx,
+            |ctx| ctx.record_task_failure(2, 0, "Error: 2".into(), 2),
+        );
+        assert!(
+            recorded,
+            "ship={ship}: the record is active in a collection"
+        );
+        ctx.collect();
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            Context::automatic_collection_with(&mut *ctx, |ctx| ctx, |_| panic!("collector"))
+        }));
+        assert!(unwound.is_err());
+        assert!(
+            !ctx.record_task_failure(3, 0, "Error: 3".into(), 3),
+            "ship={ship}"
+        );
+        assert_eq!(ctx.recorded_failure_count(), 0, "ship={ship}");
+    }
+}

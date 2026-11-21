@@ -296,11 +296,27 @@ impl Context {
         kind: CollectionKind,
         collect: impl FnOnce(&mut T) -> R,
     ) -> (R, bool) {
+        /// Restores the outer value of the failure record when the
+        /// collection ends, also on an unwind (`compiler.md` §342 rule 12).
+        struct Restore<'a, T> {
+            owner: &'a mut T,
+            context: fn(&mut T) -> &mut Context,
+            outer: bool,
+        }
+        impl<T> Drop for Restore<'_, T> {
+            fn drop(&mut self) {
+                (self.context)(self.owner).collection.recording = self.outer;
+            }
+        }
         let outer = std::mem::replace(&mut context(owner).collection.recording, true);
-        let result = collect(owner);
-        let ctx = context(owner);
-        ctx.collection.recording = outer;
-        ctx.after_collection(kind);
+        let guard = Restore {
+            owner,
+            context,
+            outer,
+        };
+        let result = collect(&mut *guard.owner);
+        drop(guard);
+        context(owner).after_collection(kind);
         (result, outer)
     }
 
