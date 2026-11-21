@@ -7,9 +7,8 @@ file's exit criteria.
 ## 1. What a warning is here
 
 A warning marks a program that is **legal but probably unintended
-given this language's memory model** — the class invariant 2 creates,
-where a program is "correct, merely larger". Two lines bound the
-space permanently:
+given this language's memory model**. Two lines bound the space
+permanently:
 
 - **Nothing stock `tsc` already reports.** Unused locals, unreachable
   code, and their kin are the editor toolchain's job (invariant 5);
@@ -30,27 +29,13 @@ W-codes are stable and never renumbered, like S-codes
 (compiler.md §6). Each has a one-line explanation string, like
 `RuleCode::explanation()`.
 
-### W001 — per-iteration allocation never released
+### W001 — retired
 
-Fires on a `new` of a reference class **inside a loop body** when, on
-every path in the iteration, the result (a) does not escape the
-iteration and (b) is not released.
-
-- *Escape* (conservative — any of these mutes): returned; assigned to
-  module state, an outer-scope binding, a field, an array element, or
-  a map/set; captured by a lambda; passed as an argument to any call
-  other than `Context.free` on it. Field/element *reads* are uses,
-  not escapes.
-- *Release*: a `Context.free` whose argument is the binding. Any
-  `Context.collect()` call in the enclosing function mutes every
-  W001 in that function (v1 conservatism, recorded: collect anywhere
-  in the function is taken as "this function manages its garbage").
-- Why the loop restriction: `examples/e03-memory.ts` teaches the
-  one-shot unreleased allocation as *correct* (invariant 2 —
-  reclaimed at Context release). What the owner rejected
-  (`specs/tracking/dev-retention.md`) is growth **per unit of work**.
-  A loop-carried unreleased allocation is that shape; a one-shot one
-  is not.
+*(Retired 2026-11-21, `compiler.md` §343.)* W001 reported a reference
+class allocation in a loop body that did not escape the iteration and
+was not released. A Context collects automatically (`compiler.md`
+§342), so the loop does not grow the Context. The compiler does not
+report W001, and no later warning takes the code.
 
 ### W002 — use after `Context.free`
 
@@ -67,8 +52,7 @@ early error" for the statically obvious case.
 Fires on a callback-info aggregate **constructed inside a loop body**
 with a userdata slot holding an allocation made in the same
 iteration (a `new` expression as the argument, or a local whose
-initializer is a `new` in the same loop body — W001's tracking
-rules). Rationale: binding identity is `(code, userdata1, userdata2)`
+initializer is a `new` in the same loop body). Rationale: binding identity is `(code, userdata1, userdata2)`
 (compiler.md §14.4a), so a fresh userdata address per iteration
 interns a new record per iteration, and §14.4b roots its userdata —
 growth per iteration with no release verb, hence no mute.
@@ -147,7 +131,7 @@ the parameter, or the copied place.
 
 ## 3. Surfacing (CLI)
 
-- Rendered by the §8 (cli.md) renderer shape with `warning[W001]:`
+- Rendered by the §8 (cli.md) renderer shape with `warning[W002]:`
   headers, `= rule:` from the W-code explanation, and a final
   `warning: N warning(s)` summary. No ANSI color (same rule).
 - Warnings go to stderr. Exit codes unchanged: warnings alone exit 0
@@ -171,9 +155,7 @@ programs), and joins the `tsc` gate.
 
 The non-firing net is broad, not per-entry: `corpus/accept/` and
 `examples/*.ts` produce **zero warnings** under check. That is the
-precision requirement — `e03-memory.ts` in particular must stay
-silent, and `a16`-style explicit-collect loops must stay silent via
-the collect mute.
+precision requirement.
 
 ## 5. API constraints
 
@@ -187,10 +169,8 @@ warnings are their own type carrying (W-code, message, `Pos`).
 
 1. `corpus/warn/` harness: every entry fires its pinned (code, line);
    entries are accepted programs and `tsc`-clean.
-2. Zero warnings over all of `corpus/accept/` and `examples/*.ts` —
-   including `e03-memory.ts` (one-shot) and the explicit-collect
-   loop entries (mute).
-3. CLI: exact-output test for a W001 rendering; warnings-only runs
+2. Zero warnings over all of `corpus/accept/` and `examples/*.ts`.
+3. CLI: exact-output test for a W002 rendering; warnings-only runs
    exit 0 with artifacts; `--deny-warnings` exits 1 and `emit` leaves
    no artifact behind.
 4. All four subcommands print byte-identical warning text for the

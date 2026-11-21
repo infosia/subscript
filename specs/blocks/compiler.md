@@ -383,3 +383,4 @@ Every section, with its status:
 | §340 | A file entry runs under `node`, and a gate failure names its cause | active | [`s340-a-file-entry-runs-under-node-and-a-gate-failure-names-its-cause.md`](compiler/s340-a-file-entry-runs-under-node-and-a-gate-failure-names-its-cause.md) |
 | §341 | The front end parses with `oxc` | active | [`s341-the-front-end-parses-with-oxc.md`](compiler/s341-the-front-end-parses-with-oxc.md) |
 | §342 | A Context collects automatically | active | [`s342-a-context-collects-automatically.md`](compiler/s342-a-context-collects-automatically.md) |
+| §343 | W001 is retired | active | [`s343-w001-is-retired.md`](compiler/s343-w001-is-retired.md) |
