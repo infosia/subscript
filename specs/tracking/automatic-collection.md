@@ -1,10 +1,9 @@
 # Automatic collection — trial on the branch `gc-auto`
 
-Status: **§342 to §346 COMPLETE on the branch `gc-auto`.** The
-measurements of the implementation and the Phase Reviews are in
-`compiler.md` §342.4a, §343.4, §344.5, §345.5, and §346.4.
-The prototype is on the branch `gc-auto-proto` and does not land. The
-branch is not merged.
+Status: **§342 to §346 COMPLETE, and on `main` at `6169b0e5`
+(2026-11-22).** The measurements of the implementation and the Phase
+Reviews are in `compiler.md` §342.4a, §343.4, §344.5, §345.5, and
+§346.4. The prototype branches did not land, and they are deleted.
 
 ## Question and owner decisions
 
@@ -373,7 +372,7 @@ the runtime library from that directory.
   reference of 42 to 44 ms. With the reference at 31.4 ms the same
   ship time was 1.59x.
 - A reference-count cycle of async frames is not reclaimed (§70.3.6,
-  §342.5 item 2).
+  §342.5 item 2). G7 measures which shapes reach it.
 
 ## G6 — benchmark comparison against `main`, and the causes
 
@@ -450,3 +449,58 @@ with none (minimum of 40 runs, two passes).
 
 The `perf-gate` run of this round was void after its first pass: a
 load from outside the round gave spreads of 14% to 360%.
+
+## G7 — async frames under automatic collection
+
+Measured 2026-11-22 at `5bbb167c`, with no change of the tree. The
+question: does a typical async program keep memory that no root
+reaches (§342.5 item 2)?
+
+Method. Each program repeats one shape N times, and its last step is
+`Context.collect()`. A harness outside the tree reads the live bytes
+of the Context after the run: the dev JIT with memory accounting, and
+the ship tier through a post-run hook that calls
+`subscript_rt_ctx_collect` one more time. The dev figure is requested
+bytes and the ship figure is capacity, so each tier compares with
+itself only. The default mode ran no automatic collection at these
+counts; one shape at N = 100,000 ran one, and its figure did not
+change. The interpreter was not measured.
+
+| Shape | Dev, N = 1,000 and 10,000 | Ship, the same | Result |
+|---|---|---|---|
+| A loop awaits an async function that allocates | 40, 44 | 16, 16 | bounded |
+| An object stores the handle of its own method call; awaited; dropped | 42, 46 | 16, 16 | bounded |
+| The same, never awaited | 15, 15 | 16, 16 | bounded |
+| The same, the method suspends one time | 42, 46 | 16, 16 | bounded |
+| Two objects, each holds the task whose frame holds the other | 42, 46 | 16, 16 | bounded |
+| The handles are in an array or a Map that the frames hold | 42, 46 and 38, 40 | 16, 16 | bounded |
+| A `TaskGroup` local, joined | 42, 46 | 16, 16 | bounded |
+| A module array of objects, each with its task | 82, 86 | 64, 64 | bounded |
+| **The method returns `this`; the object stores the handle** | 104,042 and 1,040,046 | 128,016 and 1,280,016 | 104 bytes for each iteration (dev) |
+| **An async function returns its parameter; the parameter stores the handle** | 176,042 and 1,760,046 | 224,016 and 2,240,016 | 176 bytes for each iteration (dev) |
+| Two methods of one object, each awaits the handle of the other | 176,014 and 1,760,014 | 208,016 and 2,080,016 | 176 bytes for each iteration (dev) |
+
+The output is equal in the two tiers for each shape and each count.
+A handle that is dropped with no await is rejected (S013), so that
+shape has no row.
+
+Cause of the two rows in bold. The object W holds the frame F through
+a counted field, and the count of F is 1. F completes, and its
+completion value holds the address of W. The collector takes each
+registered frame as a root, and each completion value as a root
+(`runtime/src/context/memory.rs`, the root sets `async_frames` and
+`completion`). So W is marked, the release of unreachable counted
+fields (`runtime/src/context/counted.rs`) does not release the field
+of W, and the count of F stays 1. The locals of a completed frame are
+not the holder: the same shape with an `i32` result is reclaimed.
+
+Judgment. The two rows in bold are typical: a loader that returns its
+receiver or its container. The row of the two methods that await each
+other is a wait that never ends; the tasks are unfinished work
+(§70.3.6), and the row is contrived.
+
+Not measured: a task that waits on a host completion source and whose
+object is dropped (the harness did not link the native fixture). The
+ship run of the second row in bold at N = 100,000 took several
+minutes; the cause is not measured.
+
