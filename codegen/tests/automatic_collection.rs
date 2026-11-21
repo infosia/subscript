@@ -78,20 +78,41 @@ export function main(): void {
 "#;
 
 /// Runs the ship tier with the mode set before the initializer. Returns the
-/// program output and live bytes after the run.
-fn ship(source: &str, mode: i32) -> (String, u64) {
+/// program output, live bytes after the run, and the automatic collection
+/// count that the post-run hook reads (`compiler.md` §345 rule 4).
+fn ship(source: &str, mode: i32) -> (String, u64, u64) {
+    let run = ship_counted(source, mode);
+    (run.output, run.live_bytes, run.collections)
+}
+
+/// The output and the counts of one run in one tier.
+#[derive(Debug)]
+struct CountedRun {
+    output: String,
+    live_bytes: u64,
+    collections: u64,
+    outermost_exits: u64,
+}
+
+/// [`ship`], and also the outermost exit count that the post-run hook reads.
+fn ship_counted(source: &str, mode: i32) -> CountedRun {
     let scratch = tempfile_dir();
     let hooks = scratch.join("collection_hooks.c");
     std::fs::write(
         &hooks,
         format!(
-            "#include <stdio.h>\n\
+            "#include <stdint.h>\n\
+             #include <stdio.h>\n\
              #include \"subscript_runtime.h\"\n\
+             uint64_t subscript_rt_automatic_collection_count(const subscript_rt_context* ctx);\n\
+             uint64_t subscript_rt_outermost_exit_count(const subscript_rt_context* ctx);\n\
              void subscript_test_collection_setup(subscript_rt_context* ctx) {{\n\
                if (subscript_rt_ctx_set_collection(ctx, {mode}, {MIN_HEADROOM}u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
              }}\n\
              void subscript_test_collection_report(subscript_rt_context* ctx) {{\n\
                printf(\"live-bytes=%llu\\n\", (unsigned long long)subscript_rt_ctx_live_bytes(ctx));\n\
+               printf(\"automatic-collections=%llu\\n\", (unsigned long long)subscript_rt_automatic_collection_count(ctx));\n\
+               printf(\"outermost-exits=%llu\\n\", (unsigned long long)subscript_rt_outermost_exit_count(ctx));\n\
                fflush(stdout);\n\
              }}\n"
         ),
@@ -110,17 +131,27 @@ fn ship(source: &str, mode: i32) -> (String, u64) {
     let _ = std::fs::remove_dir_all(&scratch);
     let text = String::from_utf8(output.stdout).expect("utf-8 output");
     let mut live = None;
+    let mut collections = None;
+    let mut exits = None;
     let mut program = String::new();
     for line in text.lines() {
-        match line.strip_prefix("live-bytes=") {
-            Some(value) => live = Some(value.parse::<u64>().expect("live bytes")),
-            None => {
-                program.push_str(line);
-                program.push('\n');
-            }
+        if let Some(value) = line.strip_prefix("live-bytes=") {
+            live = Some(value.parse::<u64>().expect("live bytes"));
+        } else if let Some(value) = line.strip_prefix("automatic-collections=") {
+            collections = Some(value.parse::<u64>().expect("automatic collections"));
+        } else if let Some(value) = line.strip_prefix("outermost-exits=") {
+            exits = Some(value.parse::<u64>().expect("outermost exits"));
+        } else {
+            program.push_str(line);
+            program.push('\n');
         }
     }
-    (program, live.expect("the post-run hook printed live bytes"))
+    CountedRun {
+        output: program,
+        live_bytes: live.expect("the post-run hook printed live bytes"),
+        collections: collections.expect("the post-run hook printed the collection count"),
+        outermost_exits: exits.expect("the post-run hook printed the exit count"),
+    }
 }
 
 fn tempfile_dir() -> PathBuf {
@@ -169,12 +200,12 @@ fn interpreted(source: &str, mode: CollectionMode) -> (String, u64, usize) {
 /// it the three C builds.
 #[test]
 fn the_tree_workload_reclaims_in_one_host_call_in_the_ship_tier() {
-    let (output, one_tree) = ship(&tree_source(16, 1), 0);
+    let (output, one_tree, _) = ship(&tree_source(16, 1), 0);
     assert_eq!(output, "131071\n");
-    let (output, off) = ship(&tree_source(16, 30), 0);
+    let (output, off, _) = ship(&tree_source(16, 30), 0);
     assert_eq!(output, "3932130\n");
     assert!(off >= 29 * one_tree, "off {off}, one tree {one_tree}");
-    let (output, live) = ship(&tree_source(16, 30), 1);
+    let (output, live, _) = ship(&tree_source(16, 30), 1);
     assert_eq!(output, "3932130\n");
     assert!(live < 3 * one_tree, "live {live}, one tree {one_tree}");
 }
@@ -841,7 +872,7 @@ export function main(): void {
 fn an_array_of_references_keeps_its_elements_in_the_three_tiers() {
     let expected = format!("150 {} {} {}\n", 78675, 78675, 78675);
     for mode in [CollectionMode::Automatic, CollectionMode::EachPoll] {
-        let (output, _) = ship(ARRAY_HOLDER, mode as i32);
+        let (output, _, _) = ship(ARRAY_HOLDER, mode as i32);
         assert_eq!(output, expected, "ship tier, {mode:?}");
         let (output, _, _) = dev(ARRAY_HOLDER, mode);
         assert_eq!(output, expected, "dev JIT, {mode:?}");
@@ -928,4 +959,109 @@ export function main(): void {
     assert_eq!(output, "5 11\n");
     assert!(facts.contains(&(5, true)), "{facts:?}");
     assert!(facts.contains(&(6, false)), "{facts:?}");
+}
+
+/// The corpus entries of `compiler.md` §345 acceptance 1: a function-value
+/// callback replaces the elements of the receiver that the runtime operation
+/// holds.
+const OPERATION_ROOT_ENTRIES: [&str; 4] = [
+    "accept/a493-filter-keeps-the-element-that-its-callback-removes.ts",
+    "accept/a494-find-keeps-the-element-that-its-callback-removes.ts",
+    "accept/a495-group-by-keeps-the-element-that-its-callback-removes.ts",
+    "accept/a496-sort-keeps-the-elements-that-its-comparator-replaces.ts",
+];
+
+/// One run of `source` in mode 2 (each poll and each outermost exit
+/// collects) in the ship tier, the dev JIT, and the interpreter.
+fn each_poll_runs(source: &str) -> [(&'static str, CountedRun); 3] {
+    let ship = ship_counted(source, CollectionMode::EachPoll as i32);
+    let files = [SourceFile::new("collection.ts", source)];
+    let mut config = RunConfig::default();
+    config.memory_accounting = true;
+    config.collection = Some((CollectionMode::EachPoll, MIN_HEADROOM));
+    let dev = run_jit_configured(&files, config).expect("dev run");
+    let accounting = dev.memory_accounting.expect("dev accounting");
+    let dev = CountedRun {
+        output: String::from_utf8(dev.stdout).expect("utf-8 output"),
+        live_bytes: accounting.live_bytes as u64,
+        collections: accounting.automatic_collections,
+        outermost_exits: accounting.outermost_exits,
+    };
+    let module = lower_module(&check_program(&files).expect("checks")).expect("lowers");
+    let (output, run) = interpret_with_collection(&module, CollectionMode::EachPoll, MIN_HEADROOM)
+        .expect("interpreter run");
+    let interpreter = CountedRun {
+        output: String::from_utf8(output).expect("utf-8 output"),
+        live_bytes: run.live_bytes as u64,
+        collections: run.automatic_collections,
+        outermost_exits: run.outermost_exits,
+    };
+    [
+        ("ship tier", ship),
+        ("dev JIT", dev),
+        ("interpreter", interpreter),
+    ]
+}
+
+/// The bound of the automatic collections that the outermost exits of a
+/// run give. `compiler.md` §342 rule 8: an outermost exit runs at most one
+/// automatic collection. The detection collection of the same exit has its
+/// own count, so the bound is one collection per exit. A count over the
+/// bound shows that a poll in the script call collected.
+fn exit_collection_bound(run: &CountedRun) -> u64 {
+    run.outermost_exits
+}
+
+/// `compiler.md` §345 acceptance 2: the shapes of acceptance 1 with no
+/// `Context.collect()`. In mode 2 the polls collect, and each tier prints
+/// the output of mode 0. Each tier gives more automatic collections than
+/// its outermost exits can give, so a poll in the script call collected.
+/// Control: mode 0 prints the golden of the entry, and the source has no
+/// explicit collection after the edit. Cost: four programs, each two
+/// ship-tier C builds, one dev JIT compile, and two debug interpreter runs.
+#[test]
+fn a_runtime_operation_keeps_what_it_reads_after_a_callback_with_no_explicit_collection() {
+    for path in OPERATION_ROOT_ENTRIES {
+        let entry = corpus_source(path);
+        let source = entry.replace("  Context.collect();\n", "");
+        assert_ne!(
+            source, entry,
+            "{path}: the entry has an explicit collection"
+        );
+        assert!(!source.contains("Context.collect();"), "{path}");
+        let golden = corpus_source(&path.replace(".ts", ".expected"));
+        let (expected, _, _) = interpreted(&source, CollectionMode::Off);
+        assert_eq!(expected, golden, "{path}: mode 0");
+        for (tier, run) in each_poll_runs(&source) {
+            assert_eq!(run.output, expected, "{path}: {tier}");
+            assert!(
+                run.collections > exit_collection_bound(&run),
+                "{path}: {tier}: no poll collected: {run:?}"
+            );
+        }
+    }
+}
+
+/// The control of the bound: a program with no loop and no call-graph
+/// cycle has no poll (`compiler.md` §342 rule 11), so in mode 2 only its
+/// outermost exits collect. Each tier gives a count over zero and not over
+/// the bound. Cost: one ship-tier C build, one dev JIT compile, and one
+/// debug interpreter run.
+#[test]
+fn a_program_with_no_poll_collects_only_at_its_outermost_exits() {
+    const NO_POLL: &str = r#"
+class Box { v: i32; constructor(v: i32) { this.v = v; } }
+export function main(): void {
+  const b: Box = new Box(4);
+  print(`${b.v}`);
+}
+"#;
+    for (tier, run) in each_poll_runs(NO_POLL) {
+        assert_eq!(run.output, "4\n", "{tier}");
+        assert!(run.collections > 0, "{tier}: the exit collected: {run:?}");
+        assert!(
+            run.collections <= exit_collection_bound(&run),
+            "{tier}: a poll collected: {run:?}"
+        );
+    }
 }

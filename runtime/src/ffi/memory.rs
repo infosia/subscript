@@ -53,6 +53,34 @@ pub unsafe extern "C" fn subscript_rt_collect_poll(ctx: *mut Context) {
     unsafe { &mut *ctx }.collect_poll();
 }
 
+/// The count of outermost exits of the Context (`compiler.md` §345 rule 4).
+/// A test host reads it after the last script exit and before it releases
+/// the Context. The host header does not declare this entry.
+///
+/// # Safety
+///
+/// `ctx` is a live Context.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_outermost_exit_count(ctx: *const Context) -> u64 {
+    // SAFETY: shared contract.
+    unsafe { &*ctx }.outermost_exit_count()
+}
+
+/// The count of automatic collections of the Context: polls and the
+/// outermost-exit service (`compiler.md` §342 rule 8). A test host reads it
+/// after the last script exit and before it releases the Context, in the
+/// same form as [`subscript_rt_outermost_exit_count`] (`compiler.md` §345
+/// rule 4). The host header does not declare this entry.
+///
+/// # Safety
+///
+/// `ctx` is a live Context.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_automatic_collection_count(ctx: *const Context) -> u64 {
+    // SAFETY: shared contract.
+    unsafe { &*ctx }.automatic_collection_count()
+}
+
 /// Allocates `size` payload bytes tagged `class_id`; null on trap.
 ///
 /// Fresh storage and classes that can hold handles are zeroed. A

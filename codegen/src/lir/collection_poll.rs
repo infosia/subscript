@@ -24,8 +24,9 @@
 //!
 //! # Bound (rule 11d)
 //!
-//! Each allocation path reaches a poll, or the outermost exit, after a
-//! bounded count of allocations:
+//! The scope of the bound is LIR control flow (`compiler.md` §345 rule 3).
+//! Each path through LIR control flow reaches a poll, or the outermost exit,
+//! after a bounded count of LIR instructions that can allocate:
 //!
 //! 1. **One activation, no call.** Each cycle of a control-flow graph has a
 //!    retreating edge of any depth-first search from the entry, and the
@@ -33,8 +34,8 @@
 //!    block of the cycle. So a cycle with a block that can allocate has a
 //!    poll in the source block of its retreating edge, and that block is on
 //!    the cycle. A path with no poll is then a path with no repeated
-//!    allocating block. Its count of allocations is at most the size of the
-//!    function.
+//!    allocating block. Its count of instructions that can allocate is at
+//!    most the size of the function.
 //! 2. **Calls.** The activations that run with no poll form a call tree.
 //!    A call to a function that cannot allocate adds no allocation. A chain
 //!    of that tree has no allocating function twice: a repeated function is
@@ -43,10 +44,16 @@
 //!    taken, and each of those that can allocate has an entry poll. So the
 //!    depth of the tree is at most the count of functions, and by point 1
 //!    each activation makes at most its size of calls. The count of
-//!    allocations with no poll has a bound that only the module sets.
-//! 3. **Runtime operations that call script code.** A built-in operation
-//!    with a function-value callback calls a function whose address is
-//!    taken. That function has an entry poll if it can allocate.
+//!    instructions that can allocate with no poll has a bound that only the
+//!    module sets.
+//! 3. **Runtime operations.** The bound counts instructions, not
+//!    allocations. One runtime operation can allocate in proportion to its
+//!    input, and no poll is in a runtime loop: a poll there needs a root for
+//!    each input, partial result, and temporary of the operation. The flag
+//!    that the operation sets is served at the first poll after it returns,
+//!    or at the outermost exit (`compiler.md` §345 rule 3). A runtime
+//!    operation with a function-value callback calls a function whose
+//!    address is taken. That function has an entry poll if it can allocate.
 //!
 //! # Resume (rule 11c)
 //!

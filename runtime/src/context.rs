@@ -979,11 +979,15 @@ mod memory;
 
 #[path = "context/collection.rs"]
 mod collection;
+
+#[path = "context/operation_root.rs"]
+mod operation_root;
 pub(crate) use collection::CollectionSettings;
 pub use collection::{
     CollectionMode, ExitService, DEFAULT_COLLECTION_MODE, DEFAULT_MIN_HEADROOM_BYTES,
     MAX_DETECTION_INTERVAL,
 };
+pub(crate) use operation_root::{root_word, OperationRoot};
 
 // compiler.md §342 rule 9: generated code loads the pending flag at a
 // fixed offset of the prefix.

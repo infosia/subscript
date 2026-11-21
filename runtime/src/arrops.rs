@@ -35,7 +35,9 @@
 //! generated code never unwinds (the trap-flag discipline), so no
 //! unwind crosses these calls.
 
-use crate::context::{ArrayElements, Context};
+use std::cell::Cell;
+
+use crate::context::{root_word, ArrayElements, Context, OperationRoot};
 use crate::trap::TrapKind;
 use crate::valeq::{read_uint, value_eq, ValueKind};
 
@@ -237,6 +239,9 @@ macro_rules! with_abi {
         }
     };
 }
+
+mod sort;
+pub use sort::sort;
 
 /// Calls a one-value script callback `(ctx, env, v) -> R`.
 ///
@@ -1163,10 +1168,10 @@ unsafe fn map_source(
     if out.is_null() {
         return std::ptr::null_mut();
     }
-    // Keep the runtime-owned result live across callback collection until this call returns.
-    let mut root = out as usize;
-    // SAFETY: `root` stays live until the matching pop below (section 263).
-    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
+    // compiler.md §345 rule 1: the slot keeps the result across each callback.
+    let root = [Cell::new(out as usize)];
+    // SAFETY: `root` outlives the guard, which drops at the return.
+    let _root = unsafe { OperationRoot::cells(ctx, &root) };
     // SAFETY: caller contract.
     let n = unsafe { source.len(ctx, pos_id) };
     with_abi!(ea, T, {
@@ -1202,8 +1207,6 @@ unsafe fn map_source(
             }
         })
     });
-    // SAFETY: balances the result root above.
-    unsafe { (*ctx).shadow_pop() };
     out
 }
 
@@ -1266,10 +1269,11 @@ unsafe fn filter_source(
     if out.is_null() {
         return std::ptr::null_mut();
     }
-    // Keep the runtime-owned result live across callback collection until this call returns.
-    let mut root = out as usize;
-    // SAFETY: `root` stays live until the matching pop below (section 263).
-    unsafe { (*ctx).shadow_push((&mut root as *mut usize) as usize, 1) };
+    // compiler.md §345 rule 1: slot 0 keeps the result and slot 1 keeps
+    // the element that the push reads after the callback.
+    let roots = [Cell::new(out as usize), Cell::new(0)];
+    // SAFETY: `roots` outlives the guard, which drops at the return.
+    let _root = unsafe { OperationRoot::cells(ctx, &roots) };
     // SAFETY: caller contract.
     let n = unsafe { source.len(ctx, pos_id) };
     with_abi!(abi, T, {
@@ -1280,6 +1284,7 @@ unsafe fn filter_source(
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
             let v: T = unsafe { source.read(ctx, i) };
+            roots[1].set(root_word(&v));
             // SAFETY: callback contract (caller). A language boolean
             // returns as its low byte on both tiers.
             let keep: u8 = unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
@@ -1295,8 +1300,6 @@ unsafe fn filter_source(
             }
         }
     });
-    // SAFETY: balances the result root above.
-    unsafe { (*ctx).shadow_pop() };
     out
 }
 
@@ -1499,6 +1502,11 @@ unsafe fn search(
     let Some(abi) = (unsafe { abi_or_trap(ctx, kind, esz) }) else {
         return trapped_result;
     };
+    // compiler.md §345 rule 1: the slot keeps the element that the copy
+    // to `found` reads after the callback.
+    let root = [Cell::new(0)];
+    // SAFETY: `root` outlives the guard, which drops at the return.
+    let _root = unsafe { OperationRoot::cells(ctx, &root) };
     // SAFETY: caller contract.
     let n = unsafe { source.len(ctx, 0) };
     with_abi!(abi, T, {
@@ -1517,6 +1525,7 @@ unsafe fn search(
             }
             // SAFETY: `i` in bounds; widths match by dispatch.
             let v: T = unsafe { source.read(ctx, i) };
+            root[0].set(root_word(&v));
             // SAFETY: callback contract (caller).
             let r: u8 = unsafe { call_value::<T, u8>(code, ctx, env, v, i as i32, indexed) };
             // SAFETY: caller contract.
@@ -1690,115 +1699,6 @@ pub unsafe fn find_last_index(
             std::ptr::null_mut(),
         )
     }
-}
-
-/// Stable bottom-up merge sort of `a` using the script comparator;
-/// `false` when a comparator call trapped (the caller then discards the
-/// buffer). Stability: the merge takes from the left run when
-/// `cmp(left, right) <= 0` (JS: `right` precedes only when the
-/// comparator is positive).
-///
-/// # Safety
-///
-/// `code`/`env` are a comparator of shape `(ctx, env, T, T) -> i32`
-/// (caller contract, as [`sort`]).
-unsafe fn merge_sort_by<T: Copy>(
-    ctx: *mut Context,
-    code: *const u8,
-    env: *const u8,
-    a: &mut Vec<T>,
-    tmp: &mut Vec<T>,
-) -> bool {
-    let n = a.len();
-    let mut width = 1;
-    while width < n {
-        let mut lo = 0;
-        while lo < n {
-            let mid = (lo + width).min(n);
-            let hi = (lo + 2 * width).min(n);
-            let (mut l, mut r, mut k) = (lo, mid, lo);
-            while l < mid && r < hi {
-                // SAFETY: comparator contract (caller).
-                let c: i32 = unsafe { call2::<T, T, i32>(code, ctx, env, a[l], a[r]) };
-                // SAFETY: caller contract.
-                if unsafe { (*ctx).trapped() } {
-                    return false;
-                }
-                if c <= 0 {
-                    tmp[k] = a[l];
-                    l += 1;
-                } else {
-                    tmp[k] = a[r];
-                    r += 1;
-                }
-                k += 1;
-            }
-            while l < mid {
-                tmp[k] = a[l];
-                l += 1;
-                k += 1;
-            }
-            while r < hi {
-                tmp[k] = a[r];
-                r += 1;
-                k += 1;
-            }
-            lo += 2 * width;
-        }
-        std::mem::swap(a, tmp);
-        width *= 2;
-    }
-    true
-}
-
-/// `sort(cmp)`: stable merge sort in place. The sort runs on a scratch
-/// buffer and writes back **only on completion**, so a comparator trap
-/// leaves the array exactly as it was (trivially a permutation of its
-/// input). The write-back is also skipped if a comparator changed the
-/// array's length (the buffer no longer describes the array).
-///
-/// # Safety
-///
-/// `h` is a live array of `ctx` (or null); `code`/`env` are a language
-/// comparator of shape `(ctx, env, T, T) -> i32` for the element ABI.
-pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u8, kind: ElemKind) {
-    // SAFETY: caller contract.
-    if unsafe { cb_blocked(ctx, h, code) } {
-        return;
-    }
-    // SAFETY: caller contract.
-    let esz = unsafe { (*ctx).array_elem_size(h) };
-    // SAFETY: caller contract.
-    let Some(abi) = (unsafe { abi_or_trap(ctx, kind, esz) }) else {
-        return;
-    };
-    // SAFETY: caller contract.
-    let n = unsafe { len_of(ctx, h, 0) };
-    if n < 2 {
-        return;
-    }
-    with_abi!(abi, T, {
-        let mut buf: Vec<T> = Vec::with_capacity(n);
-        for i in 0..n {
-            // SAFETY: `i < n`; widths match by dispatch.
-            buf.push(unsafe { read_elem::<T>(ctx, h, i) });
-        }
-        let mut tmp = buf.clone();
-        // SAFETY: comparator contract (caller).
-        if !unsafe { merge_sort_by::<T>(ctx, code, env, &mut buf, &mut tmp) } {
-            return; // comparator trapped: the array is untouched
-        }
-        // SAFETY: caller contract.
-        if unsafe { len_of(ctx, h, 0) } != n {
-            return; // a comparator resized the array: keep it as-is
-        }
-        for (i, v) in buf.iter().enumerate() {
-            // SAFETY: `i < n`; element slots are `esz` writable bytes.
-            let p = unsafe { (*ctx).array_elem_ptr(h, i as i32, 0) };
-            // SAFETY: as above; `size_of::<T>() == esz` by dispatch.
-            unsafe { p.cast::<T>().write_unaligned(*v) };
-        }
-    });
 }
 
 #[cfg(test)]

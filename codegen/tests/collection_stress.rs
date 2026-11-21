@@ -64,6 +64,12 @@ const SWEEP_TEST: &str = "collection_stress_sweep";
 const CHILD_LIMIT: Duration = Duration::from_secs(300);
 /// The ship-tier pre-init hook that sets mode 2.
 const SETUP_HOOK: &str = "subscript_stress_collection_setup";
+/// The ship-tier post-run hook that writes the outermost exit count
+/// (`compiler.md` §345 rule 4).
+const EXIT_REPORT_HOOK: &str = "subscript_stress_exit_report";
+/// The file in the child scratch directory where [`EXIT_REPORT_HOOK`]
+/// writes the count. The script stdout does not carry it.
+const EXIT_COUNT_FILE: &str = "exit-count";
 /// The ship-tier hook of the scratch file provider (`support/files.rs`).
 const FILES_SETUP_HOOK: &str = "subscript_test_files_setup";
 /// The file-provider line of a corpus entry.
@@ -233,7 +239,8 @@ fn interpreter_exclusion(entry: &Entry) -> Option<String> {
 enum Outcome {
     /// The run ended with no trap. `exits` is the outermost exit count
     /// (`compiler.md` §342 rule 16), and `collections` the automatic
-    /// collection count (rule 7). The ship tier gives neither.
+    /// collection count (rule 7). The ship tier gives the exit count
+    /// through [`EXIT_COUNT_FILE`] (§345 rule 4), and no collection count.
     Complete {
         stdout: Vec<u8>,
         exits: Option<u64>,
@@ -362,9 +369,16 @@ fn unhex(text: &str) -> Vec<u8> {
 /// The source of the ship-tier hook library that sets mode 2 before the
 /// initializer. An entry with the scratch file provider also installs the
 /// provider in the same hook, because the runner takes one pre-init hook.
-fn setup_hook_library(scratch: &Path, file_provider: bool) -> NativeLibrary {
+/// The library also defines [`EXIT_REPORT_HOOK`]: it calls `post_run`, the
+/// post-run hook of the entry if it has one, then writes the outermost exit
+/// count to [`EXIT_COUNT_FILE`] in `scratch` (`compiler.md` §345 rule 4).
+fn setup_hook_library(
+    scratch: &Path,
+    file_provider: bool,
+    post_run: Option<&str>,
+) -> NativeLibrary {
     let source = scratch.join("stress_setup.c");
-    let (declaration, call) = if file_provider {
+    let (mut declaration, call) = if file_provider {
         (
             format!("void {FILES_SETUP_HOOK}(subscript_rt_context* ctx);\n"),
             format!("  {FILES_SETUP_HOOK}(ctx);\n"),
@@ -372,22 +386,53 @@ fn setup_hook_library(scratch: &Path, file_provider: bool) -> NativeLibrary {
     } else {
         (String::new(), String::new())
     };
+    let post_call = match post_run {
+        Some(hook) => {
+            declaration.push_str(&format!("void {hook}(subscript_rt_context* ctx);\n"));
+            format!("  {hook}(ctx);\n")
+        }
+        None => String::new(),
+    };
+    let count_path = c_string(&scratch.join(EXIT_COUNT_FILE));
     std::fs::write(
         &source,
         format!(
-            "#include <stdio.h>\n\
+            "#include <stdint.h>\n\
+             #include <stdio.h>\n\
              #include \"subscript_runtime.h\"\n\
+             uint64_t subscript_rt_outermost_exit_count(const subscript_rt_context* ctx);\n\
              {declaration}\
              void {SETUP_HOOK}(subscript_rt_context* ctx) {{\n\
              {call}\
                if (subscript_rt_ctx_set_collection(ctx, 2, 0u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
+             }}\n\
+             void {EXIT_REPORT_HOOK}(subscript_rt_context* ctx) {{\n\
+             {post_call}\
+               FILE* out = fopen({count_path}, \"w\");\n\
+               if (out != NULL) {{\n\
+                 fprintf(out, \"%llu\\n\", (unsigned long long)subscript_rt_outermost_exit_count(ctx));\n\
+                 fclose(out);\n\
+               }}\n\
              }}\n"
         ),
     )
     .expect("write the setup hook source");
     let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    // SAFETY: the library defines only the pre-init hook; no script calls it.
+    // SAFETY: the library defines only host hooks; no script calls it.
     unsafe { NativeLibrary::new(vec![repo.join("runtime/include")], vec![source], Vec::new()) }
+}
+
+/// `path` as a C string literal.
+fn c_string(path: &Path) -> String {
+    let text = path.to_str().expect("a UTF-8 scratch path");
+    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// The count that [`EXIT_REPORT_HOOK`] wrote to `scratch`, if any.
+fn reported_exit_count(scratch: &Path) -> Option<u64> {
+    std::fs::read_to_string(scratch.join(EXIT_COUNT_FILE))
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
 }
 
 fn run_result(result: Result<subscript_codegen::RunOutput, RunError>) -> Outcome {
@@ -496,25 +541,32 @@ fn ship_run(entry: &Entry, sources: &[SourceFile], scratch: &Path) -> Outcome {
     if let Some(fixture) = &fixture {
         libraries.push(fixture.library());
     }
-    libraries.push(setup_hook_library(scratch, file_provider));
+    let (pre_entry, post_run) = match entry.category {
+        Category::Accept => accept_runs::host_hooks(&entry.id),
+        Category::Trap if host_driven(entry) => (Some("subWireEntryDriveUnknown"), None),
+        Category::Trap => (None, None),
+    };
+    libraries.push(setup_hook_library(scratch, file_provider, post_run));
     let mut config = RunConfig::default().with_native_libraries(&libraries);
     if file_provider {
         config = config.with_enabled_modules(&["node:fs/promises"]);
     }
     config.pre_init_hook = Some(SETUP_HOOK);
-    match entry.category {
-        Category::Accept => {
-            (config.pre_entry_hook, config.post_run_hook) = accept_runs::host_hooks(&entry.id);
-        }
-        Category::Trap => {
-            if host_driven(entry) {
-                config.pre_entry_hook = Some("subWireEntryDriveUnknown");
-            }
-            config.fail_alloc_after = trap_corpus::allocation_failure_count(&entry.id);
-            config.freed_handle_diagnostics = trap_corpus::callback_userdata_diagnostic(&entry.id);
-        }
+    config.pre_entry_hook = pre_entry;
+    config.post_run_hook = Some(EXIT_REPORT_HOOK);
+    if entry.category == Category::Trap {
+        config.fail_alloc_after = trap_corpus::allocation_failure_count(&entry.id);
+        config.freed_handle_diagnostics = trap_corpus::callback_userdata_diagnostic(&entry.id);
     }
-    run_result(run_c_aot_configured(sources, config))
+    let _ = std::fs::remove_file(scratch.join(EXIT_COUNT_FILE));
+    match run_result(run_c_aot_configured(sources, config)) {
+        Outcome::Complete { stdout, .. } => Outcome::Complete {
+            stdout,
+            exits: reported_exit_count(scratch),
+            collections: None,
+        },
+        other => other,
+    }
 }
 
 /// The interpreter run of one entry with mode 2. An `Internal` trap is the
@@ -818,6 +870,7 @@ fn collection_stress_sweep() {
         std::collections::HashMap::new();
     let mut slowest = (Duration::ZERO, String::new());
     let mut per_tier_collections = [0u64; 3];
+    let mut ship_without_count = Vec::new();
     for ((index, tier), (outcome, elapsed)) in runs.iter().zip(&outcomes) {
         let entry = &entries[*index];
         let column = TIERS.iter().position(|t| t == tier).expect("a tier");
@@ -842,31 +895,69 @@ fn collection_stress_sweep() {
         }
         if let Outcome::Complete {
             exits: count,
-            collections: Some(collections),
+            collections,
             ..
         } = outcome
         {
+            // §345 rule 4: the exit count is recorded apart from the
+            // collection count, which the ship tier does not give.
             exits.entry(*index).or_default()[column] = *count;
-            per_tier_collections[column] += collections;
+            per_tier_collections[column] += collections.unwrap_or(0);
+            if *tier == Tier::Ship && count.is_none() {
+                ship_without_count.push(entry.id.clone());
+            }
         }
     }
 
-    // §342.2 item 8: the interpreter and the dev JIT mark the same count of
-    // outermost exits. A trapped run gives no count.
+    // §345 rule 4: the three tiers mark the same count of outermost exits
+    // in each entry that each of them runs to the end. Where one tier gives
+    // no count, the two counts that remain are compared. A trapped run, a
+    // run that the table excludes, and a host-driven dev JIT run
+    // ([`dev_host_run`]) give no count.
     let mut exit_compared = 0usize;
+    let mut exit_compared_three = 0usize;
     let mut exit_differences = Vec::new();
     let mut keys: Vec<&usize> = exits.keys().collect();
     keys.sort();
     for index in keys {
-        let counts = exits[index];
-        if let (Some(dev), Some(interpreter)) = (counts[0], counts[2]) {
-            exit_compared += 1;
-            if dev != interpreter {
+        let id = &entries[*index].id;
+        let mut compare_pair = |first: (&str, u64), second: (&str, u64)| {
+            if first.1 != second.1 {
                 exit_differences.push(format!(
-                    "{}: outermost exits dev-JIT {dev} != interpreter {interpreter}",
-                    entries[*index].id
+                    "{id}: outermost exits {} {} != {} {}",
+                    first.0, first.1, second.0, second.1
                 ));
             }
+        };
+        match exits[index] {
+            [Some(dev), Some(ship), Some(interpreter)] => {
+                exit_compared += 1;
+                exit_compared_three += 1;
+                compare_pair(("dev-JIT", dev), ("ship-C-AOT", ship));
+                compare_pair(("dev-JIT", dev), ("interpreter", interpreter));
+            }
+            [Some(dev), Some(ship), None] => {
+                exit_compared += 1;
+                compare_pair(("dev-JIT", dev), ("ship-C-AOT", ship));
+            }
+            [Some(dev), None, Some(interpreter)] => {
+                exit_compared += 1;
+                compare_pair(("dev-JIT", dev), ("interpreter", interpreter));
+            }
+            [None, Some(ship), Some(interpreter)] => {
+                exit_compared += 1;
+                compare_pair(("ship-C-AOT", ship), ("interpreter", interpreter));
+            }
+            // `compiler.md` §345 rule 4 compares the counts of the runs to the
+            // end with no trap. With one count, no second count exists to compare. A
+            // ship run to the end with no count is a failure of its own
+            // (`ship_without_count`).
+            [Some(_), None, None] | [None, Some(_), None] | [None, None, Some(_)] => {}
+            // `compiler.md` §345 rule 4: no tier gave a count, so nothing is
+            // compared. A
+            // host-driven dev JIT run gives none, and the other two tiers
+            // trapped or the table excludes them.
+            [None, None, None] => {}
         }
     }
 
@@ -884,7 +975,7 @@ fn collection_stress_sweep() {
         );
     }
     eprintln!(
-        "collection stress: {} entries, {exit_compared} exit counts compared, slowest run {} in {:.1} s, {:.1} s",
+        "collection stress: {} entries, {exit_compared} exit counts compared, {exit_compared_three} of them in three tiers, slowest run {} in {:.1} s, {:.1} s",
         entries.len(),
         slowest.1,
         slowest.0.as_secs_f64(),
@@ -892,14 +983,20 @@ fn collection_stress_sweep() {
     );
     let mut failures = differences;
     // The control of the mode: a run with mode 2 collects at its polls and
-    // exits. The ship tier gives no host function that reads the count, so
-    // its control reads live bytes after an unbracketed call.
+    // exits. The sweep does not read the collection count of the ship tier,
+    // so its control reads live bytes after an unbracketed call.
     for (column, tier) in TIERS.iter().enumerate() {
         if *tier != Tier::Ship && per_tier_collections[column] == 0 {
             failures.push(format!("{}: no automatic collection ran", tier.name()));
         }
     }
     failures.extend(ship_mode_control());
+    failures.extend(ship_exit_count_control());
+    failures.extend(
+        ship_without_count
+            .iter()
+            .map(|id| format!("{id}: ship-C-AOT ran to the end and wrote no exit count")),
+    );
     failures.extend(
         internal
             .iter()
@@ -950,7 +1047,7 @@ fn ship_churn_live_bytes(scratch: &Path, stress_setup: bool) -> u64 {
     }];
     let mut config = RunConfig::default();
     if stress_setup {
-        libraries.push(setup_hook_library(scratch, false));
+        libraries.push(setup_hook_library(scratch, false, None));
         config.pre_init_hook = Some(SETUP_HOOK);
     }
     config = config.with_native_libraries(&libraries);
@@ -988,6 +1085,70 @@ fn ship_mode_control() -> Option<String> {
             "ship-C-AOT: mode 2 did not take effect: live bytes {stressed}, default mode {default}"
         )
     })
+}
+
+/// Runs [`CHURN`] in the ship tier with the hooks of the sweep. A pre-entry
+/// hook calls `churn`, with a `subscript_rt_ctx_enter_script` and
+/// `subscript_rt_ctx_exit_script` bracket if `bracketed`. Returns the exit
+/// count that [`EXIT_REPORT_HOOK`] wrote.
+fn ship_churn_exit_count(scratch: &Path, bracketed: bool) -> Option<u64> {
+    let hook = scratch.join("stress_exit_churn.c");
+    let (enter, exit) = if bracketed {
+        (
+            "  subscript_rt_ctx_enter_script(ctx);\n",
+            "  subscript_rt_ctx_exit_script(ctx);\n",
+        )
+    } else {
+        ("", "")
+    };
+    std::fs::write(
+        &hook,
+        format!(
+            "#include \"program.h\"\n\
+             void subscript_stress_exit_churn(subscript_rt_context* ctx) {{\n\
+             {enter}\
+               subscript_export_churn(ctx);\n\
+             {exit}\
+             }}\n"
+        ),
+    )
+    .expect("write the exit churn hook source");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    // SAFETY: the library defines only the pre-entry hook; no script calls it.
+    let libraries = vec![
+        unsafe { NativeLibrary::new(vec![repo.join("runtime/include")], vec![hook], Vec::new()) },
+        setup_hook_library(scratch, false, None),
+    ];
+    let mut config = RunConfig::default().with_native_libraries(&libraries);
+    config.pre_init_hook = Some(SETUP_HOOK);
+    config.pre_entry_hook = Some("subscript_stress_exit_churn");
+    config.post_run_hook = Some(EXIT_REPORT_HOOK);
+    let _ = std::fs::remove_file(scratch.join(EXIT_COUNT_FILE));
+    let files = [SourceFile::new("churn.ts", CHURN)];
+    let output = run_c_aot_configured(&files, config).expect("ship churn run");
+    assert_eq!(output.stdout, b"499500\n", "the churn output");
+    reported_exit_count(scratch)
+}
+
+/// The firing control of the ship-tier exit count (`compiler.md` §345
+/// acceptance 4): an export call with no bracket gives a lower count than
+/// the same call with the bracket. The sweep runs it once. Cost: two
+/// ship-tier C builds, about 1 s.
+fn ship_exit_count_control() -> Option<String> {
+    let scratch = std::env::temp_dir().join(format!(
+        "subscript-collection-stress-exit-control-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&scratch).expect("create the control directory");
+    let unbracketed = ship_churn_exit_count(&scratch, false);
+    let bracketed = ship_churn_exit_count(&scratch, true);
+    let _ = std::fs::remove_dir_all(&scratch);
+    match (unbracketed, bracketed) {
+        (Some(unbracketed), Some(bracketed)) if unbracketed < bracketed => None,
+        _ => Some(format!(
+            "ship-C-AOT: the exit count did not see the bracket: unbracketed {unbracketed:?}, bracketed {bracketed:?}"
+        )),
+    }
 }
 
 /// The firing control of the sweep (core principle 9). One accept entry in

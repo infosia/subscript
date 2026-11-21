@@ -66,7 +66,10 @@ mod copy;
 pub(crate) use copy::copy_map;
 #[path = "assoc_counted.rs"]
 mod counted;
+#[path = "assocops/group_by.rs"]
+mod group_by;
 pub(crate) use counted::{clear, describe, release_leaves};
+pub(crate) use group_by::group_by;
 
 fn header_kind(header: &AssocHeader) -> KeyKind {
     KeyKind::from_u32(header.key_kind as u32).unwrap_or(KeyKind::Bits)
@@ -823,132 +826,6 @@ type MapBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const
 
 /// Fixed ABI of a generated Set callback bridge.
 type SetBridge = unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8);
-
-/// Fixed ABI of a generated `Map.groupBy` callback bridge. The bridge
-/// passes the element and index into the script ABI and writes the key result.
-type GroupBridge =
-    unsafe extern "C" fn(*mut Context, *const u8, *const u8, *const u8, *mut u8, i32);
-
-/// Groups an array under callback-produced keys. The output map, every
-/// group array, and every stored element own fresh Context storage.
-///
-/// The current array element is copied before the callback runs. This is
-/// required both by C2 aggregate value semantics and because the callback
-/// may mutate/grow the source array, invalidating a pointer into its live
-/// element block.
-///
-/// # Safety
-///
-/// `items` is a live array; `code`/`env` are a callback `(T[, i32]) -> K`;
-/// `bridge` has the [`GroupBridge`] signature and writes `key_size`
-/// bytes to its `key_out` argument.
-pub(crate) unsafe fn group_by(
-    ctx: *mut Context,
-    items: *mut u8,
-    code: *const u8,
-    env: *const u8,
-    bridge: *const u8,
-    key_size: usize,
-    kind: KeyKind,
-    pos_id: u32,
-) -> *mut u8 {
-    if items.is_null() || code.is_null() || bridge.is_null() || unsafe { (*ctx).trapped() } {
-        return std::ptr::null_mut();
-    }
-    let out = new(
-        unsafe { &mut *ctx },
-        key_size,
-        std::mem::size_of::<*mut u8>(),
-        kind,
-        false,
-        pos_id,
-    );
-    if out.is_null() {
-        return out;
-    }
-    // Runtime-owned results are not yet visible in a generated local.
-    // Root both the input and output across callback-triggered Context.collect().
-    let mut roots = [items as usize, out as usize];
-
-    unsafe {
-        // SAFETY: the slot storage stays valid until the matching shadow pop (section 263).
-        (*ctx).shadow_push(roots.as_mut_ptr() as usize, roots.len())
-    };
-
-    let elem_size = unsafe { (*ctx).array_elem_size(items) };
-    // compiler.md §344 rule 4: each group holds elements of `items`, so it
-    // takes the fact of `items`.
-    // SAFETY: `items` is a live array (caller contract).
-    let elements = unsafe { (*ctx).array_elements(items) };
-    let initial_len = unsafe { (*ctx).array_len(items) }.max(0) as usize;
-    // Generated bridges perform concrete typed loads from `element` and
-    // typed stores into `key`. Back both slots with `u64` storage so the
-    // bridge always receives at least 8-byte-aligned addresses.
-    let mut element = vec![0u64; elem_size.div_ceil(std::mem::size_of::<u64>())];
-    let element_ptr = element.as_mut_ptr().cast::<u8>();
-    let call: GroupBridge = unsafe { std::mem::transmute(bridge) };
-    for index in 0..initial_len {
-        // Match the existing Array callback methods: appends after entry
-        // do not extend the visit count, while removals shorten it.
-        if unsafe { (*ctx).array_len(items) }.max(0) as usize <= index {
-            break;
-        }
-        let source = unsafe { (*ctx).array_elem_ptr(items, index as i32, pos_id) };
-        if source.is_null() {
-            break;
-        }
-        // SAFETY: source is an in-bounds element slot and `element`
-        // owns exactly the tier's element width.
-        unsafe { std::ptr::copy_nonoverlapping(source, element_ptr, elem_size) };
-        let mut key = 0u64;
-        let key_out = (&mut key as *mut u64).cast();
-        // SAFETY: generated bridge contract. Q24 key widths are at most
-        // eight bytes, validated by `new`.
-        unsafe { call(ctx, code, env, element_ptr, key_out, index as i32) };
-        if unsafe { (*ctx).trapped() } {
-            break;
-        }
-
-        let mut group = std::ptr::null_mut::<u8>();
-        if unsafe {
-            get(
-                ctx,
-                out,
-                (&key as *const u64).cast(),
-                (&mut group as *mut *mut u8).cast(),
-            )
-        } {
-            if unsafe { (*ctx).array_push(group, element_ptr, pos_id) } < 0 {
-                break;
-            }
-            continue;
-        }
-
-        let created = unsafe { &mut *ctx }.array_new_of(elem_size, elements, pos_id);
-        if created.is_null() {
-            break;
-        }
-        if unsafe { (*ctx).array_push(created, element_ptr, pos_id) } < 0 {
-            break;
-        }
-        // `insert` copies the handle into map-owned entry storage; no
-        // script callback or collector can run before insertion.
-        unsafe {
-            insert(
-                ctx,
-                out,
-                (&key as *const u64).cast(),
-                (&created as *const *mut u8).cast(),
-                pos_id,
-            )
-        };
-        if unsafe { (*ctx).trapped() } {
-            break;
-        }
-    }
-    unsafe { (*ctx).shadow_pop() };
-    out
-}
 
 unsafe fn set_shapes_match(left: *mut u8, right: *mut u8) -> bool {
     if left.is_null() || right.is_null() {

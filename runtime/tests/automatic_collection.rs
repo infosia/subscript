@@ -810,3 +810,79 @@ fn an_unwinding_collection_ends_the_failure_record() {
         assert_eq!(ctx.recorded_failure_count(), 0, "ship={ship}");
     }
 }
+
+/// `compiler.md` §345 rule 4: the exit-count entry gives 0 for a new
+/// Context, N for N bracketed pairs, and one count for a nested pair. The
+/// inner exit of the nested pair is the control: it does not count.
+#[test]
+fn the_exit_count_entry_counts_each_outermost_exit() {
+    const PAIRS: u64 = 5;
+    for ship in [false, true] {
+        let mut ctx = context(ship);
+        // SAFETY: the Context is live and exclusive in each call below.
+        unsafe {
+            assert_eq!(subscript_rt_outermost_exit_count(&*ctx), 0);
+            for _ in 0..PAIRS {
+                subscript_rt_ctx_enter_script(&mut *ctx);
+                subscript_rt_ctx_exit_script(&mut *ctx);
+            }
+            assert_eq!(subscript_rt_outermost_exit_count(&*ctx), PAIRS);
+            subscript_rt_ctx_enter_script(&mut *ctx);
+            subscript_rt_ctx_enter_script(&mut *ctx);
+            subscript_rt_ctx_exit_script(&mut *ctx);
+            assert_eq!(
+                subscript_rt_outermost_exit_count(&*ctx),
+                PAIRS,
+                "ship={ship}: an inner exit counted"
+            );
+            subscript_rt_ctx_exit_script(&mut *ctx);
+            assert_eq!(subscript_rt_outermost_exit_count(&*ctx), PAIRS + 1);
+            assert_eq!(
+                subscript_rt_outermost_exit_count(&*ctx),
+                ctx.outermost_exit_count()
+            );
+        }
+    }
+}
+
+/// `compiler.md` §345 rule 4: the collection-count entry gives 0 for a new
+/// Context and N for N bracketed pairs in mode 2, where each outermost exit
+/// collects. A nested pair collects once. Control: mode 0 gives 0 for the
+/// same calls.
+#[test]
+fn the_collection_count_entry_counts_each_automatic_collection() {
+    const PAIRS: u64 = 5;
+    for ship in [false, true] {
+        for mode in [CollectionMode::EachPoll, CollectionMode::Off] {
+            let mut ctx = context(ship);
+            assert!(ctx.set_collection(mode, 0));
+            let per_pair = u64::from(mode == CollectionMode::EachPoll);
+            // SAFETY: the Context is live and exclusive in each call below.
+            unsafe {
+                assert_eq!(subscript_rt_automatic_collection_count(&*ctx), 0);
+                for _ in 0..PAIRS {
+                    subscript_rt_ctx_enter_script(&mut *ctx);
+                    subscript_rt_ctx_exit_script(&mut *ctx);
+                }
+                assert_eq!(
+                    subscript_rt_automatic_collection_count(&*ctx),
+                    PAIRS * per_pair,
+                    "ship={ship} mode={mode:?}"
+                );
+                subscript_rt_ctx_enter_script(&mut *ctx);
+                subscript_rt_ctx_enter_script(&mut *ctx);
+                subscript_rt_ctx_exit_script(&mut *ctx);
+                subscript_rt_ctx_exit_script(&mut *ctx);
+                assert_eq!(
+                    subscript_rt_automatic_collection_count(&*ctx),
+                    (PAIRS + 1) * per_pair,
+                    "ship={ship} mode={mode:?}"
+                );
+                assert_eq!(
+                    subscript_rt_automatic_collection_count(&*ctx),
+                    ctx.automatic_collection_count()
+                );
+            }
+        }
+    }
+}
