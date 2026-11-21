@@ -127,6 +127,11 @@ Each of the tests of rules 1, 4, and 5 fails with its subject changed
 of rule 5 is not compiled here: the target is not installed. The owner
 runs the Linux gate.
 
+*(Amended 2026-11-22: the x86-64 Linux full gate at `573104df` exits
+0. The Linux form of rule 5 compiles, and its test names `s340-native`
+in the debug and the release step. Evidence:
+`specs/tracking/linux-portability.md`.)*
+
 One fresh review found no CRITICAL or MAJOR finding. Its five MINOR
 findings: the table header of the tracking note is fixed; the other
 four are in §340.5.

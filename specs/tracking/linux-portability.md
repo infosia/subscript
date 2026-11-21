@@ -1330,3 +1330,31 @@ two constants are removed. The peak address space of the `interop`
 test binary falls from 136,381,092 kB to 1,179,976 kB unoptimized, and
 the full gate exits 0. Evidence:
 `specs/tracking/s114-compile-thread-removal.md`.)*
+
+## Gate state at `573104df`, 2026-11-22
+
+Host `x86_64-unknown-linux-gnu`, Linux 7.0.0-42-generic. rustc 1.95.0
+(59807616e), node v24.22.2, tsc 5.9.2, cc (Ubuntu 15.2.0-16ubuntu1)
+15.2.0.
+
+```text
+gate full 573104dfbb8718ea58e20e2658a91aefc7ca6ec3 clean debug 3952/0/5 release 3933/0/5 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 3, build 111, debug 312, release 201, clippy
+18, tsc 1, hygiene 0.
+
+The two debug skips are the `perf_gate` line and the
+`collection_stress_sweep` line. The sweep runs in the release step
+only, with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`. There its test binary
+passed in 20.29 s.
+
+The Linux form of §340 rule 5 compiles and passes. The test
+`a_native_run_with_a_second_thread_is_the_rule_3_error`
+(`codegen/tests/dev_run_threads.rs`) passes in the debug and the
+release step. Its message names the `comm` name `s340-native`.
+
+The first attempt at this revision stopped at the build step. The
+merge changed `Cargo.lock`, and the offline build did not find the new
+crates in the local cargo cache. `cargo fetch --locked` resolved it.
+That is a host state, not a defect of the tree.
