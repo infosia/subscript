@@ -7,7 +7,8 @@ pub(super) fn array_trapping_callbacks_report_identically_across_tiers() {
     // on both tiers. `sort`'s additional §9 guarantee — a comparator trap
     // leaves the receiver byte-identical — is not observable in-language
     // (the trap returns from the function), so it is pinned in the
-    // shared runtime instead (`arrops.rs`, `callback_traps_abort_...`).
+    // shared runtime instead (`arrops/tests.rs`,
+    // `callback_trap_aborts_and_leaves_defensible_state`).
     const PROLOGUE: &str =
         "let sink: i32 = 0;\nexport function main(): void {\n  const xs: i32[] = [1, 2, 3];\n";
     for call in [
