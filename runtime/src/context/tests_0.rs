@@ -979,7 +979,10 @@ fn memory_accounting_reports_the_tier_dependent_bytes_of_one_program() {
     }
 
     assert_eq!(measured[0], ("dev", 2, 5001, 5033));
-    assert_eq!(measured[1], ("ship", 2, 5016, 136_088));
+    // Two chunks of 65,536 bytes (classes of 32 and 64 bytes), their
+    // request records of 2,048 and 1,024 blocks at 2 bytes each
+    // (`compiler.md` §346 rule 2c), and the large layout of 5,016 bytes.
+    assert_eq!(measured[1], ("ship", 2, 5016, 142_232));
     assert_eq!(
         measured[0].1, measured[1].1,
         "live allocation count is tier-independent"

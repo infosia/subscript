@@ -404,20 +404,26 @@ positions.
 ### The collection mode
 
 `subscript_rt_ctx_set_collection(ctx, mode, min_headroom_bytes)` sets
-the mode and the minimum headroom (§342 rule 17):
+the mode and the minimum headroom (§346 rule 3):
 
 | Mode | Effect |
 |---|---|
 | 0 | Off. No allocation requests a collection, and the outermost exit runs no failed-task check. Context memory returns only at `subscript_rt_ctx_collect`, a script `Context.collect()`, `Context.free`, or the Context release. An async handle or a generator frame is freed when its last holder releases it (§70, §176). |
-| 1 | Automatic, the default. An allocation that takes live bytes above the threshold requests a collection. The next poll, or the outermost exit, runs it. |
+| 1 | Automatic, the default. An allocation that makes a collection due requests a collection. The next poll, or the outermost exit, runs it. |
 | 2 | Each poll and each outermost exit collects. Use it in tests only. |
 
-After each collection the threshold is the live bytes plus the larger
-of the live bytes and the minimum headroom. The default minimum
-headroom is 16 MiB. A `min_headroom_bytes` of 0 keeps the default. The
-call runs no collection, so the threshold keeps the live bytes after the
-last collection as its base. In mode 1 the call requests a collection if
-live bytes are above the new threshold. Thus a host that switches the
+A collection becomes due when the bytes allocated since the last
+collection exceed the larger of the live bytes after it and the minimum
+headroom (§346 rules 1, 2, and 2a). The count and the minimum headroom
+are bytes that the program allocates. The ship tier can hold up to the
+size-class capacity for them: at most twice the request plus 16 bytes,
+and a header of 16 bytes for each block. `Context.free` subtracts the
+bytes that the allocation of the block requested, and each collection
+sets the count to zero. The default minimum headroom is 16 MiB. A
+`min_headroom_bytes` of 0 keeps the default. The call runs no
+collection, so it keeps the count and the live bytes after the last
+collection. In mode 1 the call requests a collection if the count is
+above the new limit. Thus a host that switches the
 mode at each frame gets the same collections as a host that keeps mode
 1. The call returns 0. It returns -1 for an unknown mode, or while a script
 call is on the stack. A worker Context takes the mode and the headroom
@@ -1536,7 +1542,8 @@ allocates much less than the 16 MiB minimum headroom, so no automatic
 collection runs in it. Each frame leaves its garbage live until the
 host collects, and the collection returns the count to 5. Without the
 host collection, the same run counts 16, 23, and 30 live allocations
-after frames 0, 1, and 2, until live bytes pass the threshold.
+after frames 0, 1, and 2, until the allocated bytes make a collection
+due.
 
 ### Step 9 — workers, and which thread drives which Context
 

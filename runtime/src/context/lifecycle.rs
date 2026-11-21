@@ -943,12 +943,13 @@ impl Context {
     /// A handle-free class must replace all exposed bytes before a read.
     /// [`Context::alloc_str_with`] supplies that writer for strings.
     ///
-    /// A successful allocation sets the pending flag when live bytes exceed
-    /// the threshold. It never collects (`compiler.md` §342 rule 5).
+    /// A successful allocation adds `size` to the requested bytes, and sets
+    /// the pending flag when they exceed the limit. It never collects
+    /// (`compiler.md` §346 rules 1 and 2).
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
         let payload = self.alloc_unflagged(size, class_id, pos_id);
         if !payload.is_null() {
-            self.note_allocation();
+            self.note_allocation(size);
         }
         payload
     }
@@ -1113,17 +1114,24 @@ impl Context {
         let class = Self::size_class(need);
         let block_size = SMALLEST_BLOCK << class;
 
+        // compiler.md §346 rule 1a: the request fits in 16 bits, because
+        // `need <= LARGEST_BLOCK`.
+        let request = u16::try_from(size).unwrap_or(u16::MAX);
         let head = self.free_heads[class];
         if head != 0 {
             let payload = head as *mut u8;
             // SAFETY: `head` is a payload address this arena free-listed:
             // its block (header + `block_size - HEADER_SIZE` payload
             // capacity) is inside an owned chunk. The next link occupies
-            // the payload's first word. After unlinking, each class that its
-            // creator does not write in full is re-zeroed before the header
-            // is re-armed.
+            // the payload's first word, and the index of the chunk its
+            // second word (`compiler.md` §346 rule 1a); the smallest
+            // payload capacity is 16 bytes. After unlinking, each class that
+            // its creator does not write in full is re-zeroed before the
+            // header is re-armed.
             unsafe {
                 self.free_heads[class] = (payload as *const usize).read();
+                let ci = (payload as *const usize).add(1).read();
+                self.record_request(ci, payload as usize, request);
                 if !class_written_in_full(class_id) {
                     std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
                 }
@@ -1145,6 +1153,7 @@ impl Context {
             },
         };
         let chunk = &mut self.chunks[ci];
+        chunk.requests[chunk.bump] = request;
         // SAFETY: `bump < blocks_per_chunk`, so the block lies inside the
         // chunk. The chunk came from `alloc_zeroed` and this block was
         // never handed out, so its payload is already zero; only the
@@ -1183,12 +1192,14 @@ impl Context {
             return None;
         }
         let idx = self.chunks.len();
+        let block_size = SMALLEST_BLOCK << class;
         self.chunks.push(Chunk {
             base,
             layout,
-            block_size: SMALLEST_BLOCK << class,
+            block_size,
             class,
             bump: 0,
+            requests: vec![0; CHUNK_SIZE / block_size].into_boxed_slice(),
         });
         // Keep the membership index sorted by base address.
         let pos = self.chunk_map.partition_point(|&(b, _)| b < base as usize);
@@ -1234,6 +1245,19 @@ impl Context {
     /// state (the fourth condition) — a hit here may be a free-listed
     /// (dead) block.
     pub(super) fn arena_lookup_block(&self, addr: usize) -> Option<(*mut u8, usize)> {
+        let (ci, bi) = self.arena_lookup_slot(addr)?;
+        let chunk = &self.chunks[ci];
+        // SAFETY: `bi < bump <= blocks_per_chunk`, so the block base is
+        // inside the owned chunk.
+        Some((
+            unsafe { chunk.base.add(bi * chunk.block_size) },
+            chunk.class,
+        ))
+    }
+
+    /// [`Context::arena_lookup_block`] as the index of the chunk in
+    /// `chunks` and the index of the block in that chunk.
+    pub(super) fn arena_lookup_slot(&self, addr: usize) -> Option<(usize, usize)> {
         #[cfg(test)]
         self.stats
             .membership_lookups
@@ -1256,12 +1280,33 @@ impl Context {
         if bi >= chunk.bump {
             return None;
         }
-        // SAFETY: `bi < bump <= blocks_per_chunk`, so the block base is
-        // inside the owned chunk.
-        Some((
-            unsafe { chunk.base.add(bi * chunk.block_size) },
-            chunk.class,
-        ))
+        Some((ci, bi))
+    }
+
+    /// Records the request of the free-listed block at `payload` in chunk
+    /// `ci` (`compiler.md` §346 rule 1a). The block index is the offset of
+    /// the payload in the chunk over the block size, so the write is O(1).
+    ///
+    /// The second word of a free-listed block holds a valid chunk index
+    /// unless a write through a freed handle changed it (undefined, Q6). An
+    /// index or an offset outside the chunks records nothing.
+    fn record_request(&mut self, ci: usize, payload: usize, request: u16) {
+        let Some(chunk) = self.chunks.get_mut(ci) else {
+            return;
+        };
+        let Some(offset) = payload
+            .checked_sub(chunk.base as usize)
+            .and_then(|offset| offset.checked_sub(HEADER_SIZE))
+        else {
+            return;
+        };
+        let bi = offset >> chunk.block_size.trailing_zeros();
+        if bi >= chunk.bump {
+            return;
+        }
+        if let Some(slot) = chunk.requests.get_mut(bi) {
+            *slot = request;
+        }
     }
 
     /// Clears the separately allocated storage owned by a Map/Set before
@@ -1308,7 +1353,16 @@ impl Context {
     /// is undefined per Q6/§8.1b and handled as a no-op (never a trap,
     /// never relied upon).
     pub(super) fn arena_release(&mut self, payload: usize) {
-        if let Some((block, class)) = self.arena_lookup_block(payload) {
+        if let Some((ci, bi)) = self.arena_lookup_slot(payload) {
+            let (block, class) = {
+                let chunk = &self.chunks[ci];
+                // SAFETY: `bi < bump <= blocks_per_chunk`, so the block base
+                // is inside the owned chunk.
+                (
+                    unsafe { chunk.base.add(bi * chunk.block_size) },
+                    chunk.class,
+                )
+            };
             // SAFETY: `block` heads a block inside an owned chunk; both
             // header reads stay inside it.
             let class_id = unsafe {
@@ -1321,15 +1375,22 @@ impl Context {
             // SAFETY: the live-grid check above proves `block` is still
             // owned. Container clearing only retires its separate child
             // allocations, so the state word and payload free-list link
-            // remain valid.
+            // remain valid. The payload capacity is at least 16 bytes, so
+            // its second word holds the chunk index for the free-list pop
+            // (`compiler.md` §346 rule 1a).
             unsafe {
                 (block as *mut u64).write(DEAD_STATE);
                 (payload as *mut usize).write(self.free_heads[class]);
+                (payload as *mut usize).add(1).write(ci);
                 self.free_heads[class] = payload;
             }
             self.live_bytes_counter = self
                 .live_bytes_counter
                 .saturating_sub((SMALLEST_BLOCK << class) - HEADER_SIZE);
+            // compiler.md §346 rule 1: the release subtracts the request
+            // that the allocation of the block added.
+            let request = self.chunks[ci].requests[bi];
+            self.note_release(usize::from(request));
             return;
         }
         if let Some(a) = self.large.remove(&payload) {
@@ -1338,6 +1399,7 @@ impl Context {
             let class_id = unsafe { header_class_id(a.base) };
             self.release_class_state(class_id, payload);
             self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
+            self.note_release(a.payload_size);
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
             // frees it exactly once. Container clearing only retired
@@ -1358,6 +1420,8 @@ impl Context {
         self.live_bytes_counter = self
             .live_bytes_counter
             .saturating_sub(allocation.payload_size);
+        // compiler.md §346 rule 1: the dev tier holds the payload.
+        self.note_release(allocation.payload_size);
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = allocation.class_id;
@@ -1433,6 +1497,8 @@ impl Context {
         self.live_bytes_counter = self
             .live_bytes_counter
             .saturating_sub(allocation.payload_size);
+        // compiler.md §346 rule 1: the dev tier holds the payload.
+        self.note_release(allocation.payload_size);
         // SAFETY: exact live-map membership proves the complete initialized
         // header remains owned by this Context.
         let class_id = allocation.class_id;
@@ -1579,5 +1645,29 @@ impl Context {
             0,
         );
         false
+    }
+}
+
+#[cfg(test)]
+mod request_record_tests {
+    use super::*;
+
+    /// `compiler.md` §346 rule 1a: an invalid chunk index, an address below
+    /// the chunk base, and an address above the watermark record nothing
+    /// and do not panic. Control: a valid block records its request.
+    #[test]
+    fn an_invalid_slot_records_nothing() {
+        let mut ctx = Context::new_releasing();
+        let payload = ctx.alloc(20, 1, 0) as usize;
+        assert_eq!(&ctx.chunks[0].requests[..2], &[20, 0]);
+        let base = ctx.chunks[0].base as usize;
+        let before = ctx.chunks[0].requests.clone();
+        ctx.record_request(99, payload, 7);
+        ctx.record_request(0, base.wrapping_sub(100), 7);
+        ctx.record_request(0, base + 8, 7);
+        ctx.record_request(0, base + HEADER_SIZE + 64 * 5, 7);
+        assert_eq!(ctx.chunks[0].requests, before);
+        ctx.record_request(0, payload, 7);
+        assert_eq!(ctx.chunks[0].requests[0], 7);
     }
 }

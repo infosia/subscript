@@ -13,7 +13,8 @@ use super::*;
 pub enum CollectionMode {
     /// No allocation sets the pending flag, and rules 14 and 15 do not run.
     Off = 0,
-    /// A collection runs when live bytes exceed the threshold.
+    /// A collection runs when the bytes requested since the last
+    /// collection exceed the limit (`compiler.md` §346 rule 2).
     Automatic = 1,
     /// Each poll and each outermost exit collects. This mode is for tests.
     EachPoll = 2,
@@ -35,7 +36,7 @@ impl CollectionMode {
 /// The collection mode of a new Context (`compiler.md` §342 rule 17).
 pub const DEFAULT_COLLECTION_MODE: CollectionMode = CollectionMode::Automatic;
 
-/// The default minimum headroom in bytes (`compiler.md` §342 rule 6).
+/// The default minimum headroom in bytes (`compiler.md` §346 rule 2).
 pub const DEFAULT_MIN_HEADROOM_BYTES: usize = 16 << 20;
 
 /// The largest detection interval in outermost exits (`compiler.md` §342
@@ -72,9 +73,12 @@ enum CollectionKind {
 pub(crate) struct CollectionState {
     settings: CollectionSettings,
     // The live bytes after the last collection, 0 for a new Context. The
-    // threshold is computed from it (`compiler.md` §342 rules 6 and 17).
+    // limit is computed from it (`compiler.md` §346 rules 2 and 3).
     base: usize,
-    threshold: usize,
+    limit: usize,
+    // The bytes that allocations requested since the last collection,
+    // less the explicit releases (`compiler.md` §346 rule 1).
+    requested: usize,
     // True while a collection runs. A released failed task is then
     // recorded, not trapped.
     recording: bool,
@@ -99,7 +103,8 @@ impl CollectionState {
         Self {
             settings,
             base: 0,
-            threshold: threshold_for(0, settings.min_headroom),
+            limit: limit_for(0, settings.min_headroom),
+            requested: 0,
             recording: false,
             recorded: Vec::new(),
             interval: 1,
@@ -118,11 +123,10 @@ impl CollectionState {
     }
 }
 
-/// `compiler.md` §342 rules 6 and 17: the base plus the larger of the base
-/// and the minimum headroom. The base is the live bytes after the last
-/// collection.
-fn threshold_for(base: usize, min_headroom: usize) -> usize {
-    base.saturating_add(base.max(min_headroom))
+/// `compiler.md` §346 rules 2 and 3: the larger of the base and the minimum
+/// headroom. The base is the live bytes after the last collection.
+fn limit_for(base: usize, min_headroom: usize) -> usize {
+    base.max(min_headroom)
 }
 
 /// The collection work that an outermost exit leaves to its caller
@@ -170,17 +174,27 @@ impl Context {
         self.collection.settings.mode
     }
 
-    /// The minimum headroom in bytes (`compiler.md` §342 rule 6).
+    /// The minimum headroom in bytes (`compiler.md` §346 rule 2).
     #[must_use]
     pub fn collection_min_headroom(&self) -> usize {
         self.collection.settings.min_headroom
     }
 
-    /// The live-byte threshold above which an allocation sets the pending
-    /// flag (`compiler.md` §342 rule 6).
+    /// The limit of the requested bytes: an allocation sets the pending
+    /// flag when the requested bytes exceed it. It is the larger of the
+    /// live bytes after the last collection and the minimum headroom
+    /// (`compiler.md` §346 rule 2).
     #[must_use]
-    pub fn collection_threshold(&self) -> usize {
-        self.collection.threshold
+    pub fn collection_limit(&self) -> usize {
+        self.collection.limit
+    }
+
+    /// The bytes that allocations requested since the last collection,
+    /// less the sizes of the explicit releases, not under zero
+    /// (`compiler.md` §346 rule 1).
+    #[must_use]
+    pub fn requested_bytes(&self) -> usize {
+        self.collection.requested
     }
 
     /// The number of automatic collections: polls and the outermost-exit
@@ -224,7 +238,8 @@ impl Context {
         self.collection.recorded.len()
     }
 
-    /// Sets the mode and the minimum headroom (`compiler.md` §342 rule 17).
+    /// Sets the mode and the minimum headroom (`compiler.md` §342 rule 17 and
+    /// §346 rule 3).
     /// A `min_headroom_bytes` of 0 keeps the default. Returns false, with no
     /// change, while script depth is not zero.
     pub fn set_collection(&mut self, mode: CollectionMode, min_headroom_bytes: usize) -> bool {
@@ -244,36 +259,47 @@ impl Context {
         self.collection.settings
     }
 
-    /// `compiler.md` §342 rule 17: the call runs no collection, so the
-    /// threshold keeps its base. In mode 1 the flag is set if live bytes
-    /// exceed the new threshold.
+    /// `compiler.md` §346 rule 3: the call runs no collection, so the limit
+    /// keeps its base and the requested bytes stay. In mode 1 the flag is
+    /// set if the requested bytes exceed the new limit.
     pub(crate) fn apply_collection_settings(&mut self, settings: CollectionSettings) {
         self.collection.settings = settings;
-        self.collection.threshold = threshold_for(self.collection.base, settings.min_headroom);
+        self.collection.limit = limit_for(self.collection.base, settings.min_headroom);
         self.collection_pending = match settings.mode {
             CollectionMode::Off => 0,
             CollectionMode::Automatic => {
-                u8::from(self.live_bytes_counter > self.collection.threshold)
+                u8::from(self.collection.requested > self.collection.limit)
             }
             CollectionMode::EachPoll => 1,
         };
     }
 
-    /// `compiler.md` §342 rule 5: a successful allocation sets the pending
-    /// flag when live bytes exceed the threshold. It never collects.
+    /// `compiler.md` §346 rules 1 and 2: a successful allocation adds the
+    /// `requested` payload size to the requested bytes, and sets the
+    /// pending flag when they exceed the limit. It never collects
+    /// (`compiler.md` §342 rule 5).
     #[inline]
-    pub(super) fn note_allocation(&mut self) {
+    pub(super) fn note_allocation(&mut self, requested: usize) {
         self.collection.allocations = self.collection.allocations.wrapping_add(1);
+        self.collection.requested = self.collection.requested.saturating_add(requested);
         if self.collection.settings.mode != CollectionMode::Off
-            && self.live_bytes_counter > self.collection.threshold
+            && self.collection.requested > self.collection.limit
         {
             self.collection_pending = 1;
         }
     }
 
-    /// `compiler.md` §342 rules 6 and 7: after each collection the
-    /// threshold follows the live set, and the flag clears. In mode 2 the
-    /// flag stays set.
+    /// `compiler.md` §346 rules 1 and 1a: a release outside a collection
+    /// subtracts the `request` that the allocation of the block added, as
+    /// the block records it. The count does not go under zero.
+    #[inline]
+    pub(super) fn note_release(&mut self, request: usize) {
+        self.collection.requested = self.collection.requested.saturating_sub(request);
+    }
+
+    /// `compiler.md` §346 rules 1 and 2, and §342 rule 7: after each
+    /// collection the requested bytes are zero, the limit follows the live
+    /// set, and the flag clears. In mode 2 the flag stays set.
     fn after_collection(&mut self, kind: CollectionKind) {
         match kind {
             CollectionKind::Explicit => {}
@@ -281,14 +307,15 @@ impl Context {
             CollectionKind::Detection => self.collection.detection_collections += 1,
         }
         self.collection.base = self.live_bytes_counter;
-        self.collection.threshold =
-            threshold_for(self.collection.base, self.collection.settings.min_headroom);
+        self.collection.limit =
+            limit_for(self.collection.base, self.collection.settings.min_headroom);
+        self.collection.requested = 0;
         self.collection_pending =
             u8::from(self.collection.settings.mode == CollectionMode::EachPoll);
     }
 
     /// Runs `collect` with the failure record active, then sets the
-    /// threshold. `collect` performs one full collection of the owner's
+    /// limit. `collect` performs one full collection of the owner's
     /// roots.
     fn run_collection<T, R>(
         owner: &mut T,

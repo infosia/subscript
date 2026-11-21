@@ -66,15 +66,16 @@ impl Context {
     ///
     /// Exact-size allocations include only live layouts unless freed-handle
     /// diagnostics retain dead layouts. Ship-tier chunks remain reserved,
-    /// while a deleted large allocation is returned to the system
-    /// immediately.
+    /// with the request record of each chunk: 2 bytes for each block
+    /// (`compiler.md` §346 rule 2c). A deleted large allocation is returned
+    /// to the system immediately.
     #[must_use]
     pub fn reserved_bytes(&self) -> usize {
         if self.uses_ship_arena() {
-            let chunk_bytes = self
-                .chunks
-                .iter()
-                .fold(0usize, |sum, c| sum.saturating_add(c.layout.size()));
+            let chunk_bytes = self.chunks.iter().fold(0usize, |sum, c| {
+                sum.saturating_add(c.layout.size())
+                    .saturating_add(std::mem::size_of_val(&*c.requests))
+            });
             return self
                 .large
                 .values()
@@ -831,8 +832,8 @@ impl Context {
             let mut retired_bytes = 0usize;
             for bi in 0..bump {
                 // SAFETY: `bi < bump`, so the block is inside the owned
-                // chunk; the state word and the payload's first word (the
-                // free-list link) stay inside it.
+                // chunk; the state word and the payload's first two words
+                // (the free-list link and the chunk index) stay inside it.
                 unsafe {
                     let block = cbase.add(bi * block_size);
                     match (block as *const u64).read() {
@@ -841,6 +842,9 @@ impl Context {
                             (block as *mut u64).write(DEAD_STATE);
                             let payload = block.add(HEADER_SIZE);
                             (payload as *mut usize).write(free_head);
+                            // compiler.md §346 rule 1a: the chunk index for
+                            // the free-list pop.
+                            (payload as *mut usize).add(1).write(ci);
                             free_head = payload as usize;
                             retired_bytes += block_size - HEADER_SIZE;
                         }

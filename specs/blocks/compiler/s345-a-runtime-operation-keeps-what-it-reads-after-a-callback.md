@@ -88,3 +88,75 @@ recorded only.
 
 Rule 2 corrected each of the five operations, so no operation is
 recorded here.
+
+### 345.5 Phase Review
+
+Form.
+
+- `OperationRoot` (`runtime/src/context/operation_root.rs`) pushes a
+  shadow frame over a range of words and pops it when it drops. A
+  script exception and a trap set a flag and return, so the drop runs
+  on each exit of an operation.
+- `filter` and the `find` family write the element into one slot before
+  each callback. `Map.groupBy` roots its element buffer, which has a
+  fixed length. `sort` roots its two scratch buffers, only if the
+  array can hold a handle (§344); a swap of the two `Vec` values does
+  not move their storage. `map` uses the same guard for its result.
+- Rule 2 found each of the five operations local, so each is
+  corrected.
+- `sort` and `group_by` are in modules of their own
+  (`runtime/src/arrops/sort.rs`, `runtime/src/assocops/group_by.rs`).
+  `runtime/src/arrops.rs` went from 2,675 to 2,575 lines, and
+  `runtime/src/assocops.rs` from 1,997 to 1,874.
+- `subscript_rt_outermost_exit_count` and
+  `subscript_rt_automatic_collection_count` are runtime entries outside
+  the `subscript_rt_ctx_` family. The host header does not declare
+  them. A post-run hook of the stress sweep writes the exit count to a
+  report file.
+
+Measured. Red at `53134b4c`, with the binary of that commit:
+
+| Entry | Golden | Dev JIT at the pin | Ship tier at the pin |
+|---|---|---|---|
+| `a493` (`filter`) | `filter 10,32,43,` | runtime error, use of a deleted allocation | `filter 31,0,1,` |
+| `a494` (`find`, `findLast`) | `find 32`, `findLast 17` | runtime error, use of a deleted allocation | `find -25098160`, `findLast -25097904` |
+| `a495` (`Map.groupBy`) | `k0 10,32,`, `k1 21,43,` | `k0 15,24,`, `k1 13,2,` | `k0 29,44,`, `k1 29,3,` |
+| `a496` (`sort`) | `sort 10,20,30,40,50,60,` | runtime error, use of a deleted allocation | `sort 0,1388380240,31,32,…` |
+
+The ship values at the pin are addresses and change from run to run.
+`a495` is Red at the pin with a template string as the key; with a
+conditional string as the key it printed the golden there, and the
+cause is not known.
+
+| Item | Result |
+|---|---|
+| The four programs with no `Context.collect()`, mode 2, three tiers | output equal to mode 0; automatic collections 162, 237, 165, and 444, against 3 outermost exits in each |
+| Control: a program with no poll | 3 automatic collections and 3 outermost exits |
+| A callback that raises | the shadow depth after the operation equals the depth before it |
+| Exit count in the stress sweep | 480 entries compared: 402 in three tiers and 78 in two; no difference |
+| Control: an export call with no bracket | a lower count than the call with the bracket (3 against 4) |
+| Stress sweep, 598 entries | dev JIT 595 of 595, ship tier 593 of 593, interpreter 490 of 490 |
+
+The count of collections over the count of exits shows that a poll in
+the script call collected. It does not show that the poll was in the
+callback: each `main` also has loops that allocate. The runtime test
+`runtime/tests/operation_roots.rs` uses Rust callbacks, which hold no
+root of their own, and fails without the guard.
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 5
+MINOR, each closed. For a program that does not change its receiver,
+each root is valid and balanced, and no result changes. The reviewer
+evaluated the four goldens by hand.
+
+| Finding | Close |
+|---|---|
+| The module doc of the poll pass and §342 rule 11d stated the wider bound; three open items stayed open | corrected; §342.5 items 4 and 5 and §323.4 item 2 state the close |
+| `subscript_rt_outermost_exit_count` had no direct test | a runtime test |
+| The sweep did not compare the dev JIT with the ship tier where the interpreter gives no count | each pair of counts is compared; each arm that compares nothing states its reason |
+| The test with no explicit collection did not show a collection on the ship tier | the count over the exits, in the three tiers |
+| A comment named only `Context.collect()` | corrected |
+
+A separate review of `aef4cdd3` gave the correction of §342 rule 1: the
+rule states what a collection does, and Q6 states what `Context.free`
+does.
+

@@ -120,3 +120,80 @@ Problem, measured:
 
 - §342 rule 6 (rule 2 here) and rule 17 (rule 3 here).
 - §344.4 closes.
+
+### 346.4 Phase Review
+
+Form.
+
+- `CollectionState` holds `requested` and `limit`. `Context::alloc`
+  adds the request after each successful allocation. `note_release`
+  subtracts the request of the block. `after_collection` sets the
+  count to zero and the limit from the live bytes.
+- `Chunk::requests` holds 16 bits for each block of a chunk of the
+  ship arena. A bump allocation and a pop from a free list write the
+  request. A release reads it. A block on a free list holds the link
+  in its first payload word, as before, and the index of its chunk in
+  the second, so that a pop finds the record with no search. The
+  smallest payload capacity is 16 bytes.
+- Nothing reads the payload of a dead block. The one class that the
+  reuse does not zero is a string; its writer writes the length and
+  the bytes, and a reader reads no byte past the length.
+- `collection_threshold()` is `collection_limit()`; `requested_bytes()`
+  is new.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| `collect`, automatic collections in one run | ship tier 0, dev JIT 0; ship tier 6 for each iteration at `34d950c1` |
+| `perf-gate --gate`, two passes | `collect` ship tier 35.64, 35.78 ms (1.14x, 1.14x), C 31.29, 31.34 ms; `a22` ship tier 1.33x, 1.33x; each criterion met |
+| `perf-gate` at `ca3fc9ed`, two passes (before the release rule changed) | `collect` ship tier 36.38, 36.16 ms (1.16x, 1.14x) |
+| `cross-language`, ship tier, two passes | `collect` 36.02, 35.63 ms; `callbacks` 36.41, 36.38 ms; `tree` 102.4, 102.3 ms; `particles` 74.37, 74.81 ms; `sort` 18.06, 18.09 ms |
+| Host calls, 1,024 requested bytes for each call, headroom 16,384 | highest requested count 16,384 in both kinds (bound 17,408); live bytes 16,384 in the dev kind and 31,744 in the ship kind; 588 automatic collections in each |
+| Two objects of 24 bytes, free one, drop one, headroom 65,536 | due at iteration 2,730 in both kinds; at `fc3dced7` the ship kind was not due after 2,731,000 iterations |
+| An array of 256 `f64` by `push`, dropped | due at array 31 in both kinds; 379 in the ship kind at `fc3dced7` |
+| A Map of 256 inserts, dropped | due at Map 6 in both kinds; 14 in the ship kind at `fc3dced7` |
+| The same loops with each block freed | no automatic collection |
+| 20 kept objects of 1,024 bytes, free one and drop one for each iteration | due at iteration 84 in both kinds (20 + 65,536 / 1,024) |
+| `tree` with `Context.free`, small headroom | no automatic collection; 14 with no `free` |
+| Request record | 2 bytes for each block: 6.25% of a chunk of the 32-byte class, 3.1% of the 64-byte class |
+| `reserved_bytes` of one test program, ship kind | 142,232 (136,088 before the record) |
+
+Phase Review, first: 2 MAJOR, of one class. The release subtracted the
+capacity of the size class, and the allocation added the request. So
+the growth of an array or of a Map, and a `Context.free`, lowered the
+count by more than the block had added, and hid other garbage. Rules 1
+and 1a state the corrected form, and acceptance 7 holds its tests.
+
+Phase Review, second, after the correction: no CRITICAL, no MAJOR, 7
+MINOR.
+
+| Finding | Close |
+|---|---|
+| The doc of `note_release` and two comments of the arena stated the first form | corrected |
+| `reserved_bytes` did not include the request records | rule 2c |
+| `record_request` could underflow on an invalid index, and had a `debug_assert!(false)` | `checked_sub`; no panic in any build; a test passes four invalid slots |
+| A release of a block that the last collection kept lowers the count | rule 2b states the bound; a test derives the iteration |
+| A test comment cited a review | acceptance 7 item d |
+| The test of acceptance 1 is a model in the runtime API at one tenth of the scale | recorded: `perf-gate` is the check on the workload |
+| A constant of the ship host-call test comes from a count of the dev JIT | recorded: a larger count gives a tighter bound |
+
+One run of the stress sweep by the coding agent, the first after a
+release build, reported a failure, and its output was not kept. Three
+runs after it, and four more by the orchestrator with each log kept,
+passed (44.9 to 45.2 s).
+
+`tools/hygiene.sh`: exit 0. `tools/gate.sh full` on the tree before
+this record: exit 0, debug 3948 passed, release 3929 passed, 0
+failed, 5 ignored in each. No golden moved. This run covers §345 and
+§346.
+
+### 346.5 Open
+
+1. The stress sweep failed one time with no record (§346.4). If it
+   fails again, keep the log before any other step.
+2. `subscript_rt_ctx_live_bytes` is the capacity on the ship tier and
+   the payload on the dev tier (§18.2d). The trigger does not use it,
+   but a host that compares it with the minimum headroom reads up to
+   twice the requested bytes (rule 2a).
+

@@ -1,5 +1,5 @@
-//! Automatic collection of a Context (`compiler.md` §342 rules 5 to 8 and
-//! 12 to 18). Each "does not happen" test has a firing control in the same
+//! Automatic collection of a Context (`compiler.md` §342 rules 5, 7, 8,
+//! and 12 to 18, and §346). Each "does not happen" test has a firing control in the same
 //! shape.
 
 use subscript_runtime::context::{
@@ -78,10 +78,11 @@ fn cycle(ctx: &mut Context, count: usize, size: usize) {
     ctx.exit_script();
 }
 
-/// Rule 5: an allocation over the threshold sets the flag and frees
-/// nothing. Control: mode 0 never sets the flag.
+/// `compiler.md` §346 rule 2 and §342 rule 5: an allocation that takes the
+/// requested bytes over the limit sets the flag and frees nothing.
+/// Control: mode 0 never sets the flag.
 #[test]
-fn an_allocation_over_the_threshold_sets_the_flag_and_does_not_collect() {
+fn an_allocation_over_the_limit_sets_the_flag_and_does_not_collect() {
     for ship in [false, true] {
         for mode in [CollectionMode::Automatic, CollectionMode::Off] {
             let mut ctx = context(ship);
@@ -95,7 +96,7 @@ fn an_allocation_over_the_threshold_sets_the_flag_and_does_not_collect() {
                     before + 1,
                     "an allocation freed an object"
                 );
-                let over = ctx.live_bytes() > ctx.collection_threshold();
+                let over = ctx.requested_bytes() > ctx.collection_limit();
                 if mode == CollectionMode::Automatic {
                     assert_eq!(ctx.collection_pending(), over || set_at.is_some());
                 }
@@ -132,10 +133,11 @@ fn the_pending_flag_is_the_byte_at_its_offset() {
     assert_eq!(read(&ctx), 0);
 }
 
-/// Rule 6: the threshold after a collection, for a live set under and over
-/// the minimum headroom.
+/// `compiler.md` §346 rule 2: the limit after a collection, for a live set
+/// under and over the minimum headroom. The collection sets the requested
+/// bytes to zero (§346 rule 1).
 #[test]
-fn the_threshold_follows_the_live_set_after_a_collection() {
+fn the_limit_follows_the_live_set_after_a_collection() {
     for ship in [false, true] {
         for (count, headroom) in [(10usize, 65_536usize), (2_000, 4_096)] {
             let mut ctx = context(ship);
@@ -149,54 +151,105 @@ fn the_threshold_follows_the_live_set_after_a_collection() {
             ctx.collect_automatic();
             let live = ctx.live_bytes();
             assert_eq!(ctx.live_count(), count);
-            assert_eq!(ctx.collection_threshold(), live + live.max(headroom));
-            if live < headroom {
-                assert_eq!(ctx.collection_threshold(), live + headroom);
+            assert_eq!(ctx.collection_limit(), live.max(headroom));
+            if count == 10 {
+                assert!(live < headroom);
+                assert_eq!(ctx.collection_limit(), headroom);
             } else {
-                assert_eq!(ctx.collection_threshold(), 2 * live);
+                assert!(live > headroom);
+                assert_eq!(ctx.collection_limit(), live);
             }
+            assert_eq!(ctx.requested_bytes(), 0);
             assert!(!ctx.collection_pending());
-            // An explicit collection sets the threshold by the same rule.
+            // An explicit collection sets the limit by the same rule.
             garbage(&mut ctx, 50, 100);
+            assert_eq!(ctx.requested_bytes(), 5_000);
             ctx.collect();
-            assert_eq!(ctx.collection_threshold(), live + live.max(headroom));
+            assert_eq!(ctx.collection_limit(), live.max(headroom));
+            assert_eq!(ctx.requested_bytes(), 0);
             drop(ctx);
             drop(handles);
         }
     }
 }
 
-/// Rule 8 and acceptance 3: 10,000 host calls that allocate garbage keep
-/// live bytes under the threshold plus one call. Control: mode 0 grows with
-/// the call count.
+/// `compiler.md` §342 rule 8, §346 rule 2a, and §346 acceptance 3: 10,000
+/// host calls that allocate garbage. After each outermost exit (a) the
+/// requested bytes are at most the limit plus the request of one call, the
+/// same bound in each Context kind, and (b) live bytes are at most the live
+/// bytes after the last collection plus the bytes that the tier holds for
+/// `limit / request + 1` calls. The ship tier holds the class capacity, so
+/// its live bytes can pass the limit. Control: mode 0 grows with the call
+/// count.
 #[test]
-fn the_outermost_exit_keeps_live_bytes_under_the_threshold_plus_one_call() {
+fn the_outermost_exit_keeps_the_requested_bytes_under_the_limit_plus_one_call() {
     const CALLS: usize = 10_000;
+    const HEADROOM: usize = 16_384;
+    const OBJECTS: usize = 4;
+    const SIZE: usize = 256;
+    const REQUEST: usize = OBJECTS * SIZE;
+    let mut highest_requested = Vec::new();
     for ship in [false, true] {
+        // The bytes that the tier holds for one call, read in a control
+        // Context with no collection.
+        let held = {
+            let mut control = context(ship);
+            assert!(control.set_collection(CollectionMode::Off, HEADROOM));
+            let before = control.live_bytes();
+            cycle(&mut control, OBJECTS, SIZE);
+            control.live_bytes() - before
+        };
+        if ship {
+            assert!(held > REQUEST, "the ship tier holds the class capacity");
+        } else {
+            assert_eq!(held, REQUEST, "the dev tier holds the request");
+        }
         for mode in [CollectionMode::Automatic, CollectionMode::Off] {
             let mut ctx = context(ship);
-            assert!(ctx.set_collection(mode, 16_384));
-            let before = ctx.live_bytes();
-            cycle(&mut ctx, 4, 256);
-            let call_bytes = ctx.live_bytes() - before;
-            let mut peak = 0;
-            for _ in 1..CALLS {
-                cycle(&mut ctx, 4, 256);
-                if mode == CollectionMode::Automatic {
-                    assert!(ctx.live_bytes() <= ctx.collection_threshold() + call_bytes);
+            assert!(ctx.set_collection(mode, HEADROOM));
+            let mut base = ctx.live_bytes();
+            let mut collections = ctx.automatic_collection_count();
+            let mut requested_max = 0;
+            let mut live_max = 0;
+            for _ in 0..CALLS {
+                cycle(&mut ctx, OBJECTS, SIZE);
+                if ctx.automatic_collection_count() != collections {
+                    collections = ctx.automatic_collection_count();
+                    base = ctx.live_bytes();
                 }
-                peak = peak.max(ctx.live_bytes());
+                if mode == CollectionMode::Automatic {
+                    let limit = ctx.collection_limit();
+                    // (a) compiler.md §346 rule 2: the count passes the
+                    // limit by at most one call before the exit collects.
+                    assert!(ctx.requested_bytes() <= limit + REQUEST);
+                    // (b) compiler.md §346 rule 2a: at most this many calls
+                    // run between two collections.
+                    let calls_between_collections_max = limit / REQUEST + 1;
+                    assert!(ctx.live_bytes() <= base + calls_between_collections_max * held);
+                }
+                requested_max = requested_max.max(ctx.requested_bytes());
+                live_max = live_max.max(ctx.live_bytes());
             }
             if mode == CollectionMode::Off {
-                assert_eq!(ctx.live_bytes(), CALLS * call_bytes);
+                // (c) The control: every call stays.
+                assert_eq!(ctx.live_bytes(), CALLS * held);
                 assert_eq!(ctx.automatic_collection_count(), 0);
             } else {
-                assert!(peak <= 16_384 + call_bytes);
+                println!(
+                    "ship {ship}: held {held} per call, highest requested {requested_max} \
+                     (bound {}), highest live {live_max} (bound {}), {} collections",
+                    HEADROOM + REQUEST,
+                    (HEADROOM / REQUEST + 1) * held,
+                    ctx.automatic_collection_count()
+                );
                 assert!(ctx.automatic_collection_count() > 0);
+                highest_requested.push(requested_max);
             }
             assert_eq!(ctx.outermost_exit_count(), CALLS as u64);
         }
     }
+    // The count is the same number in each Context kind.
+    assert_eq!(highest_requested[0], highest_requested[1]);
 }
 
 /// Rules 12 and 13: an automatic collection records and does not trap; a
@@ -574,10 +627,11 @@ fn a_host_that_switches_the_mode_each_frame_collects_as_mode_one() {
     }
 }
 
-/// Rule 17: a call that changes only the headroom moves the threshold and
-/// keeps the base, the live bytes after the last collection.
+/// `compiler.md` §346 rule 3: a call that changes only the headroom moves
+/// the limit, keeps the base (the live bytes after the last collection),
+/// and keeps the requested bytes.
 #[test]
-fn a_headroom_change_moves_the_threshold_and_keeps_the_base() {
+fn a_headroom_change_moves_the_limit_and_keeps_the_base() {
     for ship in [false, true] {
         let mut ctx = context(ship);
         assert!(ctx.set_collection(CollectionMode::Automatic, 65_536));
@@ -589,27 +643,30 @@ fn a_headroom_change_moves_the_threshold_and_keeps_the_base() {
         assert!(base > 0);
         garbage(&mut ctx, 30, 100);
         assert!(ctx.live_bytes() > base);
+        assert_eq!(ctx.requested_bytes(), 3_000);
         for headroom in [1_000usize, 100_000, base / 2] {
             assert!(ctx.set_collection(CollectionMode::Automatic, headroom));
-            assert_eq!(ctx.collection_threshold(), base + base.max(headroom));
+            assert_eq!(ctx.collection_limit(), base.max(headroom));
+            assert_eq!(ctx.requested_bytes(), 3_000);
         }
         drop(ctx);
         drop(handles);
     }
 }
 
-/// Rule 17: after allocations in mode 0, the switch to mode 1 sets the flag
-/// if live bytes exceed the threshold. Control: under the threshold it does
-/// not. Mode 0 clears the flag, and mode 2 sets it.
+/// `compiler.md` §346 rule 3: after allocations in mode 0, the switch to
+/// mode 1 sets the flag if the requested bytes exceed the limit. Control:
+/// under the limit it does not. Mode 0 clears the flag, and mode 2 sets it.
 #[test]
-fn a_switch_to_mode_one_sets_the_flag_over_the_threshold() {
+fn a_switch_to_mode_one_sets_the_flag_over_the_limit() {
     for ship in [false, true] {
         for (count, over) in [(40usize, true), (2, false)] {
             let mut ctx = context(ship);
             assert!(ctx.set_collection(CollectionMode::Off, 1024));
             garbage(&mut ctx, count, 64);
             assert!(!ctx.collection_pending());
-            assert_eq!(ctx.live_bytes() > 1024, over);
+            assert_eq!(ctx.requested_bytes(), count * 64);
+            assert_eq!(ctx.requested_bytes() > 1024, over);
             assert!(ctx.set_collection(CollectionMode::Automatic, 1024));
             assert_eq!(ctx.collection_pending(), over);
             assert!(ctx.set_collection(CollectionMode::Off, 1024));
@@ -746,7 +803,7 @@ fn exit_script_with_tasks_runs_the_schedule_for_an_owner_task() {
 }
 
 /// `Context::automatic_collection_with`: it collects the owner's roots,
-/// counts one automatic collection, clears the flag, sets the threshold,
+/// counts one automatic collection, clears the flag, sets the limit,
 /// and records a released failed task instead of a trap. Control: a
 /// release of the same task outside a collection traps.
 #[test]
@@ -769,7 +826,8 @@ fn automatic_collection_with_collects_and_records() {
                 assert_eq!(ctx.automatic_collection_count(), 1);
                 assert!(!ctx.collection_pending());
                 let live = ctx.live_bytes();
-                assert_eq!(ctx.collection_threshold(), live + live.max(1024));
+                assert_eq!(ctx.collection_limit(), live.max(1024));
+                assert_eq!(ctx.requested_bytes(), 0);
             } else {
                 // SAFETY: the test releases the one reference of the frame.
                 unsafe { ctx.async_release(task.frame as *mut u8, 0) };

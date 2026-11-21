@@ -194,9 +194,11 @@ fn interpreted(source: &str, mode: CollectionMode) -> (String, u64, usize) {
 }
 
 /// Acceptance 2 in the ship tier, at full size. Without a collection, live
-/// bytes after the run are the bytes of 30 trees. With mode 1, the threshold
-/// after a collection is at most twice the live set, which is at most one
-/// tree, so live bytes stay under three trees. Measured: about 3 s, most of
+/// bytes after the run are the bytes of 30 trees. With mode 1, a collection
+/// is due when the bytes requested since the last collection exceed the
+/// larger of the live set and the minimum headroom (`compiler.md` §346
+/// rule 2). The live set is at most one tree, so live bytes stay under
+/// three trees. Measured: about 3 s, most of
 /// it the three C builds.
 #[test]
 fn the_tree_workload_reclaims_in_one_host_call_in_the_ship_tier() {
@@ -650,13 +652,18 @@ fn ship_host_calls(mode: i32) -> (u64, u64, u64) {
     (base, one, last)
 }
 
-/// Acceptance 3 in the ship tier. With mode 1 the threshold after a
-/// collection is the live set plus the larger of the live set and the
-/// minimum headroom (rule 6), so live bytes after the last call stay under
-/// that threshold plus one call. Control: with mode 0 the bytes of each call
-/// stay. Measured: 83,530,016 live bytes with mode 0, and 16 with mode 1
-/// (threshold 65,536, one call 8,369). Cost: two ship-tier C builds of
-/// about 0.5 s each.
+/// Acceptance 3 in the ship tier. With mode 1 a collection is due when the
+/// requested bytes exceed the limit (`compiler.md` §346 rule 2), here the
+/// minimum headroom, because the live set after a collection is smaller.
+/// The hook reads live bytes, not requests. By §346 rule 2a the tier holds
+/// at most twice the request plus 16 bytes for each block, so a call of
+/// `one` held bytes in [`STEP_ALLOCATIONS`] blocks requests at least
+/// `(one - 16 * STEP_ALLOCATIONS) / 2` bytes. At most the limit over that
+/// request, plus one, calls run between two collections, and live bytes
+/// after the last call are at most the live set plus the bytes held for
+/// those calls. Control: with mode 0 the bytes of each call stay. Measured:
+/// 83,530,016 live bytes with mode 0, and 16 with mode 1 (one call 8,369).
+/// Cost: two ship-tier C builds of about 0.5 s each.
 #[test]
 fn host_calls_with_no_poll_reclaim_at_the_outermost_exit_in_the_ship_tier() {
     let (base, one, off) = ship_host_calls(0);
@@ -669,13 +676,16 @@ fn host_calls_with_no_poll_reclaim_at_the_outermost_exit_in_the_ship_tier() {
         "off {off}, base {base}, one call {one}"
     );
     let (base, one, live) = ship_host_calls(1);
-    let threshold = base + base.max(MIN_HEADROOM as u64);
-    println!("mode 0: {off} bytes; mode 1: {live} bytes, threshold {threshold}, one call {one}");
-    assert!(
-        live <= threshold + one,
-        "live {live}, threshold {threshold}, one call {one}"
-    );
+    let request_min = (one - 16 * STEP_ALLOCATIONS) / 2;
+    let calls_between_collections_max = MIN_HEADROOM as u64 / request_min + 1;
+    let bound = base + calls_between_collections_max * one;
+    println!("mode 0: {off} bytes; mode 1: {live} bytes, bound {bound}, one call {one}");
+    assert!(live <= bound, "live {live}, bound {bound}, one call {one}");
 }
+
+/// The allocations of the first call of [`STEP`]. The dev JIT test of
+/// acceptance 3 reads 8 for the first call and 7 for each later call.
+const STEP_ALLOCATIONS: u64 = 8;
 
 /// Runs [`STEP`] in a reload session with `mode` and the default minimum
 /// headroom: one call, then the other calls of [`HOST_CALLS`]. Each call of
@@ -701,8 +711,9 @@ fn dev_host_calls(mode: CollectionMode) -> (usize, usize, usize) {
 /// does, with mode 1 and the default minimum headroom of 16 MiB, and reads
 /// live allocations. A call makes 8 allocations of about 8 KiB in all, so
 /// 10,000 calls allocate more than twice the headroom. With rule 8 at most
-/// the allocations of the calls in one headroom stay, which is under half
-/// of them. Control: with mode 0 the allocations of each call stay.
+/// the allocations of the calls whose requested bytes fit in one headroom
+/// stay (`compiler.md` §346 rule 2); the dev tier holds the request (§346
+/// rule 2a). That is under half of them. Control: with mode 0 the allocations of each call stay.
 /// Measured: 13,525 of 70,001 allocations stay with mode 1, and 70,001
 /// with mode 0. Cost: two dev JIT compiles and 20,000 calls, under 1 s
 /// (release).

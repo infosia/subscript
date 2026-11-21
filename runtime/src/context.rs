@@ -21,7 +21,8 @@
 //! Ship-tier policy (§8.1b): no per-allocation map. Blocks up to the
 //! largest size class are carved from Context-owned per-class chunks by
 //! bump pointer; `Context.free` pushes a block onto its class's LIFO
-//! free list (threaded through the freed payload's first word) and the
+//! free list (threaded through the freed payload's first word; the second
+//! word holds the index of the chunk, `compiler.md` §346 rule 1a) and the
 //! next same-class `alloc` pops it. The allocator zeroes classes that can
 //! hold handles. A string writer replaces all exposed bytes, so it does
 //! not zero that class. Larger allocations are individual system
@@ -457,6 +458,11 @@ struct Chunk {
     class: usize,
     /// Blocks handed out so far; the membership/sweep watermark.
     bump: usize,
+    /// The request of each block, by block index: the size that the
+    /// allocation of the block added to the requested bytes. A release
+    /// subtracts it (`compiler.md` §346 rules 1 and 1a). A request is at
+    /// most `LARGEST_BLOCK - HEADER_SIZE`, so it fits in 16 bits.
+    requests: Box<[u16]>,
 }
 
 /// A ship-tier allocation above `LARGEST_BLOCK` (§8.1b): an individual
@@ -791,8 +797,8 @@ pub struct Context {
     // Every site that changes the live set moves it, so a per-frame host
     // read costs the same at every live count.
     live_bytes_counter: usize,
-    // compiler.md §342: the mode, the threshold, the recorded failures, and
-    // the detection schedule.
+    // compiler.md §342 and §346: the mode, the limit, the requested bytes,
+    // the recorded failures, and the detection schedule.
     collection: collection::CollectionState,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
@@ -884,7 +890,8 @@ pub struct Context {
     // membership lookup (binary search for the covering chunk).
     chunk_map: Vec<(usize, usize)>,
     // Per-class LIFO free list head: a freed payload address, 0 when
-    // empty; the next link is the freed payload's first word.
+    // empty; the next link is the freed payload's first word, and the
+    // index of its chunk the second word (`compiler.md` §346 rule 1a).
     free_heads: [usize; NUM_CLASSES],
     // Per-class chunk currently being bump-allocated (index into
     // `chunks`), if any.

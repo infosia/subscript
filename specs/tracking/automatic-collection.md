@@ -1,8 +1,8 @@
 # Automatic collection — trial on the branch `gc-auto`
 
-Status: **§342, §343, and §344 COMPLETE on the branch `gc-auto`.** The
+Status: **§342 to §346 COMPLETE on the branch `gc-auto`.** The
 measurements of the implementation and the Phase Reviews are in
-`compiler.md` §342.4a, §343.4, and §344.5.
+`compiler.md` §342.4a, §343.4, §344.5, §345.5, and §346.4.
 The prototype is on the branch `gc-auto-proto` and does not land. The
 branch is not merged.
 
@@ -364,13 +364,16 @@ the runtime library from that directory.
 ## Next
 
 - `compiler.md` §342.5 holds the open items.
-- Two reviews of `aef4cdd3` by another agent gave these items, which
-  §344 does not hold: the roots of a runtime operation across a
-  function-value callback (§342.5 item 4; owner decision 2026-11-21:
-  a rare shape that is hard to correct is recorded only), the scope of
-  §342 rule 11d (one runtime operation such as `split` allocates in
-  proportion to its input, with no poll in the runtime loop), and the
-  exit count of the ship tier in the stress sweep (§342.5 item 5).
+- §345 closed the items of the two reviews of `aef4cdd3` by another
+  agent: the roots of a runtime operation across a function-value
+  callback, the scope of §342 rule 11d, and the exit count of the ship
+  tier.
+- §346 changed the trigger after `perf-gate` failed on `collect`: the
+  figure of 1.18x to 1.22x that §344.4 recorded was against a C
+  reference of 42 to 44 ms. With the reference at 31.4 ms the same
+  ship time was 1.59x.
+- A reference-count cycle of async frames is not reclaimed (§70.3.6,
+  §342.5 item 2).
 
 ## G6 — benchmark comparison against `main`, and the causes
 

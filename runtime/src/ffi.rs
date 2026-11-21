@@ -710,10 +710,16 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_binding_count_advisory(
 ///
 /// Mode 0 is off: no allocation starts a collection, and the outermost exit
 /// runs no detection collection. Mode 1 is automatic, and is the mode of a
-/// new Context: a poll or the outermost exit collects when live bytes
-/// exceed the threshold. The
-/// threshold after a collection is live bytes plus the larger of live bytes
-/// and `min_headroom_bytes`. Mode 2 makes each poll and each outermost exit
+/// new Context: a poll or the outermost exit collects when a collection is
+/// due. A collection becomes due when the bytes allocated since the last
+/// collection exceed the larger of the live bytes after it and
+/// `min_headroom_bytes`. The headroom counts the bytes that the program
+/// allocates. The ship tier can hold up to the size-class capacity for
+/// them: at most twice the request plus 16 bytes, and a header of 16 bytes
+/// for each block. A release in script code subtracts the bytes that the
+/// allocation of the block requested. This call keeps the bytes allocated
+/// since the last collection.
+/// Mode 2 makes each poll and each outermost exit
 /// collect; it is for tests. A `min_headroom_bytes` of 0 keeps the default of
 /// 16 MiB. A worker Context takes the mode and the headroom of its parent at
 /// the spawn.
@@ -929,6 +935,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_live_bytes(ctx: *const Context) -> u64
 }
 
 /// Bytes currently reserved from the system for Context allocations.
+///
+/// In the ship tier the figure includes 2 bytes for each block of a size
+/// class, which record the request of the block (compiler.md §346 rule
+/// 2c).
 ///
 /// # Safety
 ///

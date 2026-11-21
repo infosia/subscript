@@ -661,22 +661,25 @@ fn alloc_str_with_writes_exact_result_bytes_in_both_tiers() {
 #[test]
 fn ship_string_writer_replaces_exposed_bytes_without_zeroing_padding() {
     let mut ctx = Context::new_releasing();
-    let first = ctx.alloc_str(b"a", 0);
-    // A one-byte string uses 9 exposed payload bytes in a class with
-    // 16 payload bytes. Mark the seven padding bytes before release.
-    // SAFETY: `first` has 16 bytes of size-class payload capacity.
-    unsafe { std::ptr::write_bytes(first.add(9), 0xAB, 7) };
+    let first = ctx.alloc_str(b"abcdefghi", 0);
+    // A nine-byte string uses 17 exposed payload bytes in a class with
+    // 48 payload bytes. Mark the 31 padding bytes before release. The free
+    // list writes only the first two payload words (the link and the chunk
+    // index, `compiler.md` §346 rule 1a), and those bytes are exposed.
+    // SAFETY: `first` has 48 bytes of size-class payload capacity.
+    unsafe { std::ptr::write_bytes(first.add(17), 0xAB, 31) };
     ctx.delete(first as usize, 0);
 
-    let reused = ctx.alloc_str_with(1, 0, |destination| {
-        destination[0] = b'z';
+    let reused = ctx.alloc_str_with(9, 0, |destination| {
+        destination.copy_from_slice(b"zzzzzzzzz");
     });
     assert_eq!(reused, first, "the string free list must reuse the block");
     // SAFETY: `reused` is a live string in this Context. The padding
     // read stays inside its size-class payload capacity.
     unsafe {
-        assert_eq!(ctx.str_bytes(reused), b"z");
-        assert_eq!(reused.add(9).read(), 0xAB);
+        assert_eq!(ctx.str_bytes(reused), b"zzzzzzzzz");
+        assert_eq!(reused.add(17).read(), 0xAB);
+        assert_eq!(reused.add(47).read(), 0xAB);
     }
 }
 
