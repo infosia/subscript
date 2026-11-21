@@ -367,3 +367,79 @@ the runtime library from that directory.
 - The `perf-gate` figure of `a22` on the ship tier (1.44x against a
   limit of 1.50x) has no measurement at the pin `ca3fc9ed` to compare
   with.
+
+## G6 — benchmark comparison against `main`, and the causes
+
+Host: aarch64, macOS. `main` is `ca3fc9ed`; the branch is `aef4cdd3`.
+Release builds of `cross-language --only <workload>` (median of 11
+timed runs) and of `perf-gate --gate`, run in turn, two passes.
+
+| Subject | `main` | Branch |
+|---|---|---|
+| `callbacks` ship tier | 37.09, 37.76 ms | 88.49, 86.05 ms |
+| `callbacks` dev JIT | 257.9, 259.1 ms | 338.9, 334.6 ms |
+| `collect` ship tier | 38.61, 37.49 ms | 53.16, 53.42 ms |
+| `collect` dev JIT | 121.4, 121.1 ms | 121.2, 120.8 ms |
+| `perf-gate` `a22` ship tier | 1.35x, 1.33x | 1.44x, 1.43x |
+| `perf-gate` `collect` ship tier | 0.87x, 0.85x | 1.22x, 1.18x |
+| `fib-recursive`, `fib-loop`, `mandelbrot`, `primes`, `sort`, `tree`, `queen`, `particles`, both tiers | equal in the noise of the two passes | |
+
+Prototype for the causes: the branch `gc-auto-proto2`. It does not
+land.
+
+### `callbacks`: the mark reads a buffer of scalars
+
+One process ran 98 automatic collections (7 for each iteration of the
+workload). `main` runs none: it keeps about 140 MB of garbage.
+
+| Tier | Mark | Sweep | Words read | Lookups that hit | Live bytes before and after |
+|---|---|---|---|---|---|
+| ship | 7.3 ms | 17 µs | 524,294 | 2 | 28.2 MB, 4.19 MB |
+| dev JIT | 8.9 ms | 17 µs | 524,294 | 2 | the same |
+
+The mark reads the 4 MB data buffer of the live `i32[]` word by word,
+because `class_holds_no_handle` is true for a string only. 7 × 7.3 ms
+is the 51 ms that the ship tier lost.
+
+With no read of a buffer whose element size is under 8 bytes, the 98
+collections cost about 2 µs each:
+
+| Workload | `main` | Prototype |
+|---|---|---|
+| `callbacks` ship tier | 37.46, 37.14 ms | 36.62, 36.69 ms |
+| `callbacks` dev JIT | 257.2, 257.6 ms | 256.7, 256.2 ms |
+| `particles`, `sort`, `tree`, both tiers | | equal in the noise |
+
+An `f64[]` has an element size of 8, so that rule does not cover it.
+Probe, ship tier, a live 4 MB `f64[]` and garbage in a loop, 12
+automatic collections: the mark took 13.5 ms for each collection, and
+about 0 with no read of any array data buffer. The run took 197 and
+169 ms (minimum of two passes) against 66.5 and 65.2 ms.
+
+### `collect`, ship tier: automatic collections between the explicit ones
+
+| Tier | Explicit | Automatic | Live after an explicit collection | Threshold | Peak of a round |
+|---|---|---|---|---|---|
+| ship | 105 | 90 | 14.16 MB | 30.94 MB | about 33 MB |
+| dev JIT | 98 | 0 | 7.02 MB | 23.8 MB | 16.6 MB |
+
+The ship tier counts the size-class capacity. The workload requests
+one byte over each class size, so the capacity is 2.02 times the
+request. One automatic collection costs 2.8 ms of mark and 0.35 ms of
+sweep. With mode 0 the same binary reads 37.05 and 38.57 ms, so the
+polls, the flag of an allocation, and the explicit path cost nothing
+that the measurement shows.
+
+### `a22`, ship tier: a poll in a loop that cannot allocate
+
+No collection runs in `a22`. The backedge of the loop in `propagate`
+(1,000,000 iterations) has a poll, because `multiply` states "can
+allocate". Two instructions give that fact and only make values: an
+`ArrayLiteral` with a `FixedArray<f32, 16>` result (a compound literal
+in the emitted C), and an `AllocateClass` of a `@ValueType` class with
+an address result (a stack temporary). With both as "cannot allocate",
+the loop has no poll: 8.42 and 8.37 ms with the poll, 7.91 and 7.89 ms
+with none (minimum of 40 runs, two passes).
+
+The `perf-gate` run of this round was void after its first pass: a
+load from outside the round gave spreads of 14% to 360%.
