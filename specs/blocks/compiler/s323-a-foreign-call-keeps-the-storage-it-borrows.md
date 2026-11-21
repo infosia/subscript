@@ -140,7 +140,7 @@ runs a collect). No corpus entry covers that form yet.
    struct pointer) is not measured. A form that saves the count inline
    for a top-level array argument (the study measured +0.3 ns) was not
    built.
-2. Contrived, MINOR: a `sort` comparator that replaces elements that it
+2. Closed by §345 rule 1 (`a496`). Contrived, MINOR: a `sort` comparator that replaces elements that it
    does not compare, then collects. The runtime keeps those elements
    only in its scratch copy, which is not a root, and writes them back.
    Measured with four elements: the development tier and the ship tier

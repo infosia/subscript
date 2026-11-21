@@ -45,9 +45,14 @@ Problem, measured at `ca3fc9ed`:
 
 **Lifetime**
 
-1. **A reachable object stays valid.** An object that no root reaches
-   is reclaimed at a time that this contract does not state. A program
-   that never collects is correct, merely larger.
+1. **A collection does not reclaim a reachable object.** A collection
+   reclaims an object that no root reaches, at a time that this
+   contract does not state. A program that never collects is correct,
+   merely larger. *(Amended 2026-11-21.)* This rule said "a reachable
+   object stays valid". `Context.free` ends an object at once, if a
+   root reaches it or not, and a use after it is undefined
+   (`collisions.md` Q6). So the rule states what a collection does,
+   and Q6 states what `Context.free` does.
 2. **An automatic collection is not observable from script code.** The
    output, the traps, and the trap positions of a program do not depend
    on the polls where collections run. Rules 12 to 16 give the one
@@ -130,7 +135,9 @@ Problem, measured at `ca3fc9ed`:
        before it can allocate an unbounded count of objects.
     d. Each allocation path reaches a poll, or the outermost exit,
        after a bounded count of allocations. The bound of straight-line
-       code is its size.
+       code is its size. *(Amended 2026-11-21, §345 rule 3.)* The
+       bound counts LIR instructions that can allocate. One runtime
+       operation can allocate in proportion to its input.
 
 **Failure of an unobserved task**
 
@@ -350,7 +357,7 @@ golden moved.
 3. Closed by §344. One collection of about 4 MiB of live bytes took
    about 6 ms in the `callbacks` workload on the ship tier. The cause
    was the read of the data buffer of an `i32[]`.
-4. Contrived, MINOR (the review rule of invariant 6): a function-value
+4. Closed by §345 rule 1. Contrived, MINOR (the review rule of invariant 6): a function-value
    callback of `filter`, `find`, `findLast`, `Map.groupBy`, or `sort`
    that removes or replaces elements of the receiver. The runtime
    holds the element in a Rust local with no root
@@ -359,7 +366,7 @@ golden moved.
    interpreter prints `findLast 32`, and the ship tier prints
    `findLast 2055278416`. The literal-lambda path is a script-level
    loop and has roots.
-5. The dev tier compares the exit count with the interpreter only. The
+5. Closed by §345 rule 4. The dev tier compares the exit count with the interpreter only. The
    ship tier has no function that reads the count (acceptance 8).
 6. W001 stated that the Context grows until a collection. §343
    retires it.

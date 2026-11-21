@@ -27,7 +27,7 @@ The stages of the current form and the sections that hold their rules:
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214, §254 |
 | reference interpreter | §68.7 |
-| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344 |
+| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344, §345 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84, §152 |
 | the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222, §225, §226 |
@@ -385,3 +385,4 @@ Every section, with its status:
 | §342 | A Context collects automatically | active | [`s342-a-context-collects-automatically.md`](compiler/s342-a-context-collects-automatically.md) |
 | §343 | W001 is retired | active | [`s343-w001-is-retired.md`](compiler/s343-w001-is-retired.md) |
 | §344 | The mark does not read a buffer that holds no handle | active | [`s344-the-mark-does-not-read-a-buffer-that-holds-no-handle.md`](compiler/s344-the-mark-does-not-read-a-buffer-that-holds-no-handle.md) |
+| §345 | A runtime operation keeps what it reads after a callback | active | [`s345-a-runtime-operation-keeps-what-it-reads-after-a-callback.md`](compiler/s345-a-runtime-operation-keeps-what-it-reads-after-a-callback.md) |
