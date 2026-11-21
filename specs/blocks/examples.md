@@ -208,8 +208,8 @@ the C ABI.
 4. draining the script's stdout sink with `subscript_rt_ctx_stdout`;
 5. the memory accounting the host actually gets — `live_allocations`
    before and after the host's per-frame collection of item 6
-   (§18.2d), which is how "no implicit GC" becomes visible to a host
-   rather than a claim;
+   (§18.2d), which shows the host what a collection reclaims
+   (`compiler.md` §342 rule 20);
 6. the recommended release pattern: the host calls
    `subscript_rt_ctx_collect` once per frame, after the frame's script
    calls and outside the enter/exit bracket (§18.2d). The script
@@ -301,7 +301,7 @@ implementer's choice; the committed `.expected` freezes it.
 |---|---|---|
 | `e01-sized-integers` | `i32`/`u32`/`i64`/`f32`/`f64`, explicit `as` conversions, wrapping | C3 bare `number` rejected; C4 literals are contextually typed |
 | `e02-value-and-reference` | `@ValueType class` beside a plain `class`; copy on assign and on pass | C2 value types; C1 nominal identity — structurally identical is not interchangeable |
-| `e03-memory` | Context allocation, `Context.free`, explicit `Context.collect()` | invariant 2 — nothing collects unbidden; a program that never collects is correct, merely larger |
+| `e03-memory` | Context allocation, `Context.free`, explicit `Context.collect()` | invariant 2 — a Context collects automatically and the host bounds it (`compiler.md` §342); a program that never collects is correct, merely larger |
 | `e04-null` | `T \| null`, narrowing by `!== null` | C7 — no `undefined`, no general unions |
 | `e05-errors` | `throw`/`try`/`catch` of the `Error` family; `JSON.parse` failures; a result-shaped return; what a trap is | C6 — only `Error`-family values are thrown, `finally` runs on each exit but not on a trap (`compiler.md` §180), and a trap is not catchable *(renamed from `e05-no-exceptions` 2026-09-26, `compiler.md` §115)* |
 | `e06-arrays-and-closures` | fixed vs growable arrays, bounds checks, `map`/`filter`/`reduce` | C5 — non-escaping capture only |

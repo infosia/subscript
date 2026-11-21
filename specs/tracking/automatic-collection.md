@@ -1,8 +1,8 @@
 # Automatic collection — trial on the branch `gc-auto`
 
-Status: **MEASUREMENT (G0).** No contract changed. No production code
-changed. The prototype is on the branch `gc-auto-proto` and does not
-land.
+Status: **IN PROGRESS.** The measurement round G0 is complete. The
+contract is `compiler.md` §342. The prototype is on the branch
+`gc-auto-proto` and does not land.
 
 ## Question and owner decisions
 
@@ -18,6 +18,9 @@ The owner decided these points on 2026-11-21:
 2. The host can switch automatic collection off. The default is on.
 3. The removal of `Context.free` is decided after the safepoint
    measurements.
+4. After G0, the trial goes on to the contract.
+5. A detection collection at the host boundary runs on a schedule of
+   exit counts with a backoff (§342 rules 14 and 15), not at each exit.
 
 ## Rounds
 
@@ -30,7 +33,8 @@ The owner decided these points on 2026-11-21:
 | G4 | Removal of `Context.free` (owner decision 3). |
 | G5 | Phase Review. |
 
-Section numbers are assigned at the merge.
+G1 to G3 are `compiler.md` §342 and its rounds (§342.4). If `main`
+takes §342 first, the section gets a new number at the merge.
 
 ## G0a — root visibility and trigger equality, at `ca3fc9ed`
 
@@ -318,3 +322,24 @@ collection with about 4 MiB live; the cause is not traced.
 Each tier: 495 of 498 equal to the run without polls. The differences
 are `t97`, `t98`, and `t107` (the delivery rule of G0b). The 78 native,
 hook, and file entries: 78 of 78 equal in the dev JIT and ship C.
+
+## G0d — a detection collection at each exit
+
+Prototype `3304e309` on `gc-auto-proto`, dev JIT, by the orchestrator.
+The program builds a list of 200,000 nodes, puts a failed handle in a
+live object, runs 2,000 iterations of `await Context.suspend()`, then
+awaits the handle in a `try`. Each run prints `caught` and
+`2000 200000`.
+
+| Configuration | Time, three runs |
+|---|---|
+| No polls | 0.02 s, 0.02 s, 0.02 s |
+| Polls, no collection at the outermost exit | 0.02 s, 0.02 s, 0.02 s |
+| Polls, the G0b rule 3 | 20.53 s, 20.74 s, 20.87 s |
+
+The G0b rule 3 runs one full collection at each outermost exit while
+a failed unobserved task exists: about 10 ms for each step here. With
+`await` of an async function that completes at once in place of
+`Context.suspend()`, the three configurations read 0.02 s, 0.02 s,
+and 0.06 s. The ship tier was not measured: the driver did not link
+the runtime library from that directory.

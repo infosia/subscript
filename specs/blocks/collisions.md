@@ -1036,7 +1036,13 @@ Accept: `a369`, `a370`. Reject: `r421`.
   exactly these semantics and none is called `unsafeFree`.)*
 - **Q7 (`Context.collect`)** — `Context.collect(): void` — explicitly
   invoked collection of unreachable Context allocations. Also invocable
-  host-side. Never runs unbidden (invariant 2).
+  host-side.
+
+  *(Amended 2026-11-21, `compiler.md` §342.)* This clause said that a
+  collection never runs unbidden. A Context now collects automatically
+  at polls and at host boundaries. `Context.collect()` stays as the
+  explicit collection: it runs at its call position, and it reports a
+  failed unobserved task at that position.
 
   *(Renamed from the bare global `collect` 2026-07-28, owner decision. A
   top-level `collect()` names no owner and reads as a library helper;

@@ -20,7 +20,8 @@ host applications that own their main loop and expose a C ABI (game
 engines are the archetype, not the boundary — see `CLAUDE.md`):
 
 - **Execution and memory model:** C-compatible data layout; Context-scoped
-  memory with manual `delete` and explicitly-invoked collection only; a
+  memory with collection pauses that the host controls (automatic by
+  default, host-timed, or manual); a
   fast-iteration hot-reload development tier (in-process JIT on desktop dev
   platforms) plus an AOT tier for shipping; host-first embedding — the
   host owns the loop and calls exported script functions.
@@ -55,8 +56,10 @@ Normative copies live in `CLAUDE.md`; the plan restates them for context.
 
 1. Data layout is **C-ABI-identical (C, not C++)** — platform-ABI-stable,
    compiler-portable, machine-verifiable via `offsetof` assertions.
-2. **No implicit GC** — no collector runs unbidden; Context memory, manual
-   `delete`, collection is an explicitly invoked host operation.
+2. **The host controls each collection pause** — three levels:
+   automatic at compiler-defined polls and host boundaries (the
+   default), host-timed, and manual with `Context.free`
+   (`compiler.md` §342).
 3. **A fast-iteration development tier and an AOT tier are both
    mandatory.**
 4. **Host interop crosses a C ABI only.** Any engine-side data becomes

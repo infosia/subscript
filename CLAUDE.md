@@ -35,11 +35,18 @@ agent's role and follows the coding agent's rules.
    struct. This is machine-verifiable (`offsetof` assertions against
    bindgen-style output) and compiler-portable, which C++ layout identity
    is not. No vtables, no C++ inheritance layout, no name mangling — ever.
-2. **No implicit GC.** No collector runs unbidden: Context-scoped memory,
-   manual `delete`, and collection only as an explicitly invoked host
-   operation. A design that is correct only if an uninvoked collector runs
-   is out of scope; a program that never collects is correct, merely
-   larger.
+2. **The host controls each collection pause.** A Context has three
+   levels of memory management, and the host selects one. Automatic
+   (the default): the Context reclaims unreachable memory at
+   compiler-defined polls and at host boundaries. Host-timed: the host
+   switches automatic collection off and collects at a point it
+   selects. Manual: script code releases an object with `Context.free`,
+   and no collection runs. At each level, no collection moves an
+   object, a collection of a Context runs only inside a call into that
+   Context, on the thread of that call, and an automatic collection is
+   not observable from script code. A program that never collects is correct, merely
+   larger. Cleanup of an external resource uses `using`, never
+   reachability.
 3. **Two execution forms are both mandatory: a fast-iteration development
    tier (hot reload; realized as in-process JIT on desktop dev platforms)
    and AOT (ship).** Dropping the development tier forfeits the main

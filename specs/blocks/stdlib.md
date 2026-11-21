@@ -2004,8 +2004,8 @@ distinct dynamic patterns, and a regex literal evaluated inside a
 200 000-iteration loop retaining **181 MB** that `Context.collect()` could not
 reclaim — against 0 MB for the same literal hoisted to a constant.)*
 
-Invariant 2 makes explicit `Context.collect()` the whole memory model. Regex
-state is not outside it:
+A collection is the memory model for an object that nothing reaches
+(`compiler.md` §342). Regex state is not outside it:
 
 - **A `RegExp` handle is an ordinary Context allocation.** `Context.collect()`
   reclaims an unreachable one exactly as it reclaims any other object,
