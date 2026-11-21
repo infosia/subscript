@@ -798,3 +798,134 @@ fn a_reload_after_an_initializer_trap_keeps_the_collection_mode() {
         "default: live {live}, base {base}, one call {one}"
     );
 }
+
+/// compiler.md §344 acceptance 1a: an array of reference objects that is
+/// the only holder of its elements keeps each element through a forced
+/// collection before a growth of its buffer and after it. The same shape
+/// with an `f64[]` and an `i32[]` reads the same values.
+const ARRAY_HOLDER: &str = r#"
+class Box { v: i32; constructor(v: i32) { this.v = v; } }
+export function main(): void {
+  const boxes: Box[] = [];
+  const floats: f64[] = [];
+  const ints: i32[] = [];
+  for (let i: i32 = 0; i < 100; i += 1) {
+    boxes.push(new Box(i * 7 + 3));
+    floats.push((i * 7 + 3) as f64);
+    ints.push(i * 7 + 3);
+  }
+  Context.collect();
+  for (let i: i32 = 100; i < 150; i += 1) {
+    boxes.push(new Box(i * 7 + 3));
+    floats.push((i * 7 + 3) as f64);
+    ints.push(i * 7 + 3);
+  }
+  Context.collect();
+  let boxSum: i32 = 0;
+  let floatSum: f64 = 0.0;
+  let intSum: i32 = 0;
+  for (let i: i32 = 0; i < boxes.length; i += 1) {
+    boxSum += boxes[i].v;
+    floatSum += floats[i];
+    intSum += ints[i];
+  }
+  print(`${boxes.length} ${boxSum} ${floatSum} ${intSum}`);
+}
+"#;
+
+/// Acceptance 1a in the three tiers, in the default mode and in mode 2
+/// (each poll collects). The sum of `7 i + 3` for `i` in `0..150` is
+/// `7 * (149 * 150 / 2) + 3 * 150 = 78675`. Cost: two ship-tier C builds,
+/// two dev JIT compiles, and two interpreter runs.
+#[test]
+fn an_array_of_references_keeps_its_elements_in_the_three_tiers() {
+    let expected = format!("150 {} {} {}\n", 78675, 78675, 78675);
+    for mode in [CollectionMode::Automatic, CollectionMode::EachPoll] {
+        let (output, _) = ship(ARRAY_HOLDER, mode as i32);
+        assert_eq!(output, expected, "ship tier, {mode:?}");
+        let (output, _, _) = dev(ARRAY_HOLDER, mode);
+        assert_eq!(output, expected, "dev JIT, {mode:?}");
+        let (output, _, _) = interpreted(ARRAY_HOLDER, mode);
+        assert_eq!(output, expected, "interpreter, {mode:?}");
+    }
+}
+
+/// The arrays that `Promise.all` makes, for the handle-fact tests.
+const PROMISE_ALL: &str = r#"
+class Box { v: i32; constructor(v: i32) { this.v = v; } }
+async function number(x: i32): Promise<i32> { return x; }
+async function boxed(x: i32): Promise<Box> { return new Box(x); }
+let numbers: i32[] = [];
+let boxes: Box[] = [];
+export async function main(): Promise<void> {
+  numbers = await Promise.all([number(1), number(2), number(3), number(4), number(5)]);
+  boxes = await Promise.all([boxed(6), boxed(7), boxed(8), boxed(9), boxed(10), boxed(11)]);
+  Context.collect();
+  print(`${numbers[4]} ${boxes[5].v}`);
+}
+"#;
+
+/// compiler.md §344 rule 4 in the dev JIT: an array that JIT code creates
+/// has the fact of its element type. A literal, a pre-sized `map` result,
+/// a function-value `map` to a number and to a reference, and the results
+/// of `Promise.all`. Each kept array has its own length. Cost: two dev JIT
+/// runs.
+#[test]
+fn arrays_that_jit_code_creates_have_the_fact_of_their_element_type() {
+    const ARRAYS: &str = r#"
+class Box { v: i32; constructor(v: i32) { this.v = v; } }
+let kept: f64[][] = [];
+let keptBoxes: Box[][] = [];
+function build(): void {
+  const half: (x: i32) => f64 = (x: i32): f64 => (x as f64) * 0.5;
+  const wrap: (x: i32) => Box = (x: i32): Box => new Box(x);
+  const xs: i32[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  kept.push([1.5, 2.5, 3.5]);
+  keptBoxes.push([new Box(1), new Box(2), new Box(3), new Box(4)]);
+  kept.push(xs.slice(0, 5).map((x: i32): f64 => (x as f64) * 2.0));
+  keptBoxes.push(xs.slice(0, 6).map((x: i32): Box => new Box(x)));
+  kept.push(xs.slice(0, 7).map(half));
+  keptBoxes.push(xs.slice(0, 8).map(wrap));
+}
+export function main(): void {
+  build();
+  Context.collect();
+  print(`${kept.length} ${keptBoxes.length}`);
+}
+"#;
+    let run = |source: &str| {
+        let files = [SourceFile::new("facts.ts", source)];
+        let mut config = RunConfig::default();
+        config.memory_accounting = true;
+        let output = run_jit_configured(&files, config).expect("dev run");
+        let mut facts = output
+            .memory_accounting
+            .expect("accounting")
+            .live_array_facts;
+        facts.sort_unstable();
+        (
+            String::from_utf8(output.stdout).expect("utf-8 output"),
+            facts,
+        )
+    };
+    let (output, facts) = run(ARRAYS);
+    assert_eq!(output, "3 3\n");
+    // The two arrays of arrays have three elements each and can hold a handle.
+    assert_eq!(
+        facts,
+        vec![
+            (3, false),
+            (3, false),
+            (3, true),
+            (4, false),
+            (5, true),
+            (6, false),
+            (7, true),
+            (8, false),
+        ]
+    );
+    let (output, facts) = run(PROMISE_ALL);
+    assert_eq!(output, "5 11\n");
+    assert!(facts.contains(&(5, true)), "{facts:?}");
+    assert!(facts.contains(&(6, false)), "{facts:?}");
+}

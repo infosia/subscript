@@ -35,7 +35,7 @@
 //! generated code never unwinds (the trap-flag discipline), so no
 //! unwind crosses these calls.
 
-use crate::context::Context;
+use crate::context::{ArrayElements, Context};
 use crate::trap::TrapKind;
 use crate::valeq::{read_uint, value_eq, ValueKind};
 
@@ -385,6 +385,14 @@ impl ElementSource {
             || unsafe { (*ctx).trapped() }
     }
 
+    /// Returns the handle fact of the source (compiler.md §344 rule 4).
+    unsafe fn elements(self, ctx: *mut Context) -> ArrayElements {
+        match self {
+            // SAFETY: caller contract.
+            ElementSource::Dynamic(handle) => unsafe { (*ctx).array_elements(handle) },
+        }
+    }
+
     /// Returns the source element width.
     unsafe fn elem_size(self, ctx: *mut Context) -> usize {
         match self {
@@ -653,8 +661,11 @@ pub unsafe fn slice(ctx: *mut Context, h: *mut u8, start: i32, end: i32, pos_id:
     // SAFETY: caller contract.
     let (n, esz) = unsafe { (len_of(ctx, h, pos_id), (*ctx).array_elem_size(h)) };
     let (lo, hi) = (clamp_index(start, n), clamp_index(end, n));
+    // compiler.md §344 rule 4: a slice takes the fact of its source.
     // SAFETY: caller contract.
-    let out = unsafe { &mut *ctx }.array_new(esz, pos_id);
+    let elements = unsafe { (*ctx).array_elements(h) };
+    // SAFETY: caller contract.
+    let out = unsafe { &mut *ctx }.array_new_of(esz, elements, pos_id);
     if out.is_null() {
         return std::ptr::null_mut();
     }
@@ -748,8 +759,12 @@ pub unsafe fn concat(ctx: *mut Context, a: *mut u8, b: *mut u8, pos_id: u32) -> 
         );
         return std::ptr::null_mut();
     }
+    // compiler.md §344 rule 4: a concatenation takes the fact of its
+    // sources.
     // SAFETY: caller contract.
-    let out = unsafe { &mut *ctx }.array_new(esz, pos_id);
+    let elements = unsafe { (*ctx).array_elements(a).and((*ctx).array_elements(b)) };
+    // SAFETY: caller contract.
+    let out = unsafe { &mut *ctx }.array_new_of(esz, elements, pos_id);
     if out.is_null() {
         return std::ptr::null_mut();
     }
@@ -802,8 +817,12 @@ pub unsafe fn splice(
     let count = usize::try_from(delete_count.max(0))
         .unwrap_or(usize::MAX)
         .min(n - lo);
+    // compiler.md §344 rule 4: the removed elements take the fact of the
+    // source.
     // SAFETY: caller contract.
-    let out = unsafe { &mut *ctx }.array_new(esz, pos_id);
+    let elements = unsafe { (*ctx).array_elements(h) };
+    // SAFETY: caller contract.
+    let out = unsafe { &mut *ctx }.array_new_of(esz, elements, pos_id);
     if out.is_null() {
         return std::ptr::null_mut();
     }
@@ -1006,9 +1025,10 @@ unsafe fn for_each_source(
 }
 
 /// `map(f)`: a fresh array of `f(v)` results (`ret_size`-byte elements
-/// of `ret_kind`). A mid-iteration callback trap aborts and returns the
-/// valid partial array (generated code surfaces the trap before any
-/// use).
+/// of `ret_kind`) with the handle fact `elements` that the compiler gives
+/// for the result element type (compiler.md §344 rule 4). A mid-iteration
+/// callback trap aborts and returns the valid partial array (generated code
+/// surfaces the trap before any use).
 ///
 /// # Safety
 ///
@@ -1024,6 +1044,7 @@ pub unsafe fn map(
     ret_size: usize,
     pos_id: u32,
     indexed: bool,
+    elements: ArrayElements,
 ) -> *mut u8 {
     // SAFETY: caller contract.
     unsafe {
@@ -1035,6 +1056,7 @@ pub unsafe fn map(
             MapResult::Value {
                 kind: ret_kind,
                 size: ret_size,
+                elements,
             },
             pos_id,
             indexed,
@@ -1043,11 +1065,15 @@ pub unsafe fn map(
 }
 
 /// Concatenates each callback array before the next callback runs.
-/// `callback` contains the code pointer and environment pointer.
+/// `callback` contains the code pointer and environment pointer. The
+/// result has the handle fact `elements` that the compiler gives for the
+/// result element type (compiler.md §344 rule 4).
 ///
 /// # Safety
 ///
 /// As [`map`]; the callback returns an array of `ret_size`-byte elements.
+// The parameters mirror the C entry `subscript_rt_arr_flat_map` one to one.
+#[allow(clippy::too_many_arguments)]
 pub unsafe fn flat_map(
     ctx: *mut Context,
     h: *mut u8,
@@ -1056,6 +1082,7 @@ pub unsafe fn flat_map(
     ret_size: usize,
     pos_id: u32,
     indexed: bool,
+    elements: ArrayElements,
 ) -> *mut u8 {
     // SAFETY: forwarded callback and array contract.
     unsafe {
@@ -1066,6 +1093,7 @@ pub unsafe fn flat_map(
             elem_kind,
             MapResult::Array {
                 elem_size: ret_size,
+                elements,
             },
             pos_id,
             indexed,
@@ -1075,8 +1103,15 @@ pub unsafe fn flat_map(
 
 /// The callback result shape and output element size.
 enum MapResult {
-    Value { kind: ElemKind, size: usize },
-    Array { elem_size: usize },
+    Value {
+        kind: ElemKind,
+        size: usize,
+        elements: ArrayElements,
+    },
+    Array {
+        elem_size: usize,
+        elements: ArrayElements,
+    },
 }
 
 /// Shared dynamic-array and fixed-array `map` loop.
@@ -1090,9 +1125,16 @@ unsafe fn map_source(
     indexed: bool,
 ) -> *mut u8 {
     let (code, env) = callback;
-    let (ret_kind, ret_size, flatten) = match result {
-        MapResult::Value { kind, size } => (kind, size, false),
-        MapResult::Array { elem_size } => (ElemKind::Int, elem_size, true),
+    let (ret_kind, ret_size, flatten, elements) = match result {
+        MapResult::Value {
+            kind,
+            size,
+            elements,
+        } => (kind, size, false, elements),
+        MapResult::Array {
+            elem_size,
+            elements,
+        } => (ElemKind::Int, elem_size, true, elements),
     };
     // SAFETY: caller contract.
     if unsafe { source.cb_blocked(ctx, code) } {
@@ -1114,8 +1156,10 @@ unsafe fn map_source(
     }) else {
         return std::ptr::null_mut();
     };
+    // compiler.md §344 rule 4: the result takes the fact that the
+    // compiler gives for the result element type.
     // SAFETY: caller contract.
-    let out = unsafe { &mut *ctx }.array_new(ret_size, pos_id);
+    let out = unsafe { &mut *ctx }.array_new_of(ret_size, elements, pos_id);
     if out.is_null() {
         return std::ptr::null_mut();
     }
@@ -1214,8 +1258,11 @@ unsafe fn filter_source(
     let Some(abi) = (unsafe { abi_or_trap(ctx, kind, esz) }) else {
         return std::ptr::null_mut();
     };
+    // compiler.md §344 rule 4: a filter takes the fact of its source.
     // SAFETY: caller contract.
-    let out = unsafe { &mut *ctx }.array_new(esz, pos_id);
+    let elements = unsafe { source.elements(ctx) };
+    // SAFETY: caller contract.
+    let out = unsafe { &mut *ctx }.array_new_of(esz, elements, pos_id);
     if out.is_null() {
         return std::ptr::null_mut();
     }
@@ -2249,6 +2296,7 @@ mod tests {
                 4,
                 0,
                 false,
+                ArrayElements::NoHandle,
             );
             assert_eq!(i32_items(&c, doubled), vec![2, 4, 6]);
 
@@ -2263,6 +2311,7 @@ mod tests {
                 8,
                 0,
                 false,
+                ArrayElements::NoHandle,
             );
             assert_eq!(c.array_len(floats), 3);
             let d = c.array_data(floats);
@@ -2347,6 +2396,7 @@ mod tests {
                 4,
                 0,
                 true,
+                ArrayElements::NoHandle,
             );
             assert_eq!(i32_items(&c, mapped), vec![10, 21, 32]);
 
@@ -2505,6 +2555,7 @@ mod tests {
                 4,
                 0,
                 false,
+                ArrayElements::NoHandle,
             );
             assert!(c.trapped());
             assert_eq!(i32_items(&c, out), vec![1]);
@@ -2521,6 +2572,7 @@ mod tests {
                 4,
                 0,
                 false,
+                ArrayElements::NoHandle,
             );
             assert!(out2.is_null());
             c.clear_trap();

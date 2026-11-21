@@ -542,7 +542,8 @@ pub(crate) fn split(
     let Some((compiled, _)) = matcher(ctx, regex, pos_id) else {
         return std::ptr::null_mut();
     };
-    let array = ctx.array_new(8, pos_id);
+    // compiler.md §344 rule 5: an array of strings can hold a handle.
+    let array = ctx.array_new_of(8, crate::context::ArrayElements::CanHoldHandle, pos_id);
     if array.is_null() {
         return std::ptr::null_mut();
     }

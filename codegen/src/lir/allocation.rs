@@ -72,6 +72,49 @@ fn result_is_scalar(function: &l::Function, instruction: &l::Instruction) -> boo
     }
 }
 
+/// The type of the result of an instruction, if it has one.
+fn result_type<'f>(
+    function: &'f l::Function,
+    instruction: &l::Instruction,
+) -> Option<&'f l::ValueType> {
+    let id = instruction.result?;
+    function
+        .values
+        .get(id.0 as usize)
+        .filter(|value| value.id == id)
+        .or_else(|| function.values.iter().find(|value| value.id == id))
+        .map(|value| &value.ty)
+}
+
+/// True if an `ArrayLiteral` makes a `FixedArray` value. Each tier writes
+/// such a literal in place and does not allocate in the Context
+/// (`compiler.md` §344 rule 7).
+fn fixed_array_literal(function: &l::Function, instruction: &l::Instruction) -> bool {
+    matches!(
+        result_type(function, instruction),
+        Some(l::ValueType::Data(Type::FixedArray(..)))
+    )
+}
+
+/// True if an `AllocateClass` makes a value class at an address. Each tier
+/// zeroes local or frame storage for a value class and does not allocate
+/// in the Context (`compiler.md` §344 rule 7).
+fn value_class_at_address(
+    module: &l::Module,
+    function: &l::Function,
+    instruction: &l::Instruction,
+    class: ClassId,
+) -> bool {
+    module
+        .classes
+        .get(class.0)
+        .is_some_and(|definition| definition.is_value)
+        && matches!(
+            result_type(function, instruction),
+            Some(l::ValueType::Address(_))
+        )
+}
+
 /// The table fact of an intrinsic operation. An operation that the module
 /// table does not list can allocate.
 fn intrinsic_can_allocate(module: &l::Module, intrinsic: &l::Intrinsic) -> bool {
@@ -183,6 +226,12 @@ pub fn instruction_allocation(
             }
         }
         K::Call(target) => call_allocation(module, methods, target),
+        K::ArrayLiteral if fixed_array_literal(function, instruction) => Never,
+        K::AllocateClass(class)
+            if value_class_at_address(module, function, instruction, *class) =>
+        {
+            Never
+        }
         K::StringLiteral(_)
         | K::AliasString(_)
         | K::AllocateClass(_)

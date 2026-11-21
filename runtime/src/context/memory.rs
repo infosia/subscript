@@ -114,6 +114,7 @@ impl Context {
             for (base, block_size) in self.live_blocks() {
                 // SAFETY: `live_blocks` returns initialized live headers.
                 let (class_id, pos_id) = unsafe { (header_class_id(base), header_pos_id(base)) };
+                let class_id = reported_class_id(class_id);
                 // SAFETY: the host supplied `visitor` and its userdata.
                 unsafe {
                     visitor(
@@ -134,6 +135,7 @@ impl Context {
                         header_pos_id(allocation.base),
                     )
                 };
+                let class_id = reported_class_id(class_id);
                 // SAFETY: the host supplied `visitor` and its userdata.
                 unsafe { visitor(userdata, class_id, pos_id, allocation.payload_size as u64) };
                 count += 1;
@@ -150,6 +152,7 @@ impl Context {
                     header_pos_id(allocation.base),
                 )
             };
+            let class_id = reported_class_id(class_id);
             // SAFETY: the host supplied `visitor` and its userdata.
             unsafe { visitor(userdata, class_id, pos_id, allocation.payload_size as u64) };
             count += 1;
@@ -233,7 +236,7 @@ impl Context {
         let mut violations = Vec::new();
         if !self.uses_ship_arena() {
             for (&handle, allocation) in &self.allocations {
-                if allocation.class_id == CLASS_ARRAY {
+                if is_array_class(allocation.class_id) {
                     // SAFETY: exact live-map membership and the class id
                     // prove that `handle` is a live array header.
                     unsafe { self.record_array_tail_violation(handle, &mut violations) };
@@ -255,7 +258,7 @@ impl Context {
                         block.add(HEADER_SIZE) as usize,
                     )
                 };
-                if state == LIVE_STATE && class_id == CLASS_ARRAY {
+                if state == LIVE_STATE && is_array_class(class_id) {
                     // SAFETY: the live grid state and class id prove that
                     // `handle` is a live array header.
                     unsafe { self.record_array_tail_violation(handle, &mut violations) };
@@ -265,7 +268,7 @@ impl Context {
         for (&handle, allocation) in &self.large {
             // SAFETY: each large record owns a complete initialized header.
             let class_id = unsafe { header_class_id(allocation.base) };
-            if class_id == CLASS_ARRAY {
+            if is_array_class(class_id) {
                 // SAFETY: exact large-map membership and the class id prove
                 // that `handle` is a live array header.
                 unsafe { self.record_array_tail_violation(handle, &mut violations) };
@@ -279,7 +282,7 @@ impl Context {
     ///
     /// # Safety
     ///
-    /// `handle` must identify a live `CLASS_ARRAY` payload owned by this
+    /// `handle` must identify a live array header payload owned by this
     /// context.
     pub(super) unsafe fn record_array_tail_violation(
         &self,
@@ -431,9 +434,15 @@ impl Context {
         work: &mut Vec<usize>,
         tracer: &mut Option<MarkTracer>,
     ) {
+        // compiler.md §344 rule 1: the storage of an array whose elements
+        // hold no handle is marked as reached and is not read.
         if class_holds_no_handle(class_id) {
             return;
         }
+        #[cfg(test)]
+        self.stats
+            .words_read
+            .fetch_add(size / 8, std::sync::atomic::Ordering::Relaxed);
         for word in 0..size / 8 {
             // SAFETY: the caller supplies an owned payload of `size` bytes.
             let address = unsafe { payload.add(word * 8).cast::<usize>().read_unaligned() };
@@ -1099,9 +1108,25 @@ impl Context {
 
     // ----- arrays (Q4) -----
 
-    /// Allocates an empty dynamic array with `elem_size`-byte elements.
+    /// Allocates an empty dynamic array with `elem_size`-byte elements whose
+    /// elements can hold a handle.
     pub fn array_new(&mut self, elem_size: usize, pos_id: u32) -> *mut u8 {
-        let p = self.alloc(std::mem::size_of::<ArrayHeader>(), CLASS_ARRAY, pos_id);
+        self.array_new_of(elem_size, ArrayElements::CanHoldHandle, pos_id)
+    }
+
+    /// Allocates an empty dynamic array with `elem_size`-byte elements and
+    /// the handle fact `elements` (compiler.md §344 rule 1).
+    pub fn array_new_of(
+        &mut self,
+        elem_size: usize,
+        elements: ArrayElements,
+        pos_id: u32,
+    ) -> *mut u8 {
+        let p = self.alloc(
+            std::mem::size_of::<ArrayHeader>(),
+            elements.header_class(),
+            pos_id,
+        );
         if p.is_null() {
             return p;
         }
@@ -1119,11 +1144,24 @@ impl Context {
         p
     }
 
-    /// Allocates an empty dynamic array with storage for `capacity` elements.
+    /// Allocates an empty dynamic array with storage for `capacity` elements
+    /// whose elements can hold a handle.
     pub fn array_with_capacity(
         &mut self,
         capacity: usize,
         elem_size: usize,
+        pos_id: u32,
+    ) -> *mut u8 {
+        self.array_with_capacity_of(capacity, elem_size, ArrayElements::CanHoldHandle, pos_id)
+    }
+
+    /// Allocates an empty dynamic array with storage for `capacity` elements
+    /// and the handle fact `elements` (compiler.md §344 rule 1).
+    pub fn array_with_capacity_of(
+        &mut self,
+        capacity: usize,
+        elem_size: usize,
+        elements: ArrayElements,
         pos_id: u32,
     ) -> *mut u8 {
         let Some(data_size) = capacity.checked_mul(elem_size) else {
@@ -1134,11 +1172,11 @@ impl Context {
             );
             return std::ptr::null_mut();
         };
-        let handle = self.array_new(elem_size, pos_id);
+        let handle = self.array_new_of(elem_size, elements, pos_id);
         if handle.is_null() || capacity == 0 {
             return handle;
         }
-        let data = self.alloc(data_size, CLASS_ARRAY_DATA, pos_id);
+        let data = self.alloc(data_size, array_data_class(elements.header_class()), pos_id);
         if data.is_null() {
             return std::ptr::null_mut();
         }
@@ -1150,8 +1188,16 @@ impl Context {
     }
 
     /// Allocates zeroed storage for received C elements (compiler.md §325 rule 2).
-    pub(crate) fn array_received(&mut self, count: usize, stride: usize, pos: u32) -> *mut u8 {
-        let handle = self.array_with_capacity(count, stride, pos);
+    /// The array takes the fact of its declared element type (compiler.md
+    /// §344 rule 3).
+    pub(crate) fn array_received(
+        &mut self,
+        count: usize,
+        stride: usize,
+        elements: ArrayElements,
+        pos: u32,
+    ) -> *mut u8 {
+        let handle = self.array_with_capacity_of(count, stride, elements, pos);
         if !handle.is_null() {
             // SAFETY: the new handle owns capacity for all `count` elements.
             unsafe {
@@ -1165,7 +1211,8 @@ impl Context {
         handle
     }
 
-    /// Allocates a byte array and copies `len` bytes from `src`.
+    /// Allocates a byte array and copies `len` bytes from `src`. A byte
+    /// array holds no handle (compiler.md §344 rule 5).
     ///
     /// # Safety
     ///
@@ -1184,11 +1231,11 @@ impl Context {
             );
             return std::ptr::null_mut();
         }
-        let handle = self.array_new(1, pos_id);
+        let handle = self.array_new_of(1, ArrayElements::NoHandle, pos_id);
         if handle.is_null() || len == 0 {
             return handle;
         }
-        let data = self.alloc(len, CLASS_ARRAY_DATA, pos_id);
+        let data = self.alloc(len, CLASS_ARRAY_DATA_NO_HANDLE, pos_id);
         if data.is_null() {
             self.delete(handle as usize, pos_id);
             return std::ptr::null_mut();
@@ -1244,6 +1291,53 @@ impl Context {
         }
     }
 
+    /// The length and the handle fact of each live dynamic array, in
+    /// address order (compiler.md §344 rule 1). An inspection aid for hosts
+    /// and tests.
+    #[must_use]
+    pub fn live_array_facts(&self) -> Vec<(u64, ArrayElements)> {
+        let mut headers: Vec<(usize, u32)> = if self.uses_ship_arena() {
+            self.live_blocks()
+                // SAFETY: `live_blocks` returns initialized live headers.
+                .map(|(base, _)| unsafe { (base.add(HEADER_SIZE) as usize, header_class_id(base)) })
+                .chain(self.large.iter().map(|(&payload, allocation)| {
+                    // SAFETY: each large record owns a complete header.
+                    (payload, unsafe { header_class_id(allocation.base) })
+                }))
+                .collect()
+        } else {
+            self.allocations
+                .iter()
+                .map(|(&payload, allocation)| (payload, allocation.class_id))
+                .collect()
+        };
+        headers.retain(|&(_, class_id)| is_array_class(class_id));
+        headers.sort_unstable();
+        headers
+            .into_iter()
+            .map(|(payload, class_id)| {
+                // SAFETY: a live array header payload is an ArrayHeader.
+                let len = unsafe { (*(payload as *const ArrayHeader)).len };
+                (
+                    len,
+                    ArrayElements::from_no_handle(class_id == CLASS_ARRAY_NO_HANDLE),
+                )
+            })
+            .collect()
+    }
+
+    /// The handle fact of a dynamic array (compiler.md §344 rule 1).
+    ///
+    /// # Safety
+    ///
+    /// `handle` must be a live array payload owned by this context.
+    #[must_use]
+    pub unsafe fn array_elements(&self, handle: *const u8) -> ArrayElements {
+        // SAFETY: a live payload follows its complete allocation header.
+        let class_id = unsafe { header_class_id(handle.sub(HEADER_SIZE)) };
+        ArrayElements::from_no_handle(class_id == CLASS_ARRAY_NO_HANDLE)
+    }
+
     /// Array length as `i32`.
     ///
     /// # Safety
@@ -1291,7 +1385,11 @@ impl Context {
             }
             let new_cap = if h.cap == 0 { 4 } else { h.cap * 2 };
             let elem = h.elem_size as usize;
-            let new_data = self.alloc(new_cap as usize * elem, CLASS_ARRAY_DATA, pos_id);
+            // compiler.md §344 rule 4: growth keeps the fact of the array.
+            // SAFETY: the caller guarantees a live array payload, so its
+            // allocation header precedes it.
+            let data_class = array_data_class(unsafe { header_class_id(handle.sub(HEADER_SIZE)) });
+            let new_data = self.alloc(new_cap as usize * elem, data_class, pos_id);
             if new_data.is_null() {
                 return -1;
             }
@@ -1314,7 +1412,7 @@ impl Context {
                 } else {
                     let disposed = self.dispose_dev_allocation(old);
                     match disposed {
-                        Some(CLASS_ARRAY_DATA) => {}
+                        Some(class_id) if is_array_data_class(class_id) => {}
                         Some(_) => {
                             self.trap(
                                 TrapKind::Internal,

@@ -112,6 +112,9 @@ Problem, measured at `ca3fc9ed`:
     reserved capacity. `ArrayPush` states "can allocate". Measured with
     one method for both: the backedge poll of the `map` and `filter`
     loops read 2.16 on `callbacks` in the ship tier with the mode off.
+10c. *(Amended 2026-11-21, §344 rule 7.)* An `ArrayLiteral` with a
+    `FixedArray` result and an `AllocateClass` of a value class with
+    an address result cannot allocate.
 10a. **The interpreter verifies the fact.** While the interpreter
     executes an instruction or an operation that states "cannot
     allocate", an allocation in the Context is a runtime error of kind
@@ -344,8 +347,9 @@ golden moved.
    integer equals its address (`runtime/src/context/memory.rs`, the
    payload scan). Exact reference layouts are not in this section.
 2. A reference-count cycle of async frames is not reclaimed (§70.3.6).
-3. One collection of about 4 MiB of live bytes took about 6 ms in the
-   `callbacks` workload on the ship tier. The cause is not traced.
+3. Closed by §344. One collection of about 4 MiB of live bytes took
+   about 6 ms in the `callbacks` workload on the ship tier. The cause
+   was the read of the data buffer of an `i32[]`.
 4. Contrived, MINOR (the review rule of invariant 6): a function-value
    callback of `filter`, `find`, `findLast`, `Map.groupBy`, or `sort`
    that removes or replaces elements of the receiver. The runtime

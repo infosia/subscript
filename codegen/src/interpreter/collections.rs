@@ -544,7 +544,10 @@ impl Interpreter<'_> {
         let layout = self
             .layout_cached(element_ty)
             .ok_or_else(|| self.invalid(None, "array result element has no layout"))?;
-        let handle = self.context.array_new(layout.size, 0);
+        // compiler.md §344 rule 4: a result array takes the fact of its
+        // element type.
+        let elements = self.array_elements(element_ty);
+        let handle = self.context.array_new_of(layout.size, elements, 0);
         self.check_runtime(&Pos::new("<array-callback>", 1, 1))?;
 
         self.hold_temporary(Value::Handle(handle));

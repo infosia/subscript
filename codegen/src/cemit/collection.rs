@@ -312,6 +312,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "uint64_t".into(),
                     "uint32_t".into(),
                     "uint32_t".into(),
+                    "uint32_t".into(),
                 ]);
                 args.extend([
                     format!("{callback}.code"),
@@ -328,6 +329,15 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     format!("(uint64_t)sizeof({})", self.emitter.ctype(result_element)?),
                     format!("{}u", self.emitter.pos_id(&instruction.pos)),
                     format!("{}u", indexed()?),
+                    // compiler.md §344 rule 4: the result takes the fact of
+                    // its element type.
+                    format!(
+                        "{}u",
+                        u32::from(crate::layout::holds_no_handle(
+                            &self.emitter.layouts,
+                            result_element
+                        ))
+                    ),
                 ]);
                 self.emitter
                     .runtime_call(&return_ctype, symbol, &types, &args)

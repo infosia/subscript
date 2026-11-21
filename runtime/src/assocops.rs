@@ -876,6 +876,10 @@ pub(crate) unsafe fn group_by(
     };
 
     let elem_size = unsafe { (*ctx).array_elem_size(items) };
+    // compiler.md §344 rule 4: each group holds elements of `items`, so it
+    // takes the fact of `items`.
+    // SAFETY: `items` is a live array (caller contract).
+    let elements = unsafe { (*ctx).array_elements(items) };
     let initial_len = unsafe { (*ctx).array_len(items) }.max(0) as usize;
     // Generated bridges perform concrete typed loads from `element` and
     // typed stores into `key`. Back both slots with `u64` storage so the
@@ -920,7 +924,7 @@ pub(crate) unsafe fn group_by(
             continue;
         }
 
-        let created = unsafe { &mut *ctx }.array_new(elem_size, pos_id);
+        let created = unsafe { &mut *ctx }.array_new_of(elem_size, elements, pos_id);
         if created.is_null() {
             break;
         }

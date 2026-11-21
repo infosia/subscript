@@ -175,6 +175,8 @@ pub(crate) struct RtFns {
     /// IEEE floating remainder shared by both code-generation tiers.
     pub fmod: FuncId,
     pub array_new: FuncId,
+    /// `subscript_rt_array_new_no_handle` (compiler.md §344 rule 3).
+    pub array_new_no_handle: FuncId,
     pub array_from_bytes: FuncId,
     pub array_byte_range: FuncId,
     pub array_len: FuncId,
@@ -862,8 +864,11 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             // (ctx, recv, code, env, kind, indexed)
             A::ForEach => (&[I64, I64, I64, I64, I32, I32], None),
             // (ctx, recv, code, env, elem_kind, ret_kind, ret_size,
-            // pos_id, indexed) -> array handle
-            A::Map | A::FlatMap => (&[I64, I64, I64, I64, I32, I32, I64, I32, I32], Some(I64)),
+            // pos_id, indexed, no_handle) -> array handle
+            A::Map | A::FlatMap => (
+                &[I64, I64, I64, I64, I32, I32, I64, I32, I32, I32],
+                Some(I64),
+            ),
             // (ctx, recv, code, env, kind, pos_id, indexed) -> array handle
             A::Filter => (&[I64, I64, I64, I64, I32, I32, I32], Some(I64)),
             // (ctx, recv, code, env, elem_kind, acc_kind, acc_size,
@@ -1090,6 +1095,11 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
         f16_to_f64: mk("subscript_rt_f16_to_f64", &[I16], Some(F64))?,
         fmod: mk("subscript_rt_fmod", &[I64, F64, F64], Some(F64))?,
         array_new: mk("subscript_rt_array_new", &[I64, I64, I32], Some(I64))?,
+        array_new_no_handle: mk(
+            "subscript_rt_array_new_no_handle",
+            &[I64, I64, I32],
+            Some(I64),
+        )?,
         array_from_bytes: mk(
             "subscript_rt_array_from_bytes",
             &[I64, I64, I32, I32],

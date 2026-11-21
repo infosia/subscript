@@ -1808,6 +1808,7 @@ fn ffi_arr_entries_forward_to_the_arrops_module() {
             4,
             0,
             0,
+            1,
         );
         assert_eq!(ctx.array_data(mapped).cast::<i32>().read_unaligned(), 9);
         subscript_rt_arr_sort(p, a, cmp_desc_i32 as *const u8, std::ptr::null(), 0);

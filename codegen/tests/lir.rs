@@ -1964,3 +1964,29 @@ export function main(): void {
         "{instance:?}"
     );
 }
+
+/// compiler.md §344 acceptance 5: a `FixedArray` literal and a value-class
+/// construction do not allocate in the Context (rule 7), so the loop of
+/// `propagate` in `a22` has no poll. The setup loop of `main` pushes to an
+/// array, so it keeps its poll.
+#[test]
+fn a22_propagate_loop_has_no_poll_and_the_setup_loop_has_one() {
+    let source = include_str!("../../corpus/accept/a22-matrix-propagation.ts");
+    let files = [SourceFile::new("a22-matrix-propagation.ts", source)];
+    let module = lower_module(&check_program(&files).expect("a22 checks")).expect("a22 lowers");
+    let polls = |name: &str| {
+        module
+            .functions
+            .iter()
+            .find(|function| function.source_name == name)
+            .unwrap_or_else(|| panic!("a22 has `{name}`"))
+            .blocks
+            .iter()
+            .flat_map(|block| block.instructions.iter())
+            .filter(|instruction| instruction.kind == InstructionKind::CollectionPoll)
+            .count()
+    };
+    assert_eq!(polls("propagate"), 0, "the loop of `propagate`");
+    assert_eq!(polls("multiply"), 0, "the loops of `multiply`");
+    assert!(polls("main") >= 1, "the setup loop of `main`");
+}

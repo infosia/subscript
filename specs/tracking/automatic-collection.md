@@ -1,8 +1,8 @@
 # Automatic collection — trial on the branch `gc-auto`
 
-Status: **§342 and §343 COMPLETE on the branch `gc-auto`.** The
+Status: **§342, §343, and §344 COMPLETE on the branch `gc-auto`.** The
 measurements of the implementation and the Phase Reviews are in
-`compiler.md` §342.4a and §343.4.
+`compiler.md` §342.4a, §343.4, and §344.5.
 The prototype is on the branch `gc-auto-proto` and does not land. The
 branch is not merged.
 
@@ -364,9 +364,13 @@ the runtime library from that directory.
 ## Next
 
 - `compiler.md` §342.5 holds the open items.
-- The `perf-gate` figure of `a22` on the ship tier (1.44x against a
-  limit of 1.50x) has no measurement at the pin `ca3fc9ed` to compare
-  with.
+- Two reviews of `aef4cdd3` by another agent gave these items, which
+  §344 does not hold: the roots of a runtime operation across a
+  function-value callback (§342.5 item 4; owner decision 2026-11-21:
+  a rare shape that is hard to correct is recorded only), the scope of
+  §342 rule 11d (one runtime operation such as `split` allocates in
+  proportion to its input, with no poll in the runtime loop), and the
+  exit count of the ship tier in the stress sweep (§342.5 item 5).
 
 ## G6 — benchmark comparison against `main`, and the causes
 

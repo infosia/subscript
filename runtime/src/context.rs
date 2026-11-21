@@ -314,6 +314,87 @@ pub const CLASS_MAP_DATA: u32 = 0xFFFF_FF07;
 pub const CLASS_MAP_INDEX: u32 = 0xFFFF_FF08;
 /// Class id used for RegExp handles.
 pub const CLASS_REGEX: u32 = 0xFFFF_FF09;
+/// Class id used for the header of a dynamic array whose elements hold no
+/// handle (compiler.md §344 rule 1).
+pub const CLASS_ARRAY_NO_HANDLE: u32 = 0xFFFF_FF0B;
+/// Class id used for the element storage of a dynamic array whose elements
+/// hold no handle (compiler.md §344 rule 1).
+pub const CLASS_ARRAY_DATA_NO_HANDLE: u32 = 0xFFFF_FF0C;
+
+/// The handle fact of a dynamic array (compiler.md §344 rule 1). The fact
+/// belongs to the array for its whole life. It is a closed fact with two
+/// values: the elements can hold a handle, or they hold none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArrayElements {
+    /// An element can hold a handle. The mark reads the element storage.
+    CanHoldHandle,
+    /// No element holds a handle. The mark does not read the element
+    /// storage.
+    NoHandle,
+}
+
+impl ArrayElements {
+    /// Returns [`ArrayElements::NoHandle`] when `no_handle` is true, and
+    /// [`ArrayElements::CanHoldHandle`] otherwise.
+    #[must_use]
+    pub fn from_no_handle(no_handle: bool) -> Self {
+        if no_handle {
+            ArrayElements::NoHandle
+        } else {
+            ArrayElements::CanHoldHandle
+        }
+    }
+
+    /// The header class id of an array with this fact.
+    fn header_class(self) -> u32 {
+        match self {
+            ArrayElements::CanHoldHandle => CLASS_ARRAY,
+            ArrayElements::NoHandle => CLASS_ARRAY_NO_HANDLE,
+        }
+    }
+
+    /// The fact of both inputs: no handle only if neither input holds one.
+    #[must_use]
+    pub fn and(self, other: Self) -> Self {
+        Self::from_no_handle(self == ArrayElements::NoHandle && other == ArrayElements::NoHandle)
+    }
+}
+
+/// The class id that a host and a diagnostic see for `class_id`. Both
+/// facts of an array report the array classes (compiler.md §344 rule 2).
+#[must_use]
+pub fn reported_class_id(class_id: u32) -> u32 {
+    match class_id {
+        CLASS_ARRAY_NO_HANDLE => CLASS_ARRAY,
+        CLASS_ARRAY_DATA_NO_HANDLE => CLASS_ARRAY_DATA,
+        other => other,
+    }
+}
+
+/// True for the header class of a dynamic array with either fact
+/// (compiler.md §344 rule 2). Each test for "this is an array" uses it.
+#[must_use]
+pub fn is_array_class(class_id: u32) -> bool {
+    reported_class_id(class_id) == CLASS_ARRAY
+}
+
+/// True for the element-storage class of a dynamic array with either fact
+/// (compiler.md §344 rule 2).
+#[must_use]
+pub fn is_array_data_class(class_id: u32) -> bool {
+    reported_class_id(class_id) == CLASS_ARRAY_DATA
+}
+
+/// The element-storage class for an array header class. Each storage
+/// allocation of an array takes the fact of its header (compiler.md §344
+/// rule 4).
+fn array_data_class(header_class: u32) -> u32 {
+    if header_class == CLASS_ARRAY_NO_HANDLE {
+        CLASS_ARRAY_DATA_NO_HANDLE
+    } else {
+        CLASS_ARRAY_DATA
+    }
+}
 
 /// One live array whose unused data tail contains a nonzero byte.
 #[non_exhaustive]
@@ -327,8 +408,18 @@ pub struct ArrayTailViolation {
     pub offset: usize,
 }
 
+/// True for a class whose payload holds no handle. The mark does not read
+/// such a payload (compiler.md §344 rule 1).
 #[inline]
 fn class_holds_no_handle(class_id: u32) -> bool {
+    matches!(class_id, CLASS_STRING | CLASS_ARRAY_DATA_NO_HANDLE)
+}
+
+/// True for a class whose creator writes each payload byte. The arena does
+/// not zero a reused block of such a class. Array storage is not one: its
+/// unused tail must stay zero.
+#[inline]
+fn class_written_in_full(class_id: u32) -> bool {
     matches!(class_id, CLASS_STRING)
 }
 
@@ -387,6 +478,8 @@ pub(crate) struct ArenaStats {
     chunks: std::sync::atomic::AtomicUsize,
     large: std::sync::atomic::AtomicUsize,
     membership_lookups: std::sync::atomic::AtomicUsize,
+    // compiler.md §344 acceptance 2: payload words that the mark reads.
+    words_read: std::sync::atomic::AtomicUsize,
     container_delete_entries: std::sync::atomic::AtomicUsize,
 }
 
@@ -478,14 +571,29 @@ impl MarkTracer {
                 address: parent,
                 word,
             } => format!(
-                "source=payload class_id={class_id} address=0x{parent:x} word={word} \
-                 value=0x{address:x}"
+                "source=payload {} address=0x{parent:x} word={word} \
+                 value=0x{address:x}",
+                trace_class(class_id)
             ),
         };
-        let record =
-            format!("SUBSCRIPT_MARK_TRACE payload=0x{address:x} class_id={class_id} {source}");
+        let record = format!(
+            "SUBSCRIPT_MARK_TRACE payload=0x{address:x} {} {source}",
+            trace_class(class_id)
+        );
         eprintln!("{record}");
         self.records.push(record);
+    }
+}
+
+/// The class of a mark-trace record: the class id that a host sees, and the
+/// handle fact of an array class that holds no handle (compiler.md §344
+/// rule 2). A reader compares the id with the allocation report of the host.
+fn trace_class(class_id: u32) -> String {
+    let reported = reported_class_id(class_id);
+    if reported == class_id {
+        format!("class_id={class_id}")
+    } else {
+        format!("class_id={reported} elements=no_handle")
     }
 }
 
@@ -884,5 +992,9 @@ const _: () = assert!(Context::collection_pending_offset() == 28);
 #[cfg(test)]
 #[path = "context/async_all_tests.rs"]
 mod async_all_tests;
+
+#[cfg(test)]
+#[path = "context/array_fact_tests.rs"]
+mod array_fact_tests;
 
 mod counted;

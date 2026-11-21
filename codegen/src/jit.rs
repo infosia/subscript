@@ -96,6 +96,10 @@ pub struct JitMemoryAccounting {
     pub detection_collections: u64,
     /// Outermost exits of the run (`compiler.md` §342 rule 16).
     pub outermost_exits: u64,
+    /// The length and the handle fact of each live array after the run, in
+    /// address order: true when its elements hold no handle (`compiler.md`
+    /// §344 rule 1).
+    pub live_array_facts: Vec<(u64, bool)>,
 }
 
 impl std::fmt::Display for TrapReport {

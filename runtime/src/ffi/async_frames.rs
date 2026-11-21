@@ -313,6 +313,31 @@ pub unsafe extern "C" fn subscript_rt_async_all(
     unsafe { (&mut *ctx).async_all(jobs, result_size as usize, elem_size as usize, pos_id) }
 }
 
+/// [`subscript_rt_async_all`] for results that hold no handle (compiler.md
+/// §344 rule 4).
+///
+/// # Safety
+/// The contract of [`subscript_rt_async_all`].
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_all_no_handle(
+    ctx: *mut Context,
+    jobs: *const u8,
+    result_size: u64,
+    elem_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: the caller contract of `subscript_rt_async_all`.
+    unsafe {
+        (&mut *ctx).async_all_of(
+            jobs,
+            result_size as usize,
+            elem_size as usize,
+            crate::context::ArrayElements::NoHandle,
+            pos_id,
+        )
+    }
+}
+
 /// Starts a called async invocation and exposes ACTIVE during its body (§169).
 /// `pos_id` identifies the creation call site.
 ///

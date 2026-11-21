@@ -82,7 +82,9 @@ impl<'m> Interpreter<'m> {
                 .ok_or_else(|| self.invalid(Some(pos.clone()), "aggregate result has no layout"))?
                 .size
         };
-        let result = self.context.array_with_capacity(len, size, 0);
+        // compiler.md §344 rule 4: the results take the fact of their type.
+        let fact = self.array_elements(element);
+        let result = self.context.array_with_capacity_of(len, size, fact, 0);
         self.check_runtime(pos)?;
 
         // The runtime header has the same length and capacity ABI as other interpreter arrays.

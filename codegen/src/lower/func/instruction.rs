@@ -651,12 +651,27 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let jobs = self.expect_scalar(operands[0])?;
                 let position = self.position_id(&instruction.pos);
                 let position = self.iconst(types::I32, position);
+                // compiler.md §344 rule 4: the entry states the handle fact
+                // of the result element type.
+                let entry = if crate::layout::holds_no_handle(&self.ml.layouts, element) {
+                    let mut signature = Signature::new(self.ml.call_conv);
+                    for ty in [types::I64, types::I64, types::I64, types::I64, types::I32] {
+                        signature.params.push(AbiParam::new(ty));
+                    }
+                    signature.returns.push(AbiParam::new(types::I64));
+                    self.ml
+                        .module
+                        .declare_function(
+                            "subscript_rt_async_all_no_handle",
+                            Linkage::Import,
+                            &signature,
+                        )
+                        .map_err(|error| internal(format!("declare aggregate entry: {error}")))?
+                } else {
+                    self.ml.rt.async_all
+                };
                 let handle = self
-                    .call_runtime(
-                        self.ml.rt.async_all,
-                        &[self.ctx, jobs, size, size, position],
-                        true,
-                    )?
+                    .call_runtime(entry, &[self.ctx, jobs, size, size, position], true)?
                     .ok_or_else(|| internal("aggregate call has no result"))?;
                 for trap in &instruction.traps {
                     self.emit_trap(trap, TrapOperand::Pending)?;

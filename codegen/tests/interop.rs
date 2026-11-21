@@ -29,8 +29,8 @@ mod interop;
 
 use subscript_codegen::{
     run_c_aot_with_freed_handle_diagnostics_and_native_libraries, run_c_aot_with_native_libraries,
-    run_jit_with_freed_handle_diagnostics_and_native_libraries, run_jit_with_native_libraries,
-    RunError,
+    run_jit_with_freed_handle_diagnostics_and_native_libraries,
+    run_jit_with_memory_accounting_and_native_libraries, run_jit_with_native_libraries, RunError,
 };
 use subscript_compiler::SourceFile;
 use subscript_runtime::TrapKind;
@@ -868,6 +868,39 @@ fn c_replaced_members_are_received() {
     );
 }
 
+// compiler.md §344 rule 3: a received array takes the handle fact of its
+// declared element type. The C side replaces an `i32[]` with three elements
+// and a `Sub325Text[]` (a struct with a string field) with two. After a
+// collection, the live arrays are those two and the empty `Sub325Text[]`
+// that the local `empty` keeps.
+fn received_arrays_take_the_fact_of_their_element_type() {
+    let program = "let list: Sub325List = new Sub325List(0, [7]);\n\
+let texts: Sub325Texts | null = null;\n\
+export function main(): void {\n\
+  const empty: Sub325Text[] = [];\n\
+  const received = new Sub325Texts(0, empty);\n\
+  texts = received;\n\
+  sub325Replace(list);\n\
+  sub325Texts(received);\n\
+  Context.collect();\n\
+  print(`${list.items.length} ${received.items.length} ${received.items[1].label}`);\n\
+}\n";
+    let files = [
+        interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+        SourceFile::new("prog.ts", program),
+    ];
+    let libraries = [native_fixture::fixture()
+        .expect("this target requires the fixture")
+        .library()];
+    let (stdout, accounting) =
+        run_jit_with_memory_accounting_and_native_libraries(&files, &libraries, false)
+            .unwrap_or_else(|e| panic!("dev-JIT run failed: {e}"));
+    assert_eq!(stdout, b"3 2 second\n");
+    let mut facts = accounting.live_array_facts;
+    facts.sort_unstable();
+    assert_eq!(facts, vec![(0, false), (2, false), (3, true)]);
+}
+
 // compiler.md §325 rule 2: retain input arrays before a callback can replace the script member.
 fn a_count_shrink_keeps_the_pre_callback_array() {
     for call in ["sub325ShrinkReentrant(out)", "sub325ShrinkIndirect(holder)"] {
@@ -1196,6 +1229,7 @@ pub(super) fn main() -> std::process::ExitCode {
             finite_array_watches_and_recursive_headers_match_both_tiers,
             an_external_embedded_userdata_slot_is_compared,
             c_replaced_members_are_received,
+            received_arrays_take_the_fact_of_their_element_type,
             a_count_shrink_keeps_the_pre_callback_array,
             c_pointer_replacements_report_the_same_trap_in_both_tiers,
             a_const_target_has_no_read_back_compare,

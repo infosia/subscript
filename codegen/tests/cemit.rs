@@ -1730,6 +1730,9 @@ fn main() -> std::process::ExitCode {
             operations::held_async_cached_reference_survives_collect_on_both_tiers,
             operations::many_completed_async_calls_leave_no_frames_without_collect,
             operations::a183_long_string_emits_five_adjacent_c_literals,
+            operations::array_creation_entries_state_the_handle_fact,
+            operations::function_value_map_passes_the_handle_fact,
+            operations::promise_all_entry_states_the_handle_fact,
         ],
         main_thread: [
             trap_corpus_entries_match_dev_stdout_on_both_tiers,

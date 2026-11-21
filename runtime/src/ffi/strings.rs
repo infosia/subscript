@@ -688,7 +688,8 @@ pub unsafe extern "C" fn subscript_rt_str_split(
     let hay = unsafe { ctx.str_view(s) };
     // SAFETY: live string handles.
     let sep = unsafe { ctx.str_view(sep) };
-    let arr = ctx.array_new(8, pos_id);
+    // compiler.md §344 rule 5: an array of strings can hold a handle.
+    let arr = ctx.array_new_of(8, crate::context::ArrayElements::CanHoldHandle, pos_id);
     if arr.is_null() {
         return std::ptr::null_mut();
     }

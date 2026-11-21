@@ -760,6 +760,32 @@ impl Context {
         elem_size: usize,
         pos_id: u32,
     ) -> *mut u8 {
+        // SAFETY: the caller contract of this function.
+        unsafe {
+            self.async_all_of(
+                jobs,
+                result_size,
+                elem_size,
+                ArrayElements::CanHoldHandle,
+                pos_id,
+            )
+        }
+    }
+
+    /// [`Context::async_all`] whose result array has the handle fact
+    /// `elements` that the compiler gives for the result element type
+    /// (compiler.md §344 rule 4).
+    ///
+    /// # Safety
+    /// The contract of [`Context::async_all`].
+    pub unsafe fn async_all_of(
+        &mut self,
+        jobs: *const u8,
+        result_size: usize,
+        elem_size: usize,
+        elements: ArrayElements,
+        pos_id: u32,
+    ) -> *mut u8 {
         if !self.require_live_handle(jobs as usize, pos_id) {
             return std::ptr::null_mut();
         }
@@ -767,7 +793,7 @@ impl Context {
         let inputs: Vec<Option<*mut u8>> = (0..array.len as usize)
             .map(|index| Some(unsafe { array.data.cast::<*mut u8>().add(index).read() }))
             .collect();
-        let result = self.array_with_capacity(inputs.len(), elem_size, pos_id);
+        let result = self.array_with_capacity_of(inputs.len(), elem_size, elements, pos_id);
         if self.trapped() {
             return std::ptr::null_mut();
         }

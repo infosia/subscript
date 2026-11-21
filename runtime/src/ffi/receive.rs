@@ -2,6 +2,10 @@
 use super::strings::alloc_str_from_view;
 use crate::{context::Context, trap::TrapKind};
 
+/// The flag of a received-element record whose element holds no handle
+/// (compiler.md §344 rule 3). The compiler writes the same bit.
+const RECEIVED_NO_HANDLE: u32 = 512;
+
 pub(super) unsafe fn word(record: *const u8, offset: usize) -> u32 {
     // SAFETY: compiler records contain complete little-endian words.
     u32::from_le(unsafe { record.add(offset).cast::<u32>().read_unaligned() })
@@ -156,7 +160,12 @@ unsafe fn receive(
             unsafe { ctx.array_data(earlier.array) }
         }
     });
-    let array = ctx.array_received(count as usize, script_stride, pos);
+    // compiler.md §344 rule 3: the read record states the handle fact of
+    // its element type.
+    let elements = crate::context::ArrayElements::from_no_handle(
+        unsafe { word(schema, 0) } & RECEIVED_NO_HANDLE != 0,
+    );
+    let array = ctx.array_received(count as usize, script_stride, elements, pos);
     if array.is_null() {
         return array;
     }
@@ -399,7 +408,7 @@ mod tests {
         let schema = record(&[2, 8, 8, 4, 1]);
         let marker = 7u64;
         let values = [&marker as *const u64, &marker as *const u64];
-        let original = ctx.array_received(2, 8, 9);
+        let original = ctx.array_received(2, 8, crate::context::ArrayElements::CanHoldHandle, 9);
         unsafe {
             std::ptr::copy_nonoverlapping(
                 values.as_ptr().cast::<u8>(),

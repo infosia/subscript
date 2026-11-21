@@ -1119,11 +1119,12 @@ impl Context {
             // SAFETY: `head` is a payload address this arena free-listed:
             // its block (header + `block_size - HEADER_SIZE` payload
             // capacity) is inside an owned chunk. The next link occupies
-            // the payload's first word. After unlinking, classes that can
-            // hold handles are re-zeroed before the header is re-armed.
+            // the payload's first word. After unlinking, each class that its
+            // creator does not write in full is re-zeroed before the header
+            // is re-armed.
             unsafe {
                 self.free_heads[class] = (payload as *const usize).read();
-                if !class_holds_no_handle(class_id) {
+                if !class_written_in_full(class_id) {
                     std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
                 }
                 let base = payload.sub(HEADER_SIZE);

@@ -89,7 +89,18 @@ fn flat_map_export_and_operation_share_mapping_and_append() {
     // SAFETY: the callback uses the indexed i32 ABI and returns a live i32 array.
     unsafe {
         let outputs = [
-            ffi::subscript_rt_arr_flat_map(ctx, a, expand as *const u8, ptr::null(), 5, 5, 4, 9, 1),
+            ffi::subscript_rt_arr_flat_map(
+                ctx,
+                a,
+                expand as *const u8,
+                ptr::null(),
+                5,
+                5,
+                4,
+                9,
+                1,
+                1,
+            ),
             arrops::flat_map(
                 ctx,
                 a,
@@ -98,6 +109,7 @@ fn flat_map_export_and_operation_share_mapping_and_append() {
                 4,
                 9,
                 true,
+                subscript_runtime::context::ArrayElements::NoHandle,
             ),
         ];
         for out in outputs {

@@ -109,3 +109,73 @@ dev JIT counts the payload and runs no automatic collection. The
 threshold follows the memory that the tier holds, so this section
 does not change it. A host that collects at a point it selects sets
 mode 0 (§342 rule 4a).
+
+### 344.5 Phase Review
+
+Form.
+
+- The carrier is the class id. `CLASS_ARRAY_NO_HANDLE` is the header
+  of an array whose elements hold no handle, and
+  `CLASS_ARRAY_DATA_NO_HANDLE` is its data buffer. The header keeps
+  the fact while the array has no buffer and across a growth.
+  `array_data_class` gives the buffer class at each buffer allocation.
+  `class_holds_no_handle` lists the buffer class, so the mark has no
+  branch for arrays.
+- `reported_class_id`, `is_array_class`, and `is_array_data_class` are
+  the one test of "this is an array". A host visitor receives the
+  class ids that it received before.
+- The predicate is `holds_no_handle` in `codegen/src/layout.rs`. It
+  does not reuse `managed_words`: that function lists the handle types
+  and its default is "no handle".
+- The LIR does not change. Each tier takes the fact from the element
+  type that the creation instruction carries, and selects one of two
+  runtime entries. `map`, `flatMap`, and `Promise.all` take the fact
+  from the compiler. A received array takes it from one flag of its
+  read record.
+- The reuse of a free block zeroes each class but a string, by a
+  predicate of its own (`class_written_in_full`).
+
+Measured.
+
+| Item | Result |
+|---|---|
+| Words that one collection reads, live `i32[]` and `f64[]` of 4 MB and of 8 MB | 10 and 10 (dev tier), 12 and 12 (ship tier); at `aef4cdd3`: 1,048,586 and 2,097,162, and 1,048,588 and 2,097,164 |
+| `callbacks`, `cross-language`, two passes, `main` against this section | ship tier 37.12, 37.07 ms against 36.65, 36.73 ms; dev JIT 257.5, 257.4 ms against 256.9, 256.7 ms |
+| `particles`, `sort`, `tree`, both tiers | equal to `main` in the noise of the two passes |
+| `f64[]` probe, ship tier, a live 4 MB array and garbage in a loop | 706 to 712 ms before, 281 to 284 ms after |
+| `perf-gate`, two passes, `main` against this section | `a22` ship tier 1.33x, 1.33x against 1.34x, 1.33x; `a22` dev JIT 19.85x, 19.84x against 20.07x, 19.91x |
+| `collect` ship tier (§344.4) | 36.2 ms against 49.7 ms; `perf-gate` 0.88x, 0.86x against 1.19x, 1.18x |
+| Stress sweep | dev JIT 591 of 591, ship tier 589 of 589, interpreter 486 of 486 |
+| An array of references through a collection, a growth, and a collection | `150 78675 78675 78675` in the three tiers, in mode 1 and in mode 2 (expected value by hand) |
+| An array of references created with the "no handle" fact | its element is collected in both allocator tiers (the firing control) |
+
+One `perf-gate` pass of `main` was void (25.3% spread on the C
+reference of `collect`) and ran again.
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 7
+MINOR. No creation or copy site gives "no handle" to an array that can
+receive a handle.
+
+| Finding | Close |
+|---|---|
+| A received array and a `Promise.all` result took the default fact | each takes the fact of its element type |
+| §342 did not state the amendment | §342 rule 10c, and §342.5 item 3 |
+| The two no-handle entries had no direct test; no test read the fact in the dev JIT; `ArrayElements::and` had no test | three tests; the dev run returns the live array facts in its accounting |
+| A doc comment, and the class id in the mark trace | corrected; the trace prints the reported id and the fact |
+| Array covariance and a reload that changes an element type were not verified by reading | the checker rejects each widening of an element type (S011, S100); a reload refuses the changed global (`DeclarationChanged`), with a test |
+
+`runtime/src/arrops.rs` has 2,675 lines; it had 2,623 at `ca3fc9ed`
+(§5.y). `runtime/src/assocops.rs` (1,997), `codegen/tests/lir.rs`
+(1,992), and `codegen/src/lower/mod.rs` (1,986) are near the limit.
+
+`tools/hygiene.sh`: exit 0. `tools/gate.sh full` on the tree before
+this record: exit 0, debug 3924 passed, release 3905 passed, 0
+failed, 5 ignored in each. No golden moved.
+
+### 344.6 Open
+
+1. A received 4 MB array has no test of the words that a collection
+   reads: no fixture returns a large array. The mark is the same code
+   as for acceptance 2.
+2. `runtime/src/arrops.rs` is over the limit of §5.y.
+

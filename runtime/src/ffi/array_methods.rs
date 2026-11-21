@@ -345,6 +345,8 @@ pub unsafe extern "C" fn subscript_rt_arr_for_each(
 
 /// `map(f)`: a fresh `ret_size`-byte-element array of callback results;
 /// a mid-iteration trap aborts and returns the valid partial array.
+/// `no_handle != 0` states that the result elements hold no handle
+/// (compiler.md §344 rule 4).
 ///
 /// # Safety
 ///
@@ -362,6 +364,7 @@ pub unsafe extern "C" fn subscript_rt_arr_map(
     ret_size: u64,
     pos_id: u32,
     indexed: u32,
+    no_handle: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract (forwarded).
     let (Some(ek), Some(rk)) = (unsafe { decode_elem_kind(ctx, elem_kind) }, unsafe {
@@ -381,6 +384,7 @@ pub unsafe extern "C" fn subscript_rt_arr_map(
             ret_size as usize,
             pos_id,
             indexed != 0,
+            crate::context::ArrayElements::from_no_handle(no_handle != 0),
         )
     }
 }
@@ -634,6 +638,8 @@ pub unsafe extern "C" fn subscript_rt_arr_find_last_index(
 /// # Safety
 ///
 /// As [`subscript_rt_arr_map`]; the callback returns an array of `ret_size`-byte elements.
+/// `no_handle != 0` states that those elements hold no handle (compiler.md
+/// §344 rule 4).
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_arr_flat_map(
     ctx: *mut Context,
@@ -645,6 +651,7 @@ pub unsafe extern "C" fn subscript_rt_arr_flat_map(
     ret_size: u64,
     pos_id: u32,
     indexed: u32,
+    no_handle: u32,
 ) -> *mut u8 {
     // SAFETY: shared contract.
     let (Some(kind), Some(_)) = (unsafe { decode_elem_kind(ctx, kind) }, unsafe {
@@ -662,6 +669,7 @@ pub unsafe extern "C" fn subscript_rt_arr_flat_map(
             ret_size as usize,
             pos_id,
             indexed != 0,
+            crate::context::ArrayElements::from_no_handle(no_handle != 0),
         )
     }
 }

@@ -373,10 +373,10 @@ impl Interpreter<'_> {
             ));
         };
         let element_layout = self.type_layout(element_ty)?;
-        // SAFETY: Context and element size meet the runtime array contract.
-        let array = unsafe {
-            ffi::subscript_rt_array_new(&mut *self.context, element_layout.size as u64, 0)
-        };
+        // compiler.md §344 rule 3: the array takes the fact of its element
+        // type.
+        let fact = self.array_elements(element_ty);
+        let array = self.context.array_new_of(element_layout.size, fact, 0);
         self.check_runtime(pos)?;
 
         for element in elements {
@@ -404,15 +404,18 @@ impl Interpreter<'_> {
             self.invalid(Some(pos.clone()), "ArrayWithCapacity has a negative bound")
         })?;
         let layout = self.type_layout(element)?;
-        // SAFETY: Context and the verified array element layout meet the runtime contract.
-        let array = unsafe {
-            ffi::subscript_rt_array_with_capacity(
-                &mut *self.context,
-                capacity,
-                layout.size as u64,
-                0,
+        // compiler.md §344 rule 3: the array takes the fact of its element
+        // type.
+        let elements = self.array_elements(element);
+        let capacity = usize::try_from(capacity).map_err(|_| {
+            self.invalid(
+                Some(pos.clone()),
+                "ArrayWithCapacity bound is not representable",
             )
-        };
+        })?;
+        let array = self
+            .context
+            .array_with_capacity_of(capacity, layout.size, elements, 0);
         self.check_runtime(pos)?;
 
         Ok(Value::Handle(array))

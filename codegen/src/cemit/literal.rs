@@ -53,9 +53,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     .ok_or_else(|| internal("array literal has no allocation trap"))?;
                 self.consume(initial);
                 let pos = self.emitter.pos_id(&initial.pos);
+                // compiler.md §344 rule 3: the entry states the handle fact.
                 let call = self.emitter.runtime_call(
                     "void*",
-                    "subscript_rt_array_new",
+                    crate::layout::array_new_entry(&self.emitter.layouts, &element),
                     &["void*".into(), "uint64_t".into(), "uint32_t".into()],
                     &[
                         "ctx".into(),
@@ -122,9 +123,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         } else {
             self.emitter.pos_id(&instruction.pos)
         };
+        // compiler.md §344 rule 3: the entry states the handle fact.
         let call = self.emitter.runtime_call(
             "void*",
-            "subscript_rt_array_with_capacity",
+            crate::layout::array_with_capacity_entry(&self.emitter.layouts, &element),
             &[
                 "void*".into(),
                 "uint64_t".into(),
@@ -168,9 +170,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .ok_or_else(|| internal("spread literal has no allocation trap"))?;
         self.consume(initial);
         let pos = self.emitter.pos_id(&initial.pos);
+        // compiler.md §344 rule 3: the entry states the handle fact.
         let call = self.emitter.runtime_call(
             "void*",
-            "subscript_rt_array_new",
+            crate::layout::array_new_entry(&self.emitter.layouts, &element),
             &["void*".into(), "uint64_t".into(), "uint32_t".into()],
             &[
                 "ctx".into(),

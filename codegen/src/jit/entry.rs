@@ -387,6 +387,16 @@ pub(super) fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
             automatic_collections: ctx.automatic_collection_count(),
             detection_collections: ctx.detection_collection_count(),
             outermost_exits: ctx.outermost_exit_count(),
+            live_array_facts: ctx
+                .live_array_facts()
+                .into_iter()
+                .map(|(len, elements)| {
+                    (
+                        len,
+                        elements == subscript_runtime::context::ArrayElements::NoHandle,
+                    )
+                })
+                .collect(),
         }
     }
 }

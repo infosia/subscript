@@ -148,6 +148,26 @@ fn word(out: &mut Vec<u8>, value: u32) {
     out.extend(value.to_le_bytes());
 }
 
+/// The flag of a received-element record whose element holds no handle
+/// (compiler.md §344 rule 3). The runtime reads the same bit.
+pub(crate) const RECEIVED_NO_HANDLE: u32 = 512;
+
+/// True when the element that `plan` reads holds no handle: the predicate
+/// of `holds_no_handle` over the declared element type that the plan reads
+/// (compiler.md §344 rule 3). A string, a pointer, and an array can hold a
+/// handle.
+pub(crate) fn plan_holds_no_handle(layouts: &Layouts, plan: &ReceivePlan) -> bool {
+    match plan {
+        ReceivePlan::Bytes(ty) => crate::layout::holds_no_handle(layouts, ty),
+        ReceivePlan::Struct { class, .. } => {
+            crate::layout::holds_no_handle(layouts, &Type::Class(*class))
+        }
+        ReceivePlan::Fixed { element, .. } => plan_holds_no_handle(layouts, element),
+        ReceivePlan::Validated(_) => true,
+        _ => false,
+    }
+}
+
 pub(crate) fn schema(
     module: &l::Module,
     layouts: &Layouts,
@@ -235,6 +255,13 @@ pub(crate) fn schema(
                 "unsupported received-element plan {other:?}"
             )))
         }
+    };
+    // compiler.md §344 rule 3: the record states the handle fact of its
+    // element, and an array that receives such elements takes it.
+    let tag = if plan_holds_no_handle(layouts, plan) {
+        tag | RECEIVED_NO_HANDLE
+    } else {
+        tag
     };
     let mut out = Vec::new();
     for value in [tag, c_size, script_size, payload.len() as u32] {

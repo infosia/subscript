@@ -521,9 +521,16 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     format!("sizeof({})", self.emitter.completion_ctype(element)?)
                 };
                 let position = self.emitter.pos_id(&instruction.pos);
+                // compiler.md §344 rule 4: the entry states the handle fact
+                // of the result element type.
+                let entry = if crate::layout::holds_no_handle(&self.emitter.layouts, element) {
+                    "subscript_rt_async_all_no_handle"
+                } else {
+                    "subscript_rt_async_all"
+                };
                 let call = self.emitter.runtime_call(
                     "void*",
-                    "subscript_rt_async_all",
+                    entry,
                     &[
                         "void*".into(),
                         "const void*".into(),

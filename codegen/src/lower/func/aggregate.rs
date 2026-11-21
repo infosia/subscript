@@ -54,8 +54,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let first_position = traps.first().map_or(pos, |trap| &trap.pos);
                 let position = self.position_id(first_position);
                 let position = self.iconst(types::I32, position);
+                let entry = self.array_new_function(element);
                 let handle = self
-                    .call_runtime(self.ml.rt.array_new, &[self.ctx, stride, position], false)?
+                    .call_runtime(entry, &[self.ctx, stride, position], false)?
                     .ok_or_else(|| internal("array literal allocation has no result"))?;
                 if let Some(trap) = traps.first() {
                     self.emit_trap(trap, TrapOperand::Pending)?;
@@ -80,6 +81,16 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             other => Err(internal(format!(
                 "array literal has invalid type {other:?}"
             ))),
+        }
+    }
+
+    /// The runtime entry that creates an empty array of `element` values
+    /// with its handle fact (compiler.md §344 rule 3).
+    fn array_new_function(&self, element: &Type) -> cranelift_module::FuncId {
+        if crate::layout::holds_no_handle(&self.ml.layouts, element) {
+            self.ml.rt.array_new_no_handle
+        } else {
+            self.ml.rt.array_new
         }
     }
 
@@ -113,7 +124,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
             .ml
             .module
             .declare_function(
-                "subscript_rt_array_with_capacity",
+                crate::layout::array_with_capacity_entry(&self.ml.layouts, element),
                 Linkage::Import,
                 &signature,
             )
@@ -216,8 +227,9 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let first_position = traps.first().map_or(pos, |trap| &trap.pos);
         let position = self.position_id(first_position);
         let position = self.iconst(types::I32, position);
+        let entry = self.array_new_function(element);
         let handle = self
-            .call_runtime(self.ml.rt.array_new, &[self.ctx, stride, position], false)?
+            .call_runtime(entry, &[self.ctx, stride, position], false)?
             .ok_or_else(|| internal("spread literal allocation has no result"))?;
         if let Some(trap) = traps.first() {
             self.emit_trap(trap, TrapOperand::Pending)?;

@@ -93,6 +93,9 @@ pub(crate) struct Layouts {
     /// language-layout storage. Boundary structs may contain `string` fields
     /// even though source `@ValueType` classes keep the narrower whitelist.
     managed_interior: Vec<bool>,
+    /// Whether a value of each class holds no handle (compiler.md §344
+    /// rule 3).
+    no_handle: Vec<bool>,
 }
 
 /// One field's name and byte offset inside its struct, as surfaced by
@@ -416,10 +419,19 @@ impl Layouts {
                 &mut managed_visiting,
             )?;
         }
+        let mut no_handle = vec![None; n];
+        let mut no_handle_visiting = vec![false; n];
+        for id in 0..n {
+            shape_class_holds_no_handle(shapes, id, &mut no_handle, &mut no_handle_visiting);
+        }
         Ok(Layouts {
             classes,
             handle_classes,
             managed_interior,
+            no_handle: no_handle
+                .into_iter()
+                .map(|fact| fact.unwrap_or(false))
+                .collect(),
         })
     }
 
@@ -835,6 +847,89 @@ pub(crate) fn type_contains_managed(layouts: &Layouts, ty: &Type) -> Result<bool
     })
 }
 
+/// True when a value of `ty` holds no handle (compiler.md §344 rule 3): a
+/// numeric type, `boolean`, an enum, a string alias (an `i32` index or wire
+/// value, §24 and §52.1), `Date`, a value class whose fields all
+/// hold no handle, or a `FixedArray` of such a type. Each other type can
+/// hold a handle. The function lists the types that hold no handle, so a
+/// type that it does not list takes the safe answer.
+///
+/// [`type_contains_managed`] answers a different question with the
+/// opposite default: it lists the types that hold a handle. A type that
+/// neither function lists, such as a host pointer, is safe only here.
+pub(crate) fn holds_no_handle(layouts: &Layouts, ty: &Type) -> bool {
+    match ty {
+        Type::Bool | Type::Enum(_) | Type::StringAlias(_) | Type::Date => true,
+        ty if ty.is_numeric() => true,
+        Type::Class(id) => layouts.no_handle.get(id.0).copied().unwrap_or(false),
+        Type::FixedArray(element, _) => holds_no_handle(layouts, element),
+        _ => false,
+    }
+}
+
+/// The class step of [`holds_no_handle`] over the class shapes. A
+/// reference class, and a class on a containment cycle, can hold a handle.
+fn shape_class_holds_no_handle(
+    shapes: &[ClassShape],
+    id: usize,
+    memo: &mut [Option<bool>],
+    visiting: &mut [bool],
+) -> bool {
+    if let Some(fact) = memo.get(id).copied().flatten() {
+        return fact;
+    }
+    let Some(class) = shapes.get(id) else {
+        return false;
+    };
+    if !class.is_value || visiting.get(id).copied().unwrap_or(true) {
+        return false;
+    }
+    visiting[id] = true;
+    let fact = class
+        .fields
+        .iter()
+        .all(|field| shape_type_holds_no_handle(shapes, field, memo, visiting));
+    visiting[id] = false;
+    memo[id] = Some(fact);
+    fact
+}
+
+fn shape_type_holds_no_handle(
+    shapes: &[ClassShape],
+    ty: &Type,
+    memo: &mut [Option<bool>],
+    visiting: &mut [bool],
+) -> bool {
+    match ty {
+        Type::Bool | Type::Enum(_) | Type::StringAlias(_) | Type::Date => true,
+        ty if ty.is_numeric() => true,
+        Type::Class(id) => shape_class_holds_no_handle(shapes, id.0, memo, visiting),
+        Type::FixedArray(element, _) => shape_type_holds_no_handle(shapes, element, memo, visiting),
+        _ => false,
+    }
+}
+
+/// The runtime entry that creates an empty array of `element` values:
+/// one entry for each handle fact (compiler.md §344 rule 3). The dev JIT
+/// and the emitted C call the entry that this function names.
+pub(crate) fn array_new_entry(layouts: &Layouts, element: &Type) -> &'static str {
+    if holds_no_handle(layouts, element) {
+        "subscript_rt_array_new_no_handle"
+    } else {
+        "subscript_rt_array_new"
+    }
+}
+
+/// The runtime entry that creates an array of `element` values with a
+/// capacity: one entry for each handle fact (compiler.md §344 rule 3).
+pub(crate) fn array_with_capacity_entry(layouts: &Layouts, element: &Type) -> &'static str {
+    if holds_no_handle(layouts, element) {
+        "subscript_rt_array_with_capacity_no_handle"
+    } else {
+        "subscript_rt_array_with_capacity"
+    }
+}
+
 /// Number of 8-byte shadow/root words a value of `ty` needs so the
 /// collector can see every handle in it: 1 for a managed scalar, the
 /// word-rounded size for an aggregate with managed interior, 0
@@ -1164,6 +1259,116 @@ mod tests {
                 .size_align(&Type::IterResult(Box::new(Type::F64)))
                 .expect("size"),
             (16, 8)
+        );
+    }
+
+    /// compiler.md §344 rule 3: the predicate over a table of types on both
+    /// sides. Each type that holds no handle is also a type that
+    /// [`type_contains_managed`] does not list, a fact that the other
+    /// function derives separately.
+    #[test]
+    fn holds_no_handle_lists_the_types_without_a_handle() {
+        use subscript_compiler::{Absence, ClassId, FuncType};
+        let module = check_program(&[
+            SourceFile::ambient(
+                "named.d.ts",
+                "declare class Named { label: string; serial: u64; \
+                 constructor(label: string, serial: u64); }\n",
+            ),
+            SourceFile::new(
+                "t.ts",
+                "enum Kind { A, B }\n\
+                 @ValueType\nclass Numbers { x: f32 = 0.0; n: i32 = 0; b: boolean = false; }\n\
+                 @ValueType\nclass Nested { inner: Numbers = new Numbers(); k: Kind = Kind.A; }\n\
+                 class Reference { v: i32 = 0; }\n\
+                 export function main(): void { const n: Named = new Named(\"a\", 1); print(n.label); }\n",
+            ),
+        ])
+        .expect("clean check");
+        let layouts = Layouts::build(&module).expect("layouts");
+        let class = |name: &str| {
+            Type::Class(ClassId(
+                module
+                    .classes
+                    .iter()
+                    .position(|class| class.name == name)
+                    .expect("class"),
+            ))
+        };
+        let kind = Type::Enum(subscript_compiler::EnumId(0));
+        let function = Type::Func(Box::new(FuncType {
+            callback_typedef: None,
+            params: Vec::new(),
+            ret: Type::I32,
+        }));
+        let fixed = |ty: Type| Type::FixedArray(Box::new(ty), 3);
+        let no_handle = [
+            Type::I8,
+            Type::U8,
+            Type::I16,
+            Type::U16,
+            Type::I32,
+            Type::U32,
+            Type::I64,
+            Type::U64,
+            Type::F16,
+            Type::F32,
+            Type::F64,
+            Type::Bool,
+            Type::Date,
+            kind.clone(),
+            Type::StringAlias(subscript_compiler::StringAliasId(0)),
+            fixed(Type::StringAlias(subscript_compiler::StringAliasId(0))),
+            class("Numbers"),
+            class("Nested"),
+            fixed(Type::F64),
+            fixed(class("Numbers")),
+            fixed(fixed(Type::I32)),
+        ];
+        let can_hold = [
+            Type::Str,
+            Type::Object,
+            Type::RegExp,
+            class("Named"),
+            class("Reference"),
+            Type::Nullable(Box::new(class("Reference")), Absence::Null),
+            Type::Nullable(Box::new(Type::Str), Absence::Null),
+            function.clone(),
+            Type::Nullable(Box::new(function), Absence::Null),
+            Type::Array(Box::new(Type::I32)),
+            Type::Map(Box::new(Type::I32), Box::new(Type::I32)),
+            Type::Set(Box::new(Type::I32)),
+            Type::AsyncHandle(Box::new(Type::I32)),
+            Type::IterResult(Box::new(Type::I32)),
+            fixed(Type::Str),
+            fixed(class("Named")),
+            fixed(class("Reference")),
+        ];
+        for ty in &no_handle {
+            assert!(holds_no_handle(&layouts, ty), "{ty:?} holds no handle");
+            assert!(
+                !type_contains_managed(&layouts, ty).expect("managed"),
+                "{ty:?} contains no managed handle"
+            );
+        }
+        for ty in &can_hold {
+            assert!(!holds_no_handle(&layouts, ty), "{ty:?} can hold a handle");
+        }
+        assert_eq!(
+            array_new_entry(&layouts, &Type::F64),
+            "subscript_rt_array_new_no_handle"
+        );
+        assert_eq!(
+            array_new_entry(&layouts, &Type::Str),
+            "subscript_rt_array_new"
+        );
+        assert_eq!(
+            array_with_capacity_entry(&layouts, &class("Numbers")),
+            "subscript_rt_array_with_capacity_no_handle"
+        );
+        assert_eq!(
+            array_with_capacity_entry(&layouts, &class("Reference")),
+            "subscript_rt_array_with_capacity"
         );
     }
 }

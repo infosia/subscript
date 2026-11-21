@@ -593,6 +593,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let position = self.position_id(pos);
                 arguments.push(self.iconst(types::I32, position));
                 arguments.push(self.iconst(types::I32, i64::from(indexed)));
+                // compiler.md §344 rule 4: the result takes the fact of its
+                // element type.
+                let no_handle = crate::layout::holds_no_handle(&self.ml.layouts, result_element);
+                arguments.push(self.iconst(types::I32, i64::from(no_handle)));
                 let result = self
                     .call_runtime(function, &arguments, checked)?
                     .ok_or_else(|| internal("Array.Map has no result"))?;

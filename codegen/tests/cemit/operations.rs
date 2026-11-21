@@ -1052,3 +1052,98 @@ pub(super) fn a183_long_string_emits_five_adjacent_c_literals() {
         pieces.len()
     );
 }
+
+/// compiler.md §344 rule 3 in the emitted C: an array literal, a spread, and
+/// a pre-sized `map` result call the entry of their handle fact. The dev
+/// JIT selects its entry through the same `holds_no_handle` predicate.
+pub(super) fn array_creation_entries_state_the_handle_fact() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "class Box { v: i32; constructor(v: i32) { this.v = v; } }\n\
+function twice(value: i32): f64 {\n  return (value as f64) * 2.0;\n}\n\
+function wrap(value: i32): Box {\n  return new Box(value);\n}\n\
+export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n  const boxes: Box[] = [new Box(1)];\n\
+  const ys: i32[] = [...xs, 4];\n  const zs: Box[] = [...boxes];\n\
+  print(`${xs.map(twice)[0]} ${xs.map(wrap)[0].v} ${ys.length} ${zs.length}`);\n}\n";
+    let files = [SourceFile::new("array-fact-entries.ts", SOURCE)];
+    let hir = check_program(&files).expect("probe checks cleanly");
+    let c = emit_c(&hir).expect("probe emits C").source;
+    for (entry, count) in [
+        ("subscript_rt_array_new_no_handle(", 2),
+        ("subscript_rt_array_new(", 2),
+        ("subscript_rt_array_with_capacity_no_handle(", 1),
+        ("subscript_rt_array_with_capacity(", 1),
+    ] {
+        let calls = c.matches(&format!("{entry}ctx")).count();
+        assert_eq!(calls, count, "calls of `{entry}`:\n{c}");
+    }
+}
+
+/// compiler.md §344 rule 4 in the emitted C: a function-value `map` and
+/// `flatMap` pass the fact of the result element type as their last
+/// argument. A `boolean` and an `i32` result hold no handle; a reference
+/// result can hold one.
+pub(super) fn function_value_map_passes_the_handle_fact() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "class Box { v: i32; constructor(v: i32) { this.v = v; } }\n\
+export function main(): void {\n  const xs: i32[] = [1, 2, 3];\n\
+  const odd: (x: i32) => boolean = (x: i32): boolean => x % 2 === 1;\n\
+  const wrap: (x: i32) => Box = (x: i32): Box => new Box(x);\n\
+  const twice: (x: i32) => i32[] = (x: i32): i32[] => [x, x];\n\
+  const boxes: (x: i32) => Box[] = (x: i32): Box[] => [new Box(x)];\n\
+  print(`${xs.map(odd).length} ${xs.map(wrap).length} ${xs.flatMap(twice).length} ${xs.flatMap(boxes).length}`);\n}\n";
+    let files = [SourceFile::new("map-fact.ts", SOURCE)];
+    let hir = check_program(&files).expect("probe checks cleanly");
+    let c = emit_c(&hir).expect("probe emits C").source;
+    let last_arguments = |entry: &str| -> Vec<String> {
+        c.lines()
+            .filter(|line| line.contains(&format!("{entry}(ctx")))
+            .map(|line| {
+                let call = &line[line.find(entry).expect("entry")..];
+                let end = call.find(");").expect("call end");
+                call[..end]
+                    .rsplit(", ")
+                    .next()
+                    .expect("last argument")
+                    .to_string()
+            })
+            .collect()
+    };
+    assert_eq!(
+        last_arguments("subscript_rt_arr_map"),
+        vec!["1u", "0u"],
+        "{c}"
+    );
+    assert_eq!(
+        last_arguments("subscript_rt_arr_flat_map"),
+        vec!["1u", "0u"],
+        "{c}"
+    );
+}
+
+/// compiler.md §344 rule 4 in the emitted C: `Promise.all` calls the entry
+/// of the handle fact of its result element type.
+pub(super) fn promise_all_entry_states_the_handle_fact() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "class Box { v: i32; constructor(v: i32) { this.v = v; } }\n\
+async function number(x: i32): Promise<i32> { return x; }\n\
+async function boxed(x: i32): Promise<Box> { return new Box(x); }\n\
+export async function main(): Promise<void> {\n\
+  const ns: i32[] = await Promise.all([number(1)]);\n\
+  const bs: Box[] = await Promise.all([boxed(2)]);\n\
+  print(`${ns[0]} ${bs[0].v}`);\n}\n";
+    let files = [SourceFile::new("all-fact.ts", SOURCE)];
+    let hir = check_program(&files).expect("probe checks cleanly");
+    let c = emit_c(&hir).expect("probe emits C").source;
+    assert_eq!(
+        c.matches("subscript_rt_async_all_no_handle(ctx").count(),
+        1,
+        "{c}"
+    );
+    assert_eq!(c.matches("subscript_rt_async_all(ctx").count(), 1, "{c}");
+}

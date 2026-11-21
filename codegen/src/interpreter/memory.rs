@@ -111,6 +111,18 @@ impl Interpreter<'_> {
         Ok(layout)
     }
 
+    /// The handle fact of an array of `element` values (compiler.md §344
+    /// rule 3).
+    pub(super) fn array_elements(
+        &self,
+        element: &Type,
+    ) -> subscript_runtime::context::ArrayElements {
+        subscript_runtime::context::ArrayElements::from_no_handle(crate::layout::holds_no_handle(
+            &self.layouts,
+            element,
+        ))
+    }
+
     pub(super) fn type_layout(&mut self, ty: &Type) -> Result<Layout, InterpretError> {
         let key = format!("{ty:?}");
         if let Some(layout) = self.layout_cache.get(&key).copied() {

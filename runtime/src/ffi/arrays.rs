@@ -1,11 +1,12 @@
 use super::associations::assoc_receiver_is_live;
 use super::{subscript_rt_set_new, subscript_rt_str_iter_code_point};
-use crate::context::Context;
+use crate::context::{ArrayElements, Context};
 use crate::trap::TrapKind;
 
 // ----- arrays (Q4) -----
 
-/// Allocates an empty dynamic array of `elem_size`-byte elements.
+/// Allocates an empty dynamic array of `elem_size`-byte elements that can
+/// hold a handle.
 ///
 /// # Safety
 ///
@@ -20,7 +21,24 @@ pub unsafe extern "C" fn subscript_rt_array_new(
     unsafe { &mut *ctx }.array_new(elem_size as usize, pos_id)
 }
 
-/// Allocates an empty dynamic array with storage for `capacity` elements.
+/// Allocates an empty dynamic array of `elem_size`-byte elements that hold
+/// no handle (compiler.md §344 rule 3).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_new_no_handle(
+    ctx: *mut Context,
+    elem_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.array_new_of(elem_size as usize, ArrayElements::NoHandle, pos_id)
+}
+
+/// Allocates an empty dynamic array with storage for `capacity` elements
+/// that can hold a handle.
 ///
 /// # Safety
 ///
@@ -32,6 +50,48 @@ pub unsafe extern "C" fn subscript_rt_array_with_capacity(
     elem_size: u64,
     pos_id: u32,
 ) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe {
+        array_with_capacity_of(
+            ctx,
+            capacity,
+            elem_size,
+            ArrayElements::CanHoldHandle,
+            pos_id,
+        )
+    }
+}
+
+/// Allocates an empty dynamic array with storage for `capacity` elements
+/// that hold no handle (compiler.md §344 rule 3).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_with_capacity_no_handle(
+    ctx: *mut Context,
+    capacity: u64,
+    elem_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
+    unsafe { array_with_capacity_of(ctx, capacity, elem_size, ArrayElements::NoHandle, pos_id) }
+}
+
+/// The shared body of the two capacity entries.
+///
+/// # Safety
+///
+/// Shared contract.
+unsafe fn array_with_capacity_of(
+    ctx: *mut Context,
+    capacity: u64,
+    elem_size: u64,
+    elements: ArrayElements,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: shared contract.
     let runtime = unsafe { &mut *ctx };
     let (Ok(capacity), Ok(elem_size)) = (usize::try_from(capacity), usize::try_from(elem_size))
     else {
@@ -42,7 +102,7 @@ pub unsafe extern "C" fn subscript_rt_array_with_capacity(
         );
         return std::ptr::null_mut();
     };
-    runtime.array_with_capacity(capacity, elem_size, pos_id)
+    runtime.array_with_capacity_of(capacity, elem_size, elements, pos_id)
 }
 
 /// Allocates a byte array and copies a readable byte span into it.

@@ -1507,3 +1507,35 @@ fn class_boundary_fact_edit(callback: bool) {
     session.call_main().unwrap();
     assert_eq!(output(&mut session), "new\n");
 }
+
+/// compiler.md §344 rule 1 and §8.2: an array keeps its handle fact for its
+/// whole life, so a reload must not keep an array under an element type
+/// with another fact. The type of a module global enters the declaration
+/// hash, so a change of its element type is refused and the old array
+/// stays under its old type. The control is a body edit that the reload
+/// accepts with the same global.
+#[test]
+fn a_global_array_cannot_change_its_element_type_across_a_reload() {
+    let source = |ty: &str, init: &str, body: &str| {
+        format!(
+            "class Box {{ v: i32; constructor(v: i32) {{ this.v = v; }} }}\n\
+             let xs: {ty} = [];\n\
+             export function main(): void {{ xs.push({init}); print(`{body} ${{xs.length}}`); }}\n"
+        )
+    };
+    let before = source("i32[]", "1", "a");
+    let mut session = ReloadSession::new(&files(&before)).expect("session");
+    session.call_main().expect("first call");
+    assert_eq!(output(&mut session), "a 1\n");
+    session
+        .reload(&files(&source("i32[]", "2", "b")))
+        .expect("a body edit keeps the global");
+    session.call_main().expect("call after the body edit");
+    assert_eq!(output(&mut session), "b 2\n");
+    assert!(matches!(
+        session.reload(&files(&source("Box[]", "new Box(3)", "c"))),
+        Err(ReloadError::DeclarationChanged { declaration }) if declaration == "variable xs"
+    ));
+    session.call_main().expect("the program keeps running");
+    assert_eq!(output(&mut session), "b 3\n");
+}

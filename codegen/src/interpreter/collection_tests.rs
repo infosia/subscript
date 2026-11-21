@@ -583,3 +583,151 @@ export function main(): void {
         assert_eq!(interpreter.context.outermost_exit_count(), 1);
     }
 }
+
+/// compiler.md §344 acceptance 3 in the interpreter: each array that the
+/// script keeps has the fact of its element type. Static callbacks run as
+/// script-level loops; function values run in the runtime. Each kept array
+/// has its own length, and a collection removes the temporaries. Cost: one
+/// interpreter run.
+#[test]
+fn each_array_operation_gives_the_fact_of_its_elements() {
+    use subscript_runtime::context::ArrayElements::{CanHoldHandle, NoHandle};
+    let source = r#"
+class Box { v: i32; constructor(v: i32) { this.v = v; } }
+let kept: i32[][] = [];
+let keptF: f64[][] = [];
+let keptBoxes: Box[][] = [];
+let keptText: string[][] = [];
+function build(): void {
+  const grown: i32[] = [];
+  for (let i: i32 = 0; i < 21; i += 1) { grown.push(i); }
+  const boxes: Box[] = [];
+  for (let i: i32 = 0; i < 22; i += 1) { boxes.push(new Box(i)); }
+  const lt8: (x: i32) => boolean = (x: i32): boolean => x < 8;
+  const lt9: (b: Box) => boolean = (b: Box): boolean => b.v < 9;
+  const half: (b: Box) => f64 = (b: Box): f64 => (b.v as f64) * 0.5;
+  const wrap: (x: i32) => Box = (x: i32): Box => new Box(x);
+  kept.push(grown);
+  keptBoxes.push(boxes);
+  kept.push(grown.slice(0, 3));
+  keptBoxes.push(boxes.slice(0, 4));
+  kept.push(grown.concat(grown.slice(0, 3)));
+  keptBoxes.push(boxes.concat(boxes.slice(0, 4)));
+  kept.push(grown.filter((x: i32): boolean => x < 5));
+  keptBoxes.push(boxes.filter((b: Box): boolean => b.v < 6));
+  kept.push(grown.filter(lt8));
+  keptBoxes.push(boxes.filter(lt9));
+  keptF.push(boxes.slice(0, 10).map((b: Box): f64 => (b.v as f64) * 1.5));
+  keptBoxes.push(grown.slice(0, 11).map((x: i32): Box => new Box(x)));
+  keptF.push(boxes.slice(0, 12).map(half));
+  keptBoxes.push(grown.slice(0, 13).map(wrap));
+  keptF.push([1.5, 2.5]);
+  keptBoxes.push([new Box(1)]);
+  kept.push([...grown.slice(0, 14), 99]);
+  keptText.push("a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p".split(","));
+}
+export function main(): void {
+  build();
+  Context.collect();
+  print(`${kept.length} ${keptF.length} ${keptBoxes.length} ${keptText.length}`);
+}
+"#;
+    let files = [SourceFile::new("s344-facts.ts", source)];
+    let module = crate::lir::lower_module(&check_program(&files).expect("checked source"))
+        .expect("verified LIR");
+    let mut interpreter = Interpreter::new(&module).expect("interpreter");
+    if let Some(initializer) = module.initializer {
+        interpreter
+            .call_function(initializer, Vec::new())
+            .expect("initializer");
+    }
+    interpreter
+        .call_function(module.entry.expect("entry"), Vec::new())
+        .expect("main");
+    assert_eq!(interpreter.context.take_stdout(), b"6 3 8 1\n");
+    let mut facts = interpreter.context.live_array_facts();
+    assert!(!facts.is_empty());
+    let mut expected = Vec::new();
+    for (len, fact, operation) in [
+        (21, NoHandle, "growth of i32[]"),
+        (22, CanHoldHandle, "growth of Box[]"),
+        (3, NoHandle, "slice of i32[]"),
+        (4, CanHoldHandle, "slice of Box[]"),
+        (24, NoHandle, "concat of i32[]"),
+        (26, CanHoldHandle, "concat of Box[]"),
+        (5, NoHandle, "static filter of i32[]"),
+        (6, CanHoldHandle, "static filter of Box[]"),
+        (8, NoHandle, "function-value filter of i32[]"),
+        (9, CanHoldHandle, "function-value filter of Box[]"),
+        (10, NoHandle, "static map to f64"),
+        (11, CanHoldHandle, "static map to Box"),
+        (12, NoHandle, "function-value map to f64"),
+        (13, CanHoldHandle, "function-value map to Box"),
+        (2, NoHandle, "f64[] literal"),
+        (1, CanHoldHandle, "Box[] literal"),
+        (15, NoHandle, "spread into i32[]"),
+        (16, CanHoldHandle, "split"),
+        // The four arrays of arrays that keep the results.
+        (6, CanHoldHandle, "kept"),
+        (3, CanHoldHandle, "keptF"),
+        (8, CanHoldHandle, "keptBoxes"),
+        (1, CanHoldHandle, "keptText"),
+    ] {
+        expected.push((len, fact == NoHandle, operation));
+    }
+    // The live arrays are exactly the kept arrays, each with its fact.
+    let mut live: Vec<(u64, bool)> = facts
+        .drain(..)
+        .map(|(len, fact)| (len, fact == NoHandle))
+        .collect();
+    live.sort_unstable();
+    let mut wanted: Vec<(u64, bool)> = expected.iter().map(|&(len, fact, _)| (len, fact)).collect();
+    wanted.sort_unstable();
+    assert_eq!(
+        live, wanted,
+        "(length, no handle) of each live array; table {expected:?}"
+    );
+}
+
+/// compiler.md §344 rule 4 in the interpreter: the results of `Promise.all`
+/// take the fact of their element type. Cost: one interpreter run.
+#[test]
+fn promise_all_results_take_the_fact_of_their_element_type() {
+    let source = r#"
+class Box { v: i32; constructor(v: i32) { this.v = v; } }
+async function number(x: i32): Promise<i32> { return x; }
+async function boxed(x: i32): Promise<Box> { return new Box(x); }
+let numbers: i32[] = [];
+let boxes: Box[] = [];
+export async function main(): Promise<void> {
+  numbers = await Promise.all([number(1), number(2), number(3), number(4), number(5)]);
+  boxes = await Promise.all([boxed(6), boxed(7), boxed(8), boxed(9), boxed(10), boxed(11)]);
+  print(`${numbers[4]} ${boxes[5].v}`);
+}
+"#;
+    let files = [SourceFile::new("s344-all.ts", source)];
+    let module = crate::lir::lower_module(&check_program(&files).expect("checked source"))
+        .expect("verified LIR");
+    let mut interpreter = Interpreter::new(&module).expect("interpreter");
+    if let Some(initializer) = module.initializer {
+        interpreter
+            .call_function(initializer, Vec::new())
+            .expect("initializer");
+    }
+    let Value::Coroutine(root) = interpreter
+        .call_function(module.entry.expect("entry"), Vec::new())
+        .expect("root")
+    else {
+        panic!("async root");
+    };
+    interpreter.async_kick(&root).expect("start");
+    while interpreter.async_pending() != 0 {
+        interpreter.async_step().expect("checkpoint");
+    }
+    assert_eq!(interpreter.context.take_stdout(), b"5 11\n");
+    let facts = interpreter.context.live_array_facts();
+    use subscript_runtime::context::ArrayElements::{CanHoldHandle, NoHandle};
+    assert!(facts.contains(&(5, NoHandle)), "{facts:?}");
+    assert!(facts.contains(&(6, CanHoldHandle)), "{facts:?}");
+    assert!(!facts.contains(&(5, CanHoldHandle)), "{facts:?}");
+}
