@@ -22,6 +22,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_print,
         subscript_rt_collect,
         subscript_rt_collect_at,
+        subscript_rt_collect_poll,
         subscript_rt_alloc,
         subscript_rt_globals_init,
         subscript_rt_boundary_watch_buffer,

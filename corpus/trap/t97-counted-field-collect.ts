@@ -1,11 +1,11 @@
 // corpus: trap/t97-counted-field-collect
-// purpose: Collection reports one failed field at the collect call position.
+// purpose: The outermost exit of the step before the collect call reports one failed field at the throw.
 // exercises: counted-map, counted-field, async-handle, ownership
-// questions: compiler.md §172, §171, §70, §116
+// questions: compiler.md §342, §172, §171, §70, §116
 // tsc: accepts
 // js-comparable: no C8: Context collection and coroutine handles have no JavaScript shim.
 // tier-policy: both tiers trap
-// expected-trap: uncaught-exception at Context.collect; message Error: first
+// expected-trap: uncaught-exception at the throw; message Error: first
 
 class Box { value: Promise<void>; constructor(value: Promise<void>) { this.value = value; } }
 async function fail(message: string): Promise<void> { throw new Error(message); }
@@ -20,8 +20,8 @@ export async function main(): Promise<void> {
   print("after");
 }
 
-// pin: dbccd4d8
-// pin-dev-jit: Exit 0; prints after; no trap.
-// pin-c-aot: Exit 0; prints after; no trap.
-// pin-interpreter: Prints after; no trap.
+// pin: ca3fc9ed
+// pin-dev-jit: Trap uncaught-exception at 19:3; message Error: first; no stdout.
+// pin-c-aot: Trap uncaught-exception at 19:3; message Error: first; no stdout.
+// pin-interpreter: Trap uncaught-exception at 19:3; message Error: first; no stdout.
 // tsc-version: TypeScript 5.9.2; exit 0.

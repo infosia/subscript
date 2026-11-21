@@ -10,7 +10,7 @@ If you know some TypeScript and no C, start with [`typescript/`](typescript/).
 Read the numbered examples in order:
 
 1. [`e01`–`e04`](#language-foundations) establish sized values, C-layout value
-   types, explicit memory management, and nullability.
+   types, collection pauses that the host controls, and nullability.
 2. [`e05`–`e08`](#language-foundations) cover errors, arrays and
    closures, deterministic APIs, and frame-stepped coroutines.
 3. [`e09`](e09-c-structs-and-slices.ts),
@@ -45,7 +45,7 @@ or its governing invariant.
 |---|---|---|---|
 | [`e01-sized-integers`](e01-sized-integers.ts) | `i32`/`u32`/`i64`/`f32`/`f64`, explicit `as` conversions, wrapping | Bare `number` is rejected; literals are contextually typed | C3, C4 |
 | [`e02-value-and-reference`](e02-value-and-reference.ts) | `@ValueType class` beside a plain `class`; copy on assign and on pass | Value classes copy; structurally identical declarations are not interchangeable | C2, C1 |
-| [`e03-memory`](e03-memory.ts) | Context allocation, `Context.free`, explicit `Context.collect()` | Nothing collects unbidden; never collecting is correct but uses more memory | [Invariant 2](../CLAUDE.md#design-invariants-read-second) |
+| [`e03-memory`](e03-memory.ts) | Context allocation, `Context.free`, explicit `Context.collect()` | The host controls each collection pause, and no collection moves an object; never collecting is correct | [Invariant 2](../CLAUDE.md#design-invariants-read-second) |
 | [`e04-null`](e04-null.ts) | `T \| null`, narrowing by `!= null` | `undefined` is only a function result; there is no general union | C7 |
 | [`e05-errors`](e05-errors.ts) | `throw`/`try`/`catch` of the `Error` family, `JSON.parse` failures, a result-shaped return, and what a trap is | Only `Error`-family objects are thrown, `finally` runs on each exit but not on a trap, and a trap is not catchable | C6 |
 | [`e06-arrays-and-closures`](e06-arrays-and-closures.ts) | Fixed and growable arrays, bounds checks, `map`/`filter`/`reduce` | A synchronous capturing closure may not escape | C5 |

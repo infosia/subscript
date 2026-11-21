@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 
-use crate::context::Context;
+use crate::context::{CollectionSettings, Context};
 use crate::trap::{TrapKind, TrapRecord};
 
 const CLASS_WORKER_MESSAGE: u32 = 0xFFFF_FF0A;
@@ -297,29 +297,31 @@ impl Drop for WorkerOutbox {
     }
 }
 
+/// What a worker Context takes from its parent at the spawn.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct WorkerContextSetup {
+    /// The memory tier of the parent.
+    pub(crate) releasing_context: bool,
+    /// The reload indirection table of the parent, as an address.
+    pub(crate) fn_table: usize,
+    /// The collection mode and headroom (`compiler.md` §342 rule 18).
+    pub(crate) collection: CollectionSettings,
+}
+
 impl Worker {
     fn start(
         init: WorkerInit,
         entry: WorkerEntry,
         input_descriptor: QueueDescriptor,
         output_descriptor: QueueDescriptor,
-        releasing_context: bool,
-        fn_table: usize,
+        setup: WorkerContextSetup,
     ) -> std::io::Result<Box<Worker>> {
         let input = Arc::new(Queue::new(input_descriptor));
         let output = Arc::new(Queue::new(output_descriptor));
         let thread_input = Arc::clone(&input);
         let thread_output = Arc::clone(&output);
-        let thread = std::thread::Builder::new().spawn(move || {
-            run_worker(
-                init,
-                entry,
-                thread_input,
-                thread_output,
-                releasing_context,
-                fn_table,
-            )
-        })?;
+        let thread = std::thread::Builder::new()
+            .spawn(move || run_worker(init, entry, thread_input, thread_output, setup))?;
         Ok(Box::new(Worker {
             input,
             output,
@@ -363,17 +365,9 @@ impl WorkerSet {
         entry: WorkerEntry,
         input_descriptor: QueueDescriptor,
         output_descriptor: QueueDescriptor,
-        releasing_context: bool,
-        fn_table: usize,
+        setup: WorkerContextSetup,
     ) -> std::io::Result<*mut Worker> {
-        let mut worker = Worker::start(
-            init,
-            entry,
-            input_descriptor,
-            output_descriptor,
-            releasing_context,
-            fn_table,
-        )?;
+        let mut worker = Worker::start(init, entry, input_descriptor, output_descriptor, setup)?;
         let handle = std::ptr::from_mut(worker.as_mut());
         self.workers.push(worker);
         Ok(handle)
@@ -451,10 +445,17 @@ fn run_worker(
     entry: WorkerEntry,
     input: Arc<Queue>,
     output: Arc<Queue>,
-    releasing_context: bool,
-    fn_table: usize,
+    setup: WorkerContextSetup,
 ) -> WorkerOutcome {
+    let WorkerContextSetup {
+        releasing_context,
+        fn_table,
+        collection,
+    } = setup;
     let mut ctx = Context::new_worker(releasing_context);
+    // compiler.md §342 rule 18: the worker takes the mode and the headroom
+    // of its parent.
+    ctx.apply_collection_settings(collection);
     // SAFETY: Context::worker_spawn erased this pointer to `usize` only to
     // cross the thread boundary. ReloadSession refuses code replacement
     // until all workers join and drops the parent Context before its JIT

@@ -632,6 +632,9 @@ pub struct ReloadSession {
     runner_error: Option<subscript_compiler::Diagnostic>,
     native_libraries: Vec<NativeLibrary>,
     check_options: subscript_compiler::CheckOptions,
+    // compiler.md §342 rule 17: the configured mode and minimum headroom.
+    // Each Context that the session builds gets them.
+    collection: Option<(subscript_runtime::context::CollectionMode, usize)>,
 }
 
 /// One compiled generation: the module plus what the driver needs from
@@ -924,7 +927,11 @@ impl ReloadSession {
     /// # Errors
     /// Returns the same failures as new_with_native_libraries.
     /// [`RunError::Internal`] when `config` sets an option other than
-    /// `enabled_modules`, `native_libraries`, and `file_provider`.
+    /// `enabled_modules`, `native_libraries`, `file_provider`, and
+    /// `collection`. The collection mode applies before the initializer
+    /// (`compiler.md` §342 rule 17). A reload keeps the Context, so it keeps
+    /// the mode. A reload after an initializer trap builds a new Context
+    /// with the configured mode and minimum headroom.
     pub fn new_configured(
         files: &[SourceFile],
         config: crate::RunConfig<'_>,
@@ -960,7 +967,7 @@ impl ReloadSession {
         {
             return Err(RunError::Internal(internal(
                 "a reload session applies only enabled modules, native libraries, \
-                 and a file provider",
+                 a file provider, and a collection mode",
             )));
         }
         let libraries = config.native_libraries;
@@ -992,6 +999,7 @@ impl ReloadSession {
             runner_error: hirm.runner_main().err(),
             native_libraries: libraries.to_vec(),
             check_options,
+            collection: config.collection,
         };
         // SAFETY: with_file_provider requires host state and callbacks to outlive this session (section 263).
         unsafe {
@@ -1005,6 +1013,15 @@ impl ReloadSession {
             // SAFETY: ReloadSession retains its globals block until after Context drop (section 263).
             session.ctx.set_globals(session.globals.ptr)
         };
+        if let Some((mode, min_headroom_bytes)) = config.collection {
+            // A new Context has script depth zero, so the change applies
+            // (`compiler.md` §342 rule 17).
+            if !session.ctx.set_collection(mode, min_headroom_bytes) {
+                return Err(RunError::Internal(internal(
+                    "the Context refused the collection mode",
+                )));
+            }
+        }
         let init_slot = gen
             .init_slot
             .ok_or_else(|| RunError::Internal(internal("no initializer slot")))?;
@@ -1285,6 +1302,7 @@ impl ReloadSession {
                     enabled_modules: &modules,
                     native_libraries: &self.native_libraries,
                     file_provider: self.file_provider,
+                    collection: self.collection,
                     ..crate::RunConfig::default()
                 },
             )

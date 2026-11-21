@@ -200,6 +200,7 @@ pub(super) fn run_multithreaded(
         fail_alloc_after,
         freed_handle_diagnostics,
         memory_accounting: _,
+        collection: _,
         pre_init_hook: _,
         pre_entry_hook: _,
         post_run_hook: _,
@@ -478,6 +479,7 @@ mod runner {
             file_provider: None,
             fail_alloc_after: request.fail_alloc_after,
             freed_handle_diagnostics: request.freed_handle_diagnostics,
+            collection: None,
         };
         execute_entry(
             &module,

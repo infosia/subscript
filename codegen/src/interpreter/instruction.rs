@@ -114,6 +114,10 @@ impl Interpreter<'_> {
                 self.parked.push(caught);
                 None
             }
+            l::InstructionKind::CollectionPoll => {
+                self.collection_poll(&instruction.pos)?;
+                None
+            }
             // compiler.md §116.2 rule 3: the resume of an exception
             // completion delivered its exception; this raise site raises it.
             l::InstructionKind::AwaitRaise => {

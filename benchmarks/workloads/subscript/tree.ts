@@ -1,7 +1,7 @@
 // benchmark: tree
 // Build, traverse, and explicitly free 30 full binary trees of depth 16
-// (131071 nodes each) using reference classes and Context.free — the
-// language's manual-lifetime path (no implicit GC, design invariant 2).
+// (131071 nodes each) using reference classes and Context.free. The
+// workload measures the explicit release path, not automatic collection.
 // Checksum: total node-visit count, i64 = 30 * (2^17 - 1) = 3932130.
 
 const DEPTH: i32 = 16;

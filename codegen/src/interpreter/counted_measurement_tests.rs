@@ -25,18 +25,21 @@ fn outcome_with_output_in_three_tiers(
     let hir = check_program(&files).unwrap_or_else(|errors| panic!("{label}: {errors:?}"));
     let module = crate::lir::lower_module(&hir).expect("verified measurement");
     let mut interpreter = Interpreter::new(&module).expect("interpreter");
-    if let Some(initializer) = module.initializer {
-        interpreter
-            .call_function(initializer, Vec::new())
-            .expect("initializer");
-    }
-    let Value::Coroutine(root) = interpreter
-        .call_function(module.entry.expect("entry"), Vec::new())
-        .expect("root")
-    else {
-        panic!("async root");
-    };
-    let mut error = interpreter.async_kick(&root).err();
+    // compiler.md §342 rule 16: the host calls of the harness are the
+    // outermost exits of the native hosts below.
+    let mut error = interpreter
+        .script_call(|interpreter| {
+            if let Some(initializer) = module.initializer {
+                interpreter.call_function(initializer, Vec::new())?;
+            }
+            let Value::Coroutine(root) =
+                interpreter.call_function(module.entry.expect("entry"), Vec::new())?
+            else {
+                panic!("async root");
+            };
+            interpreter.async_kick(&root)
+        })
+        .err();
     while error.is_none() && interpreter.async_pending() != 0 {
         error = interpreter.async_step().err();
     }

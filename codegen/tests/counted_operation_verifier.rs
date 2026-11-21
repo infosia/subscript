@@ -149,6 +149,7 @@ fn module(element: Type, removal: bool, acquire: bool, release: bool) -> l::Modu
                 operation: 0,
                 semantic_name: "Pop".into(),
                 runtime_symbol: None,
+                can_allocate: false,
                 signatures: vec![l::CallSignature {
                     target: l::CallSignatureTarget::BuiltinMethod(l::BuiltinMethod::ArrayPop),
                     parameter_types: vec![array],
@@ -252,6 +253,7 @@ fn bulk_module(element: Type, operation: &str, action: Option<l::CountAction>) -
             operation: 0,
             semantic_name: operation.into(),
             runtime_symbol: None,
+            can_allocate: true,
             signatures: vec![l::CallSignature {
                 target: l::CallSignatureTarget::Intrinsic(l::Intrinsic {
                     family: l::IntrinsicFamily::Array,
@@ -372,6 +374,17 @@ fn completion_module(result: Type, action: Option<l::CountAction>) -> l::Module 
     }
     let pos = function.pos.clone();
     function.blocks[0].instructions.clear();
+    // compiler.md §342 rule 11b: an async function that can allocate has an
+    // entry poll; the suspension below can allocate.
+    function.blocks[0].instructions.push(l::Instruction {
+        result: None,
+        kind: l::InstructionKind::CollectionPoll,
+        count_action: None,
+        operands: Vec::new(),
+        invalidates: Vec::new(),
+        traps: Vec::new(),
+        pos: function.pos.clone(),
+    });
     function.blocks[0].terminator = l::Terminator::Suspend {
         ownership: Vec::new(),
         kind: l::SuspendKind::AsyncHandle {

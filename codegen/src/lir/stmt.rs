@@ -869,6 +869,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         }
     }
 
+    /// Pushes into the result of a static `map` or `filter`. The result has
+    /// the capacity of the captured bound, and the loop runs at most that
+    /// many steps with one push each, so the push is reserved
+    /// (`compiler.md` §342 rule 10b).
     fn emit_static_array_push(
         &mut self,
         array: l::Operand,
@@ -878,7 +882,7 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         let traps = self.read_lifetime(&self.operand_type(&array, pos)?, pos);
         self.emit(
             l::InstructionKind::Call(l::CallTarget {
-                kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush),
+                kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPushReserved),
                 parameter_types: Vec::new(),
                 return_type: Some(l::ValueType::Data(Type::I32)),
             }),

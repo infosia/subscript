@@ -1,11 +1,60 @@
 //! Root parity controls cost one JIT session and one C build per input.
+//!
+//! The tests state the roots of an explicit collection, so each tier runs
+//! with collection mode 0: no detection collection at an outermost exit
+//! (`compiler.md` §342 rule 14) adds a report. The ship tier sets the mode
+//! in a pre-init host hook.
+
+use std::path::PathBuf;
 
 use subscript_codegen::{
-    interpreter::{interpret, InterpretError},
+    interpreter::{interpret_with_collection, InterpretError},
     lir::lower_module,
-    run_c_aot, run_jit, RunError,
+    run_c_aot_configured, run_jit_configured, NativeLibrary, RunConfig, RunError,
 };
 use subscript_compiler::{check_program, SourceFile};
+use subscript_runtime::context::CollectionMode;
+
+fn dev_without_automatic_collection(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
+    let mut config = RunConfig::default();
+    // A run with a collection mode and accounting stays in this process.
+    config.memory_accounting = true;
+    config.collection = Some((CollectionMode::Off, 0));
+    run_jit_configured(files, config).map(|output| output.stdout)
+}
+
+fn ship_without_automatic_collection(
+    name: &str,
+    files: &[SourceFile],
+) -> Result<Vec<u8>, RunError> {
+    let scratch = std::env::temp_dir().join(format!(
+        "subscript-interpreter-roots-{}-{name}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&scratch).expect("create scratch directory");
+    let hook = scratch.join("collection_off.c");
+    std::fs::write(
+        &hook,
+        "#include \"subscript_runtime.h\"\n\
+         void subscript_test_collection_off(subscript_rt_context* ctx) {\n\
+           (void)subscript_rt_ctx_set_collection(ctx, 0, 0);\n\
+         }\n",
+    )
+    .expect("write hook source");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    // SAFETY: the library defines only the host hook; no script calls it.
+    let library =
+        [
+            unsafe {
+                NativeLibrary::new(vec![repo.join("runtime/include")], vec![hook], Vec::new())
+            },
+        ];
+    let mut config = RunConfig::default().with_native_libraries(&library);
+    config.pre_init_hook = Some("subscript_test_collection_off");
+    let result = run_c_aot_configured(files, config).map(|output| output.stdout);
+    let _ = std::fs::remove_dir_all(&scratch);
+    result
+}
 
 #[derive(Debug, PartialEq)]
 enum Outcome {
@@ -48,9 +97,11 @@ fn measure(name: &str, source: &str) -> [Outcome; 3] {
         }
     }
     let outcomes = [
-        native(run_jit(&files)),
-        native(run_c_aot(&files)),
-        interpreted(interpret(&module)),
+        native(dev_without_automatic_collection(&files)),
+        native(ship_without_automatic_collection(name, &files)),
+        interpreted(
+            interpret_with_collection(&module, CollectionMode::Off, 0).map(|(output, _)| output),
+        ),
     ];
     eprintln!("{name}: JIT, C, interpreter = {outcomes:?}");
     outcomes

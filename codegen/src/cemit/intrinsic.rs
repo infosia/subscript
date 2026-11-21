@@ -14,7 +14,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         result: Option<String>,
     ) -> Result<(), String> {
         match method {
-            l::BuiltinMethod::ArrayPush => {
+            l::BuiltinMethod::ArrayPush | l::BuiltinMethod::ArrayPushReserved => {
                 let l::ValueType::Data(Type::Array(element)) = &operand_types[0] else {
                     return Err(internal("array push receiver is not an array"));
                 };
@@ -25,9 +25,9 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "    SsArrayHeader* {header} = (SsArrayHeader*)({});",
                     operands[0]
                 );
-                if instruction.traps.is_empty() {
-                    // Static callback lowering gives this push a dominating
-                    // capacity bound. All ordinary pushes carry a Call trap.
+                if method == l::BuiltinMethod::ArrayPushReserved {
+                    // The capacity exists before the loop, and the loop
+                    // cannot exceed it (compiler.md §342 rule 10b).
                     let _ = writeln!(
                         out,
                         "    (({element_type}*){header}->data)[{header}->len] = {};",

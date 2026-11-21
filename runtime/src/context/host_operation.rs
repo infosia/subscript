@@ -339,8 +339,13 @@ impl Context {
         }
         source.producer = false;
         let pos_id = meta.create_pos_id;
+        let failed = matches!(completion, Completion::Exception(_));
         meta.completion = Some(completion);
         self.async_ready.extend(std::mem::take(&mut meta.waiters));
+        // compiler.md §342 rule 14b.
+        if failed {
+            self.note_task_failure();
+        }
         // SAFETY: the source transfers its one producer count exactly once.
         unsafe {
             self.async_release(handle as *mut u8, pos_id);

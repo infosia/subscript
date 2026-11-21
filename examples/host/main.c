@@ -135,12 +135,13 @@ int main(void) {
             }
         }
         engineWorldPump(world);
-        /* Invariant 2 and §18.2d: the recommended release pattern. The host
-         * collects once per frame, after the script calls and the pump and
-         * outside the enter/exit bracket, so the script writes no release
-         * code for per-frame garbage. The counts before and after the
-         * collection make invariant 2 visible from the host: nothing is
-         * reclaimed until the host asks, and the live count stays bounded. */
+        /* §18.2d and §342 rule 17: the host collects once per frame, after
+         * the script calls and the pump and outside the enter/exit bracket,
+         * at a point it selects. The script writes no release code for
+         * per-frame garbage. A frame allocates much less than the minimum
+         * headroom, so no automatic collection runs in it; the counts before
+         * and after the host collection show the garbage of one frame, and
+         * the live count stays bounded. */
         uint64_t allocationsBefore = subscript_rt_ctx_live_allocations(ctx);
         subscript_rt_ctx_collect(ctx);
         printf(

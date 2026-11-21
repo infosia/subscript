@@ -86,6 +86,11 @@ pub struct RunConfig<'a> {
     pub freed_handle_diagnostics: bool,
     /// Requests post-run Context accounting from the development tier.
     pub memory_accounting: bool,
+    /// Development-tier collection mode and minimum headroom in bytes, set
+    /// on the Context before module initialization (`compiler.md` §342
+    /// rule 17). `None` keeps the Context default. A run with a mode stays
+    /// in process.
+    pub collection: Option<(subscript_runtime::context::CollectionMode, usize)>,
     /// Shipping-tier hook called after Context creation and before the
     /// module initializer. A host sets Context options here, such as a
     /// file provider (§185 rule 3).

@@ -339,6 +339,9 @@ pub unsafe extern "C" fn subscript_rt_worker_post(
 /// A message is copied into a fresh allocation owned by `parent` and that
 /// allocation is returned. Null means that no message is currently queued,
 /// the output is closed and drained, or the Context trapped while allocating.
+/// The result is valid until the next call into this Context that can run
+/// script code or collect (compiler.md §342 rule 19). A host that keeps the
+/// message copies it first.
 ///
 /// # Safety
 ///
@@ -392,6 +395,9 @@ pub unsafe extern "C" fn subscript_rt_worker_join(
 /// A message is copied into a fresh allocation owned by the worker `ctx`.
 /// Null reports closed-and-drained input or a trap. The blocking path sleeps
 /// on an OS condition variable and never spins.
+/// The result is valid until the next call into this Context that can run
+/// script code or collect (compiler.md §342 rule 19). A host that keeps the
+/// message copies it first.
 ///
 /// # Safety
 ///
@@ -411,6 +417,9 @@ pub unsafe extern "C" fn subscript_rt_worker_inbox_wait(
 ///
 /// A message is copied into a fresh allocation owned by the worker `ctx`.
 /// Null means no queued message, closed-and-drained input, or a trap.
+/// The result is valid until the next call into this Context that can run
+/// script code or collect (compiler.md §342 rule 19). A host that keeps the
+/// message copies it first.
 ///
 /// # Safety
 ///
@@ -691,11 +700,54 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_binding_count_advisory(
     unsafe { &mut *ctx }.set_binding_count_advisory(threshold);
 }
 
+/// Sets the collection mode and the minimum headroom of this Context.
+///
+/// A collection runs only inside a call into this Context, on the thread of
+/// that call. The host selects one of three levels. Automatic is mode 1:
+/// polls and `subscript_rt_ctx_exit_script` collect. Host-timed is mode 0
+/// with `subscript_rt_ctx_collect` at a point the host selects. Manual is
+/// mode 0 with `Context.free` in script code, and no collection.
+///
+/// Mode 0 is off: no allocation starts a collection, and the outermost exit
+/// runs no detection collection. Mode 1 is automatic, and is the mode of a
+/// new Context: a poll or the outermost exit collects when live bytes
+/// exceed the threshold. The
+/// threshold after a collection is live bytes plus the larger of live bytes
+/// and `min_headroom_bytes`. Mode 2 makes each poll and each outermost exit
+/// collect; it is for tests. A `min_headroom_bytes` of 0 keeps the default of
+/// 16 MiB. A worker Context takes the mode and the headroom of its parent at
+/// the spawn.
+///
+/// Returns 0 when the setting was applied. Returns -1, with no change, for
+/// an unknown mode or while a script call is live (`script_depth != 0`).
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_set_collection(
+    ctx: *mut Context,
+    mode: i32,
+    min_headroom_bytes: u64,
+) -> i32 {
+    let Some(mode) = crate::context::CollectionMode::from_raw(mode) else {
+        return -1;
+    };
+    let min_headroom_bytes = usize::try_from(min_headroom_bytes).unwrap_or(usize::MAX);
+    // SAFETY: exclusive Context contract.
+    if unsafe { &mut *ctx }.set_collection(mode, min_headroom_bytes) {
+        0
+    } else {
+        -1
+    }
+}
+
 /// Marks entry into an exported script function.
 ///
-/// A host that uses [`subscript_rt_ctx_clear_trap`] must call this immediately
-/// before each `subscript_init` or `subscript_export_<name>` call and pair it with
-/// [`subscript_rt_ctx_exit_script`] after the call returns.
+/// The host calls this immediately before each `subscript_init` or
+/// `subscript_export_<name>` call and pairs it with
+/// [`subscript_rt_ctx_exit_script`] after the call returns (compiler.md §342
+/// rule 8a). [`subscript_rt_ctx_clear_trap`] also needs the bracket.
 ///
 /// # Safety
 ///
@@ -707,6 +759,13 @@ pub unsafe extern "C" fn subscript_rt_ctx_enter_script(ctx: *mut Context) {
 }
 
 /// Marks return from an exported script function.
+///
+/// When this call takes the script depth to zero, it is the outermost exit
+/// (compiler.md §342 rules 8, 8a, 14, and 15). With no trap on the Context,
+/// it reports a failed task that nobody awaits as an `UncaughtException` trap
+/// at the throw position, on the detection schedule. Then it runs the
+/// collection that an allocation requested. An export does not mark the
+/// outermost exit by itself.
 ///
 /// # Safety
 ///
@@ -840,6 +899,10 @@ pub unsafe extern "C" fn subscript_rt_host_entry_reentry(
 
 /// Number of live Context-owned allocations.
 ///
+/// The count is equal in the tiers only directly after an explicit
+/// collection. Between explicit collections it depends on where automatic
+/// collections ran (compiler.md §342 rule 20).
+///
 /// # Safety
 ///
 /// `ctx` follows the shared Context contract.
@@ -852,7 +915,9 @@ pub unsafe extern "C" fn subscript_rt_ctx_live_allocations(ctx: *const Context) 
 /// Payload capacity in live Context-owned allocations.
 ///
 /// Development reports exact requested sizes; ship reports size-class
-/// capacity for arena blocks and exact sizes for large allocations.
+/// capacity for arena blocks and exact sizes for large allocations. Between
+/// explicit collections the figure also depends on where automatic
+/// collections ran (compiler.md §342 rule 20).
 ///
 /// # Safety
 ///
@@ -874,10 +939,13 @@ pub unsafe extern "C" fn subscript_rt_ctx_reserved_bytes(ctx: *const Context) ->
     unsafe { &*ctx }.reserved_bytes() as u64
 }
 
-/// The host's explicit collection (invariant 2).
+/// The host's explicit collection: it collects at a point that the host
+/// selects, in each collection mode (compiler.md §342 rules 13 and 17).
 ///
 /// This is the same collector that `Context.collect()` reaches from
-/// script, so the two callers share one mark-sweep. The script
+/// script and that an automatic collection runs, so the callers share one
+/// mark-sweep. If it releases the last holder of a failed task that nobody
+/// awaits, it traps (rule 13). The script
 /// intrinsic keeps its own symbol, `subscript_rt_collect`, which the
 /// generated host header does not declare.
 ///

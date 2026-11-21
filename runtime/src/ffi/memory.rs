@@ -39,6 +39,20 @@ pub unsafe extern "C" fn subscript_rt_collect_at(ctx: *mut Context, pos_id: u32)
     unsafe { &mut *ctx }.collect_at(pos_id);
 }
 
+/// The cold path of a collection poll (`compiler.md` §342 rule 7): one
+/// automatic collection when the pending flag is set and the Context has no
+/// trap. A failed unobserved task that it releases is recorded, not trapped
+/// (`compiler.md` §342 rule 12).
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_collect_poll(ctx: *mut Context) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.collect_poll();
+}
+
 /// Allocates `size` payload bytes tagged `class_id`; null on trap.
 ///
 /// Fresh storage and classes that can hold handles are zeroed. A

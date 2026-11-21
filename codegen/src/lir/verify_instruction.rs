@@ -267,6 +267,15 @@ pub(super) fn verify_instruction_contract(
                 bad("await raise signature is invalid", errors);
             }
         }
+        // compiler.md §342 rule 9: no operand, no result, no trap site.
+        l::InstructionKind::CollectionPoll => {
+            if !instruction.operands.is_empty()
+                || instruction.result.is_some()
+                || !instruction.traps.is_empty()
+            {
+                bad("collection poll signature is invalid", errors);
+            }
+        }
         l::InstructionKind::CatchEntry => {
             let valid = instruction.operands.is_empty()
                 && matches!(

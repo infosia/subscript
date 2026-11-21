@@ -1097,6 +1097,10 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 self.call_runtime(self.ml.rt.exception_resume, &[self.ctx], true)?;
                 None
             }
+            l::InstructionKind::CollectionPoll => {
+                self.collection_poll()?;
+                None
+            }
             // compiler.md §116.2 rule 3: the resume made the exception of an
             // exception completion pending; the raise site checks it.
             l::InstructionKind::AwaitRaise => {

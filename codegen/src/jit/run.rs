@@ -58,12 +58,14 @@ pub fn run_jit_configured(
         )));
     }
     // §190.1 rules 1 and 2: only a single-threaded caller compiles here and
-    // forks. An accounting run stays in process (rule 7). On Apple targets
+    // forks. An accounting run stays in process (rule 7). A run with a
+    // collection mode also stays in process: the runner request carries no
+    // mode. On Apple targets
     // a run with a native library or a file provider reads a count above 1
     // again for up to 2 ms; on Linux every run reads the count once (rule 3).
     let settle = !config.native_libraries.is_empty() || config.file_provider.is_some();
     #[cfg(unix)]
-    if !config.memory_accounting {
+    if !config.memory_accounting && config.collection.is_none() {
         let threads = super::isolation::thread_count_for_run(settle);
         if threads != Some(1) {
             return super::isolation::run_multithreaded(files, config, threads);
@@ -75,6 +77,7 @@ pub fn run_jit_configured(
         file_provider: config.file_provider,
         fail_alloc_after: config.fail_alloc_after,
         freed_handle_diagnostics: config.freed_handle_diagnostics,
+        collection: config.collection,
     };
     let outcome = if config.memory_accounting {
         execute_entry(&module, &lowered, options, None).map(|run| RunOutput {

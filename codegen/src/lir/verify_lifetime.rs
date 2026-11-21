@@ -199,7 +199,8 @@ fn read_operands(
         | GeneratorIsClosing
         | ExceptionPark
         | ExceptionResume
-        | AwaitRaise => vec![],
+        | AwaitRaise
+        | CollectionPoll => vec![],
     };
     Ok((reads, vec![]))
 }
@@ -236,7 +237,9 @@ fn call_reads(
             | l::BuiltinMethod::StringSlice
             | l::BuiltinMethod::GeneratorNext,
         ) => vec![0],
-        l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush) => vec![0],
+        l::CallTargetKind::BuiltinMethod(
+            l::BuiltinMethod::ArrayPush | l::BuiltinMethod::ArrayPushReserved,
+        ) => vec![0],
         l::CallTargetKind::ClosureDefault { .. } => (0..count).collect(),
         l::CallTargetKind::Foreign(id) => foreign_array_reads(module, *id)?,
         l::CallTargetKind::LambdaSelf(_)

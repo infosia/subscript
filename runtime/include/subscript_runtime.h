@@ -104,8 +104,15 @@ typedef void (*subscript_rt_alloc_visitor)(void* userdata, uint32_t class_id, ui
  * C calling convention shared by the module initializer (`subscript_init`) and every
  * supported host export.
  *
- * A host that may clear traps brackets each call with
- * `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
+ * The host brackets each call with `subscript_rt_ctx_enter_script` and
+ * `subscript_rt_ctx_exit_script` (compiler.md §342 rule 8a). A call does not
+ * mark the outermost exit by itself. The exit that takes the script depth to
+ * zero runs the collection that an allocation requested, and reports a failed
+ * task that nobody awaits as an `UncaughtException` trap at the throw position,
+ * on the detection schedule (rules 8, 14, and 15). Without the bracket, an
+ * export with no loop and no call does not reclaim its memory across calls,
+ * and no outermost exit reports such a failure. The bracket also lets the
+ * host clear a trap.
  *
  * An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
  * drive other zero-argument `void` exports using the symbol
@@ -384,11 +391,79 @@ uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
  */
 int32_t subscript_rt_ctx_callback_release(subscript_rt_context* ctx, void* registration);
 int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
+/**
+ * The host's explicit collection: it collects at a point that the host
+ * selects, in each collection mode (compiler.md §342 rules 13 and 17).
+ *
+ * This is the same collector that `subscript_rt_context.collect()` reaches from
+ * script and that an automatic collection runs, so the callers share one
+ * mark-sweep. If it releases the last holder of a failed task that nobody
+ * awaits, it traps (rule 13). The script
+ * intrinsic keeps its own symbol, `subscript_rt_collect`, which the
+ * generated host header does not declare.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract. The host calls this
+ * between script calls, at script depth 0. A call from inside a
+ * script call, such as a host callback, aliases the subscript_rt_context that
+ * generated code holds.
+ */
 void subscript_rt_ctx_collect(subscript_rt_context* ctx);
+/**
+ * Marks entry into an exported script function.
+ *
+ * The host calls this immediately before each `subscript_init` or
+ * `subscript_export_<name>` call and pairs it with
+ * [`subscript_rt_ctx_exit_script`] after the call returns (compiler.md §342
+ * rule 8a). [`subscript_rt_ctx_clear_trap`] also needs the bracket.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
 void subscript_rt_ctx_enter_script(subscript_rt_context* ctx);
+/**
+ * Marks return from an exported script function.
+ *
+ * When this call takes the script depth to zero, it is the outermost exit
+ * (compiler.md §342 rules 8, 8a, 14, and 15). With no trap on the subscript_rt_context,
+ * it reports a failed task that nobody awaits as an `UncaughtException` trap
+ * at the throw position, on the detection schedule. Then it runs the
+ * collection that an allocation requested. An export does not mark the
+ * outermost exit by itself.
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract and this call pairs with
+ * a preceding [`subscript_rt_ctx_enter_script`].
+ */
 void subscript_rt_ctx_exit_script(subscript_rt_context* ctx);
 void subscript_rt_ctx_fail_alloc_after(subscript_rt_context* ctx, uint64_t n);
+/**
+ * Number of live subscript_rt_context-owned allocations.
+ *
+ * The count is equal in the tiers only directly after an explicit
+ * collection. Between explicit collections it depends on where automatic
+ * collections ran (compiler.md §342 rule 20).
+ *
+ * # Safety
+ *
+ * `ctx` follows the shared subscript_rt_context contract.
+ */
 uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context* ctx);
+/**
+ * Payload capacity in live subscript_rt_context-owned allocations.
+ *
+ * Development reports exact requested sizes; ship reports size-class
+ * capacity for arena blocks and exact sizes for large allocations. Between
+ * explicit collections the figure also depends on where automatic
+ * collections ran (compiler.md §342 rule 20).
+ *
+ * # Safety
+ *
+ * `ctx` follows the shared subscript_rt_context contract.
+ */
 uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context* ctx);
 subscript_rt_context* subscript_rt_ctx_new(void);
 void subscript_rt_ctx_release(subscript_rt_context* ctx);
@@ -412,6 +487,33 @@ void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
  * `ctx` follows the exclusive subscript_rt_context contract.
  */
 void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint64_t threshold);
+/**
+ * Sets the collection mode and the minimum headroom of this subscript_rt_context.
+ *
+ * A collection runs only inside a call into this subscript_rt_context, on the thread of
+ * that call. The host selects one of three levels. Automatic is mode 1:
+ * polls and `subscript_rt_ctx_exit_script` collect. Host-timed is mode 0
+ * with `subscript_rt_ctx_collect` at a point the host selects. Manual is
+ * mode 0 with `subscript_rt_context.free` in script code, and no collection.
+ *
+ * Mode 0 is off: no allocation starts a collection, and the outermost exit
+ * runs no detection collection. Mode 1 is automatic, and is the mode of a
+ * new subscript_rt_context: a poll or the outermost exit collects when live bytes
+ * exceed the threshold. The
+ * threshold after a collection is live bytes plus the larger of live bytes
+ * and `min_headroom_bytes`. Mode 2 makes each poll and each outermost exit
+ * collect; it is for tests. A `min_headroom_bytes` of 0 keeps the default of
+ * 16 MiB. A worker subscript_rt_context takes the mode and the headroom of its parent at
+ * the spawn.
+ *
+ * Returns 0 when the setting was applied. Returns -1, with no change, for
+ * an unknown mode or while a script call is live (`script_depth != 0`).
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
+int32_t subscript_rt_ctx_set_collection(subscript_rt_context* ctx, int32_t mode, uint64_t min_headroom_bytes);
 /**
  * Installs the observation-only callback invoked for optional runtime
  * diagnostics advisories. Passing a null `observer` clears it.
@@ -566,6 +668,9 @@ void subscript_rt_worker_close(subscript_rt_context* parent, subscript_rt_worker
  *
  * A message is copied into a fresh allocation owned by the worker `ctx`.
  * Null means no queued message, closed-and-drained input, or a trap.
+ * The result is valid until the next call into this subscript_rt_context that can run
+ * script code or collect (compiler.md §342 rule 19). A host that keeps the
+ * message copies it first.
  *
  * # Safety
  *
@@ -579,6 +684,9 @@ uint8_t* subscript_rt_worker_inbox_poll(subscript_rt_context* ctx, subscript_rt_
  * A message is copied into a fresh allocation owned by the worker `ctx`.
  * Null reports closed-and-drained input or a trap. The blocking path sleeps
  * on an OS condition variable and never spins.
+ * The result is valid until the next call into this subscript_rt_context that can run
+ * script code or collect (compiler.md §342 rule 19). A host that keeps the
+ * message copies it first.
  *
  * # Safety
  *
@@ -617,6 +725,9 @@ int32_t subscript_rt_worker_outbox_post(subscript_rt_context* ctx, subscript_rt_
  * A message is copied into a fresh allocation owned by `parent` and that
  * allocation is returned. Null means that no message is currently queued,
  * the output is closed and drained, or the subscript_rt_context trapped while allocating.
+ * The result is valid until the next call into this subscript_rt_context that can run
+ * script code or collect (compiler.md §342 rule 19). A host that keeps the
+ * message copies it first.
  *
  * # Safety
  *

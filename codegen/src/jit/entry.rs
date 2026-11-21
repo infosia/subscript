@@ -66,6 +66,8 @@ pub(super) struct EntryOptions {
     pub(super) fail_alloc_after: Option<u64>,
     /// Enables retained freed-handle diagnostics.
     pub(super) freed_handle_diagnostics: bool,
+    /// Collection mode and minimum headroom (`compiler.md` §342 rule 17).
+    pub(super) collection: Option<(subscript_runtime::context::CollectionMode, usize)>,
 }
 
 /// Runs the module initializer and then the exported `main` on a fresh
@@ -86,6 +88,7 @@ pub(super) fn execute_entry(
         file_provider,
         fail_alloc_after,
         freed_handle_diagnostics,
+        collection,
     } = options;
     let init_ptr = module.get_finalized_function(lowered.init);
     let main = match lowered.main_id() {
@@ -126,6 +129,14 @@ pub(super) fn execute_entry(
     );
     if let Some(n) = fail_alloc_after {
         ctx.fail_alloc_after(n);
+    }
+    if let Some((mode, min_headroom_bytes)) = collection {
+        // A fresh Context has script depth zero, so the change applies.
+        if !ctx.set_collection(mode, min_headroom_bytes) {
+            return Err(RunError::Internal(internal(
+                "the Context refused the collection mode",
+            )));
+        }
     }
     let mut elapsed = Duration::ZERO;
     let mut cpu = None;
@@ -373,6 +384,9 @@ pub(super) fn memory_accounting(ctx: &Context) -> JitMemoryAccounting {
         JitMemoryAccounting {
             live_bytes: ffi::subscript_rt_ctx_live_bytes(p),
             reserved_bytes: ffi::subscript_rt_ctx_reserved_bytes(p),
+            automatic_collections: ctx.automatic_collection_count(),
+            detection_collections: ctx.detection_collection_count(),
+            outermost_exits: ctx.outermost_exit_count(),
         }
     }
 }

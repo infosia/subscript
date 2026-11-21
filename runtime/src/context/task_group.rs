@@ -195,8 +195,13 @@ impl Context {
             if meta.completion.is_some() {
                 return;
             }
+            let failed = matches!(completion, Completion::Exception(_));
             meta.completion = Some(completion);
             self.async_ready.extend(std::mem::take(&mut meta.waiters));
+            // compiler.md §342 rule 14b.
+            if failed {
+                self.note_task_failure();
+            }
         }
         // A dropped, unfinished join remains live until its reactions finish.
         if unsafe { self.async_count(handle) } == 0 {

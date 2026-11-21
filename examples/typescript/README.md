@@ -11,7 +11,7 @@ compilers of subscript. Every script type-checks under `tsc --strict`.
 | [`numbers.ts`](numbers.ts) | Sized types in place of `number`, integer division, `as` conversions, wrap at the largest value |
 | [`absence.ts`](absence.ts) | `null` only, `Pet \| null`, a test before a member read, `??` and `?.` |
 | [`classes.ts`](classes.ts) | Classes compare by name, a reference class, a `@ValueType` class that copies |
-| [`memory.ts`](memory.ts) | No collector runs by itself, no release code, `Context.free`, `using` |
+| [`memory.ts`](memory.ts) | No release code, collection pauses that the host controls, `Context.free`, `using` |
 | [`strings.ts`](strings.ts) | UTF-8 strings: `length` counts bytes, `for...of` counts characters |
 | [`arrays.ts`](arrays.ts) | `push`, `map`, `filter`, `reduce` with typed arrows, an arrow that cannot leave its function |
 | [`unions.ts`](unions.ts) | A closed union of string literals in place of a string enum, a `switch` over it |

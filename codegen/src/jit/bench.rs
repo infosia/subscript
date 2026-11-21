@@ -147,6 +147,7 @@ pub fn jit_bench_configured(
         file_provider: config.file_provider,
         fail_alloc_after: config.fail_alloc_after,
         freed_handle_diagnostics: config.freed_handle_diagnostics,
+        collection: config.collection,
     };
 
     let mut samples = Vec::with_capacity(timed);

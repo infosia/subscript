@@ -14,10 +14,12 @@ mod foreign_provenance;
 use foreign_provenance::convert_provenance;
 
 mod address_taken;
+pub mod allocation;
 mod array_ownership;
 mod async_defaults;
 mod builder;
 mod call;
+mod collection_poll;
 mod completion;
 mod construct;
 mod defaults;
@@ -37,6 +39,7 @@ mod stmt;
 mod unroll;
 mod using;
 mod verify;
+mod verify_collection_poll;
 mod verify_counted_operations;
 mod verify_dominance;
 mod verify_generator_counts;
@@ -143,6 +146,7 @@ pub fn lower_module_for_reload(
         thread_suspension_live_ins(function)?;
         classify_local_storage(function);
     }
+    collection_poll::place_collection_polls(&mut lowered);
     if let Err(errors) = verify_module(&lowered) {
         return Err(LowerError {
             pos: lowered.functions.first().map_or_else(
@@ -235,6 +239,7 @@ pub fn verify_module(module: &l::Module) -> Result<(), Vec<VerifyError>> {
         }
     }
     verify_lifetime::verify(module, &mut errors);
+    verify_collection_poll::verify(module, &mut errors);
     let operations = array_ownership::RecordedOperations::new(&module.intrinsic_operations);
     for function in &module.functions {
         verify_function(module, &operations, function, &mut errors);

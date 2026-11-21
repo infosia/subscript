@@ -1137,6 +1137,7 @@ fn instruction_arity(
         | K::ExceptionPark
         | K::ExceptionResume
         | K::AwaitRaise
+        | K::CollectionPoll
         | K::Zero => Arity::Exact(0),
         K::Throw | K::ExceptionRestore => Arity::Exact(3),
         K::FinalizerEnter(_) => Arity::Variable,

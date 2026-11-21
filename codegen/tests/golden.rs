@@ -20,6 +20,8 @@
 #[path = "support/main_thread.rs"]
 mod main_thread;
 
+#[path = "support/accept_runs.rs"]
+mod accept_runs;
 mod corpus;
 #[path = "support/native_fixture.rs"]
 mod native_fixture;
@@ -36,31 +38,9 @@ use subscript_codegen::{
 };
 use subscript_codegen::{EntryArg, ReloadSession};
 
-const HOST_OWNED_STATE_ID: &str = "a128-host-owned-state";
-const HOST_OWNED_STATE_PRE_ENTRY: &str = "subHostOwnedStatePreEntry";
-const HOST_OWNED_STATE_POST_RUN: &str = "subHostOwnedStatePostRun";
-const HANDLE_ENTRY_PARAM_ID: &str = "a137-handle-entry-param";
-const HANDLE_ENTRY_PARAM_PRE_ENTRY: &str = "subHostOwnedStateAdoptDrive";
-const WIRE_ENTRY_PARAM_ID: &str = "a140-wire-entry-param";
-const WIRE_ENTRY_PARAM_PRE_ENTRY: &str = "subWireEntryDrive";
-
-fn host_hooks(id: &str) -> (Option<&'static str>, Option<&'static str>) {
-    if id == HOST_OWNED_STATE_ID {
-        (
-            Some(HOST_OWNED_STATE_PRE_ENTRY),
-            Some(HOST_OWNED_STATE_POST_RUN),
-        )
-    } else if id == HANDLE_ENTRY_PARAM_ID {
-        (
-            Some(HANDLE_ENTRY_PARAM_PRE_ENTRY),
-            Some(HOST_OWNED_STATE_POST_RUN),
-        )
-    } else if id == WIRE_ENTRY_PARAM_ID {
-        (Some(WIRE_ENTRY_PARAM_PRE_ENTRY), None)
-    } else {
-        (None, None)
-    }
-}
+use accept_runs::{
+    host_hooks, native_libraries, HANDLE_ENTRY_PARAM_ID, HOST_OWNED_STATE_ID, WIRE_ENTRY_PARAM_ID,
+};
 
 fn run_ship_corpus_entry(
     id: &str,
@@ -132,18 +112,6 @@ fn run_dev_corpus_entry(
         return Ok(session.take_output());
     }
     run_jit_with_native_libraries(sources, libraries)
-}
-
-fn native_libraries(sources: &[subscript_compiler::SourceFile]) -> Option<Vec<NativeLibrary>> {
-    if sources.iter().any(|source| {
-        corpus::references_interop(&source.source)
-            || source.source.contains("SubWireMode")
-            || source.source.contains("SubBindTone")
-    }) {
-        Some(vec![native_fixture::fixture()?.library()])
-    } else {
-        Some(Vec::new())
-    }
 }
 
 /// One golden entry of the sweep, with its position in corpus order.

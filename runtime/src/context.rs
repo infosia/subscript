@@ -33,7 +33,8 @@
 //!
 //! # Collection
 //!
-//! `Context.collect()` never runs unbidden (design invariant 2). Roots are the
+//! `Context.collect()` is the explicit collection. In the automatic mode a
+//! poll or the outermost exit also collects (`compiler.md` §342). Roots are the
 //! addresses generated code registers: module-global slots
 //! (`root_add`) and per-call shadow frames of managed locals
 //! (`shadow_push`/`shadow_pop`). Marking is conservative for each class
@@ -116,8 +117,15 @@ pub type AllocationVisitor =
 /// C calling convention shared by the module initializer (`subscript_init`) and every
 /// supported host export.
 ///
-/// A host that may clear traps brackets each call with
-/// `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
+/// The host brackets each call with `subscript_rt_ctx_enter_script` and
+/// `subscript_rt_ctx_exit_script` (compiler.md §342 rule 8a). A call does not
+/// mark the outermost exit by itself. The exit that takes the script depth to
+/// zero runs the collection that an allocation requested, and reports a failed
+/// task that nobody awaits as an `UncaughtException` trap at the throw position,
+/// on the detection schedule (rules 8, 14, and 15). Without the bracket, an
+/// export with no loop and no call does not reclaim its memory across calls,
+/// and no outermost exit reports such a failure. The bracket also lets the
+/// host clear a trap.
 ///
 /// An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
 /// drive other zero-argument `void` exports using the symbol
@@ -623,6 +631,7 @@ pub struct CallbackBinding {
 /// | 8 | function table (`*const *const u8`) | script calls, hot-reload mode |
 /// | 16 | module-global block (`*mut u8`) | global access, ship C and hot reload |
 /// | 24 | host-entry-active flag (`u32`) | ship C host entry wrappers (§223) |
+/// | 28 | collection pending flag (`u8`) | collection polls (§342 rule 9) |
 ///
 /// Everything past the prefix is opaque to generated code. The function
 /// table and reload epoch are read only by code lowered in reload mode;
@@ -635,6 +644,9 @@ pub struct Context {
     globals: *mut u8,
     // compiler.md §223: non-zero while a host entry of this Context runs.
     host_entry_active: u32,
+    // compiler.md §342 rule 5: the pending flag. Generated code loads it at
+    // `Context::collection_pending_offset()`.
+    pub(crate) collection_pending: u8,
     // The ship C tier installs one layout-fixed block here. Reload mode
     // instead points `globals` at storage owned by its ReloadSession and
     // leaves this empty.
@@ -671,6 +683,9 @@ pub struct Context {
     // Every site that changes the live set moves it, so a per-frame host
     // read costs the same at every live count.
     live_bytes_counter: usize,
+    // compiler.md §342: the mode, the threshold, the recorded failures, and
+    // the detection schedule.
+    collection: collection::CollectionState,
     // Exact-size live allocations. The dev tier uses this path; a ship
     // Context switches to it when freed-handle diagnostics are enabled.
     // Collection marks and sweeps only this map.
@@ -853,6 +868,18 @@ mod lifecycle;
 
 #[path = "context/memory.rs"]
 mod memory;
+
+#[path = "context/collection.rs"]
+mod collection;
+pub(crate) use collection::CollectionSettings;
+pub use collection::{
+    CollectionMode, ExitService, DEFAULT_COLLECTION_MODE, DEFAULT_MIN_HEADROOM_BYTES,
+    MAX_DETECTION_INTERVAL,
+};
+
+// compiler.md §342 rule 9: generated code loads the pending flag at a
+// fixed offset of the prefix.
+const _: () = assert!(Context::collection_pending_offset() == 28);
 
 #[cfg(test)]
 #[path = "context/async_all_tests.rs"]

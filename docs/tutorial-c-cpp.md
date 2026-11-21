@@ -3,8 +3,8 @@
 subscript is a statically-typed scripting language for embedding in a
 native application. Its syntax is a subset of TypeScript; its execution
 and memory model are C-compatible: every language-visible struct has
-the layout the platform C ABI gives the equivalent C struct, no garbage
-collector runs behind your code, and the host owns the main loop.
+the layout the platform C ABI gives the equivalent C struct, the host
+controls each collection pause, and the host owns the main loop.
 Scripts are trusted first-party logic. A host that runs content it did
 not write adds an isolation boundary of its own.
 
@@ -202,8 +202,10 @@ Frames that park during the drain wait for the next step.
 `subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
 (§94.2). A local, an array, a field, or a global can hold an async handle.
 Copies retain the frame; releases decrement its reference count and free
-it at zero (§70.3). No background scheduler or implicit collection runs (see the
+it at zero (§70.3). No background scheduler runs (see the
 [TypeScript tutorial](tutorial-typescript.md#asyncawait-without-a-scheduler)).
+A collection runs only on the thread of a host call, inside that call
+(see the memory model below).
 For a dispatch budget, use `subscript_rt_ctx_async_step_budget(ctx, max_dispatches)` (§168).
 The report has `dispatched`, `pending`, `unfinished`, and `budget_exhausted` fields, each a `uint64_t`.
 A zero budget runs no script and promotes no parked frame.
@@ -289,25 +291,39 @@ error[S100]: imported module `../math` is not among the program's files
   |                        ^
 ```
 
-## The memory model, in C terms
+## The memory model: the host controls each collection pause
 
-The recommended pattern puts the release work on the host, not on the
-script author:
+A collection of a Context runs only inside a call into that Context, on
+the thread of that call. No collector thread exists. No collection
+moves an object, so an address of script memory stays the same while
+the object lives.
 
-1. The script writes no release code by default. A handle and a
-   generator release themselves when their last holder releases them
-   (§70, §176). Every other value stays until a collection.
-2. The host calls `subscript_rt_ctx_collect(ctx)` at a step boundary,
-   for a game once per frame. The precondition is script depth 0: call
-   it between script calls, outside the `enter`/`exit` bracket, and
-   never from host code that a script call reaches. Call it on the
-   thread of the Context (§18.2d; Step 9). The cost is a
-   mark-and-sweep, and it grows with the live data, not with the
-   allocations since the last collection (§22.2, §22.4 criterion 4).
-3. `Context.free`, `using`, and a script `Context.collect()` are
-   optimizations. Use them where a measured peak inside one call
-   matters, or where a resource needs its release at a known point.
-4. A value that crosses to the host follows your protocol. A host
+The host selects one of three levels. Each level is a host
+configuration ([The collection mode](#the-collection-mode) gives the C
+for each one):
+
+| Level | Who decides | What happens | What it is for |
+|---|---|---|---|
+| Automatic (the default) | The Context | Script code has no release code. The Context reclaims unreachable memory at polls that the compiler places, and at the outermost exit of a host call. | Most hosts |
+| Host-timed | The host | Mode 0. The host calls `subscript_rt_ctx_collect(ctx)` at a point it selects, for example between two frames. No automatic collection runs. | A frame loop with a fixed collection point |
+| Manual | The script | Mode 0, and the host does not collect. Script code releases an object at once with `Context.free(value)`. | An audio callback, a control step, or any place that allows no pause |
+
+`Context.free` and a script `Context.collect()` are valid at each level.
+
+These facts hold at each level:
+
+1. No object moves, so a pointer that C holds keeps its address while
+   the object lives.
+2. A collection runs only inside a call into the Context, for example
+   a script call, `subscript_rt_ctx_exit_script`, or
+   `subscript_rt_ctx_collect`.
+3. An automatic collection does not change what a program prints or
+   where it traps. The three execution tiers agree byte for byte.
+4. A program that never collects is correct, merely larger. A handle
+   and a generator release themselves when their last holder releases
+   them (§70, §176).
+5. Cleanup of an external resource uses `using`, never reachability.
+6. A value that crosses to the host follows your protocol. A host
    object behind a handle stays valid as long as you keep it (§142).
    Registered callback userdata stays a collection root while its
    registration lives (§14.4b, §111); see "Round-tripping script
@@ -317,13 +333,12 @@ The parts of the model:
 
 - A **Context** is an owning arena your host creates and releases.
   Every `new` allocates in it.
-- `Context.free(x)` releases one allocation now, like `free`. It is an
-  optimization: a collection also reclaims an allocation that nothing
-  reaches.
-- `Context.collect()` is a mark-and-sweep over what script references
-  can still reach — but it runs **only when called**. Nothing runs
-  behind your back; a program that never collects is correct and simply
-  retains more memory until the Context is released.
+- `Context.free(x)` releases one allocation at once, like `free`. A
+  collection also reclaims an allocation that nothing reaches.
+- An automatic collection, `subscript_rt_ctx_collect`, and a script
+  `Context.collect()` run the same mark-and-sweep over what script
+  references can still reach. `Context.collect()` is the explicit
+  collection: it runs where the script calls it.
 - Releasing the Context frees everything it owns at once
   (`examples/context-per-scene/` uses one Context per scene for this).
 - `using x = new T(...)` calls the hook at scope exit, in reverse
@@ -380,10 +395,114 @@ report the Context's memory. `subscript_rt_ctx_visit_live_allocations`
 walks every live allocation with its class and allocation-site ids
 (`specs/blocks/compiler.md` §18.2d, §21.2). Between script calls,
 `subscript_rt_ctx_collect` runs the same collection that
-`Context.collect()` reaches. The count is comparable across the two
-tiers; the byte figures are not, because the tiers have different
-allocators. "Step 6" below resolves those ids to names and source
+`Context.collect()` reaches. The count is equal in the two tiers only
+directly after an explicit collection. Between explicit collections it
+depends on where the automatic collections ran (§342 rule 20). The
+byte figures are not equal in the tiers, because the tiers have
+different allocators. "Step 6" below resolves those ids to names and source
 positions.
+
+### The collection mode
+
+`subscript_rt_ctx_set_collection(ctx, mode, min_headroom_bytes)` sets
+the mode and the minimum headroom (§342 rule 17):
+
+| Mode | Effect |
+|---|---|
+| 0 | Off. No allocation requests a collection, and the outermost exit runs no failed-task check. Context memory returns only at `subscript_rt_ctx_collect`, a script `Context.collect()`, `Context.free`, or the Context release. An async handle or a generator frame is freed when its last holder releases it (§70, §176). |
+| 1 | Automatic, the default. An allocation that takes live bytes above the threshold requests a collection. The next poll, or the outermost exit, runs it. |
+| 2 | Each poll and each outermost exit collects. Use it in tests only. |
+
+After each collection the threshold is the live bytes plus the larger
+of the live bytes and the minimum headroom. The default minimum
+headroom is 16 MiB. A `min_headroom_bytes` of 0 keeps the default. The
+call runs no collection, so the threshold keeps the live bytes after the
+last collection as its base. In mode 1 the call requests a collection if
+live bytes are above the new threshold. Thus a host that switches the
+mode at each frame gets the same collections as a host that keeps mode
+1. The call returns 0. It returns -1 for an unknown mode, or while a script
+call is on the stack. A worker Context takes the mode and the headroom
+of its parent when it starts.
+
+**Automatic** is the default, and there is nothing to configure.
+Bracket each export call, so that the outermost exit collects
+(§342 rule 8a; [The outermost exit](#the-outermost-exit)):
+
+```c
+subscript_rt_ctx_enter_script(ctx);
+subscript_export_update(ctx);
+subscript_rt_ctx_exit_script(ctx);            /* a requested collection runs here */
+```
+
+**Host-timed** keeps mode 0 and collects at a point that the host
+selects:
+
+```c
+subscript_rt_ctx_set_collection(ctx, 0, 0);   /* once, after subscript_rt_ctx_new */
+/* each frame: */
+subscript_rt_ctx_enter_script(ctx);
+subscript_export_update(ctx);
+subscript_rt_ctx_exit_script(ctx);
+subscript_rt_ctx_collect(ctx);                /* at the frame boundary */
+```
+
+`subscript_rt_ctx_collect(ctx)` requires script depth 0. Call it
+between script calls, outside the `enter`/`exit` bracket, and never
+from host code that a script call reaches. Call it on the thread of the
+Context (§18.2d; Step 9). The cost is a mark-and-sweep. It grows with
+the live data, not with the allocations since the last collection
+(§22.2, §22.4 criterion 4).
+
+**Manual** sets mode 0 where no pause is allowed. The script releases
+with `Context.free`. This host uses mode 0 around one time-critical
+callback, and the automatic level at other times:
+
+```c
+subscript_rt_ctx_set_collection(ctx, 0, 0);   /* no collection in the callback */
+subscript_rt_ctx_enter_script(ctx);
+subscript_export_processAudio(ctx);
+subscript_rt_ctx_exit_script(ctx);
+subscript_rt_ctx_set_collection(ctx, 1, 0);   /* automatic again */
+```
+
+### The outermost exit
+
+Bracket each export call with `subscript_rt_ctx_enter_script` and
+`subscript_rt_ctx_exit_script` (§342 rule 8a). An export does not mark
+the exit by itself. Two operations run at `subscript_rt_ctx_exit_script`
+only, when it takes the script depth to 0:
+
+- The collection that an allocation requested runs there. An export
+  with no loop and no call has no poll, so without the bracket its
+  memory is not reclaimed across calls. Measured in the ship tier with
+  mode 1: 10,000 calls of an entry that allocates in straight-line code
+  left 83,530,016 live bytes with no bracket, and 16 with it.
+- The report of a failed task that nobody awaits. If a collection
+  releases the last holder of a task that failed and that no `await`
+  observed, the Context records the failure. At an outermost exit, the
+  Context then traps with `UncaughtException` at the throw position.
+  The Context reports the task with the lowest id, and drops the other
+  records (§342 rules 12 to 15).
+  While a failed task stays held and unobserved, the check runs at
+  outermost exits 1, 3, 7, 15, and so on, and then once each 1,024
+  exits.
+
+### A pointer that the host borrows
+
+A pointer that the host receives as a borrow ends when the foreign
+call returns. Copy what you keep (§28 rule 2, §323 rule 1, §342 rule
+19). This applies to:
+
+- the data pointer of an array that the script passes;
+- a string view that the script passes;
+- a struct that the script passes as script memory;
+- a pointer that the script passes to a function that completes later
+  with a `subscript_rt_completion`. The pointer ends when that function
+  returns, not when you complete the operation.
+
+A collection runs only inside a script call or a collection call, so
+the pointer stays valid while the foreign function runs. After it
+returns, the next script code can collect or change the object.
 
 ## Embedding subscript in your host, step by step
 
@@ -765,9 +884,12 @@ That output pins three facts:
   again. **It clears reporting state and rolls nothing back**: a run
   that trapped mid-`update` leaves script data exactly as it was at the
   fault. It refuses (returns 0) while a script frame is live, which is
-  why the host brackets each entry with
+  one reason why the host brackets each entry with
   `subscript_rt_ctx_enter_script` / `_exit_script`
-  (`specs/blocks/compiler.md` §18.1a, §18.2b).
+  (`specs/blocks/compiler.md` §18.1a, §18.2b). The other reason is the
+  outermost exit: the requested collection and the report of a failed
+  task that nobody awaits run there
+  ([The outermost exit](#the-outermost-exit)).
 - **If the host never clears, the next entry does nothing.** The trap
   flag stays set, and generated code returns immediately after every
   fault-capable call. The host keeps running while the script is
@@ -980,7 +1102,8 @@ To destroy an object earlier, select one protocol and own it:
 
 [`specs/blocks/examples.md`](../specs/blocks/examples.md) §5b gives
 where each pattern fits. A `string` that the script passes to you is a
-view, valid only during the call; copy it to keep it (§28). The
+view, valid only during the call; copy it to keep it (§28, and
+[the borrow rule](#a-pointer-that-the-host-borrows)). The
 [TypeScript tutorial](tutorial-typescript.md#values-that-come-from-the-host)
 gives the script's view of each value that comes from the host.
 
@@ -1301,9 +1424,8 @@ nothing. Do those first. Five rules follow from that.
   a second release of an old pointer.
 - **The release removes a root and nothing else.** It does not collect
   and it does not free the userdata. A script reference keeps the
-  object. If nothing reaches it, the next `Context.collect()` reclaims
-  it, so a host that paces collection sees the memory of completed
-  requests return.
+  object. If nothing reaches it, the next collection reclaims it, so
+  the memory of completed requests returns.
 
 Stop every notification source and release every registration before
 you destroy the Context. The destruction frees the records and runs no
@@ -1349,7 +1471,10 @@ Five facts describe the protocol:
 
 - **`enter`/`exit` bracket each entry.** They maintain the runtime's
   script-depth, so trap clearing and the observers behave correctly
-  (`specs/blocks/compiler.md` §18.1a).
+  (`specs/blocks/compiler.md` §18.1a). The exit that takes the depth to
+  0 is the outermost exit, where the requested collection and the
+  failed-task report run (§342 rule 8a;
+  [The outermost exit](#the-outermost-exit)).
 - **The return channel is the trap state, nothing else.** Entries
   return `void`; after each call the host asks
   `subscript_rt_ctx_trap_kind` (0 = no fault).
@@ -1386,11 +1511,11 @@ So a frame loop is: stage or gather the frame's inputs →
 `hostCallScript(ctx, subscript_export_update)` (or a direct call with
 parameters) → read outputs and drain `print` text — once per frame,
 with `init` before the first frame and `shutdown` after the last,
-exactly as `main.c` does. The recommended loop also calls
+exactly as `main.c` does. The capstone also calls
 `subscript_rt_ctx_collect(ctx)` once per frame, after the entry and the
-pump return, outside the bracket (see the memory model above). The
-capstone calls it, and the script writes no release code for its
-per-frame garbage. The capstone's measured run:
+pump return, outside the bracket (see the memory model above). This
+collects at a frame boundary that the host selects. The script writes
+no release code for its per-frame garbage. The capstone's measured run:
 
 ```text
 host:init index=1
@@ -1407,10 +1532,12 @@ host:frame=1 allocations-before=12 allocations-after=5
 script:shutdown
 ```
 
-The `allocations` lines are invariant 2 seen from outside. Each frame
-leaves its garbage live until the host collects, and the collection
-returns the count to 5. Without the collection, the same run counts
-16, 23, and 30 live allocations after frames 0, 1, and 2.
+The `allocations` lines show the collection from outside. A frame
+allocates much less than the 16 MiB minimum headroom, so no automatic
+collection runs in it. Each frame leaves its garbage live until the
+host collects, and the collection returns the count to 5. Without the
+host collection, the same run counts 16, 23, and 30 live allocations
+after frames 0, 1, and 2, until live bytes pass the threshold.
 
 ### Step 9 — workers, and which thread drives which Context
 
@@ -1478,6 +1605,9 @@ What the host must know:
 - **The host never touches a worker Context.** The runtime creates it
   on the worker thread, runs the module initializer there, runs the
   entry, and releases it there. Thread affinity holds by construction.
+- **A worker Context takes the collection mode of its parent.** At the
+  spawn it gets the mode and the minimum headroom of the parent
+  Context (§342 rule 18). It collects on its own thread.
 - **Your thread still owns your Context.** Nothing in the worker model
   lets a second thread call `subscript_rt_*` on the Context the host
   drives.
@@ -1560,8 +1690,7 @@ contract.
   Frames that park during the drain wait for the next step.
   `subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
   (§94.2). A host that never steps leaves them
-  parked forever — by design, the same way `Context.collect` never runs
-  unbidden. Releasing the Context drops parked computations without
+  parked forever: no background scheduler runs. Releasing the Context drops parked computations without
   running any remainder. Measured:
 
   ```text

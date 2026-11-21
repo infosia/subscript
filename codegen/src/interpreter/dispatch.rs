@@ -151,4 +151,102 @@ impl Interpreter<'_> {
         }
         Ok(value)
     }
+
+    pub(super) fn invoke_builtin(
+        &mut self,
+        method: l::BuiltinMethod,
+        operands: Vec<Value>,
+        parameter_types: &[l::ValueType],
+        result_ty: Option<&l::ValueType>,
+        pos: Option<&Pos>,
+    ) -> Result<Value, InterpretError> {
+        match method {
+            l::BuiltinMethod::ArrayPush | l::BuiltinMethod::ArrayPushReserved => {
+                let array = operands
+                    .first()
+                    .ok_or_else(|| self.invalid(None, "Array.push has no receiver"))?
+                    .as_handle()?;
+                let value = operands
+                    .get(1)
+                    .ok_or_else(|| self.invalid(None, "Array.push has no value"))?;
+                let element_ty = match parameter_types.get(1) {
+                    Some(l::ValueType::Data(ty)) => ty,
+                    _ => {
+                        return Err(
+                            self.invalid(None, "Array.push has no declared element parameter type")
+                        );
+                    }
+                };
+                let bytes = self.pack(element_ty, value)?;
+                // SAFETY: live array and readable element scratch.
+                let length = unsafe {
+                    ffi::subscript_rt_array_push(&mut *self.context, array, bytes.as_ptr(), 0)
+                };
+                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
+                Ok(Value::I(length as i64))
+            }
+            l::BuiltinMethod::ArrayClear => self.clear_array(&operands, pos),
+            l::BuiltinMethod::ArrayPop => {
+                let array = operands
+                    .first()
+                    .ok_or_else(|| self.invalid(None, "Array.pop has no receiver"))?
+                    .as_handle()?;
+                let ty = match result_ty {
+                    Some(l::ValueType::Data(ty)) => ty,
+                    _ => return Err(self.invalid(None, "Array.pop has no result type")),
+                };
+                let layout = self
+                    .layout_cached(ty)
+                    .ok_or_else(|| self.invalid(None, "Array.pop type has no layout"))?;
+                let mut bytes = vec![0; layout.size];
+                // compiler.md §196.1: the zeroed bytes are the absent value.
+                let pop = match parameter_types.first() {
+                    Some(l::ValueType::Data(Type::Array(element)))
+                        if crate::lir_types::removal_gives_absent(element, result_ty) =>
+                    {
+                        ffi::subscript_rt_array_pop_or_absent
+                    }
+                    _ => ffi::subscript_rt_array_pop,
+                };
+                // SAFETY: live array and writable element storage.
+                unsafe { pop(&mut *self.context, array, bytes.as_mut_ptr(), 0) };
+                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
+                self.unpack(ty, &bytes)
+            }
+            l::BuiltinMethod::StringSlice => {
+                let string = operands
+                    .first()
+                    .ok_or_else(|| self.invalid(None, "string.slice has no receiver"))?
+                    .as_handle()?;
+                let start = operands
+                    .get(1)
+                    .ok_or_else(|| self.invalid(None, "string.slice has no start"))?
+                    .as_i64()? as i32;
+                let end = operands
+                    .get(2)
+                    .ok_or_else(|| self.invalid(None, "string.slice has no end"))?
+                    .as_i64()? as i32;
+                // SAFETY: live string handle; runtime owns byte-boundary rules.
+                let value = unsafe {
+                    ffi::subscript_rt_str_slice(&mut *self.context, string, start, end, 0)
+                };
+                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
+                Ok(Value::Handle(value))
+            }
+            l::BuiltinMethod::GeneratorNext => {
+                let Value::Coroutine(coroutine) = operands
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| self.invalid(None, "generator.next has no receiver"))?
+                else {
+                    return Err(self.invalid(None, "generator.next receiver is not a coroutine"));
+                };
+                let value_ty = match result_ty {
+                    Some(l::ValueType::Data(Type::IterResult(value))) => value,
+                    _ => return Err(self.invalid(None, "generator.next result is not IterResult")),
+                };
+                self.resume_generator(&coroutine, value_ty)
+            }
+        }
+    }
 }

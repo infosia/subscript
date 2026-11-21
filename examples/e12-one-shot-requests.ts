@@ -99,9 +99,9 @@ export function main(): void {
 
   // No script reference reaches a Request now: each one was the argument
   // of a call that returned, and no lambda captured it. The two open
-  // registrations are the only roots left, so this collection keeps
-  // their state (invariant 2: a collection runs when the program asks
-  // for it). The mark then reads the live bytes of the rooted graphs.
+  // registrations are the only roots left, so this explicit collection
+  // keeps their state (compiler.md §342 rule 13: it runs here). The mark
+  // then reads the live bytes of the rooted graphs.
   Context.collect();
   engineRequestMarkLiveBytes(world);
 

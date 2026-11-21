@@ -1,6 +1,7 @@
 // Memory. In JavaScript a garbage collector runs when it wants to. In
-// subscript no collector runs by itself. This script spawns bullets in a
-// game and shows the three ways their memory comes back.
+// subscript you write no release code, the host controls each collection
+// pause, and no object moves. This script spawns bullets in a game and
+// shows the three ways their memory comes back.
 
 class Bullet {
   id: i32;
@@ -23,9 +24,9 @@ class SoundChannel {
 }
 
 export function main(): void {
-  // Way 1: write no release code. The objects stay in memory until the
-  // host collects. A game host collects between two frames. A program
-  // that never frees memory is correct, but it uses more memory.
+  // Way 1: write no release code. An object stays in memory until a
+  // collection finds that nothing reaches it. A host can also collect
+  // between two frames. A program that never frees memory is correct.
   const bullets: Bullet[] = [];
   for (let i: i32 = 0; i < 3; i += 1) {
     bullets.push(new Bullet(i));
@@ -47,7 +48,7 @@ export function main(): void {
     print(`play ${music.name} and ${effects.name}`);
   }
 
-  // A script can also collect by itself. The collector frees each object
+  // A script can also collect by itself. The collection frees each object
   // that no variable reaches.
   Context.collect();
   print(`first bullet ${bullets[0].id}`);

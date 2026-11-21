@@ -430,6 +430,8 @@ struct Interpreter<'m> {
     // innermost last (compiler.md §115.5 rule 7).
     parked: Vec<(usize, String, Pos)>,
     exception_positions: Vec<Pos>,
+    // The facts that `compiler.md` §342 rule 10a verifies.
+    allocation: crate::lir::allocation::AllocationFacts,
 }
 
 impl<'m> Interpreter<'m> {
@@ -470,6 +472,7 @@ impl<'m> Interpreter<'m> {
             caught: None,
             parked: Vec::new(),
             exception_positions: Vec::new(),
+            allocation: crate::lir::allocation::AllocationFacts::of_module(module),
         };
         interpreter.compute_class_layouts()?;
         interpreter.globals = module
@@ -478,56 +481,6 @@ impl<'m> Interpreter<'m> {
             .map(|global| Rc::new(RefCell::new(interpreter.zero(&global.ty))))
             .collect();
         Ok(interpreter)
-    }
-
-    fn run(&mut self) -> Result<Vec<u8>, InterpretError> {
-        self.clear_trap();
-        self.context.enter_script();
-        let outcome = self.run_entries();
-        self.context.exit_script();
-        // compiler.md §115.4 item 1: the host entry converts an exception
-        // that no handler catches.
-        outcome.map_err(InterpretError::settled)
-    }
-
-    fn run_entries(&mut self) -> Result<Vec<u8>, InterpretError> {
-        if let Some(initializer) = self.module.initializer {
-            let _ = self.call_function(initializer, Vec::new())?;
-        }
-        let entry = self
-            .module
-            .entry
-            .ok_or_else(|| InterpretError::InvalidLir {
-                message: "module has no executable entry".to_string(),
-                pos: None,
-            })?;
-        let entry = self.function(entry)?;
-        if !entry.parameters.is_empty() {
-            return Err(InterpretError::Unsupported {
-                reason: "exported main requires host-supplied parameters".to_string(),
-            });
-        }
-        let entry_id = entry.id;
-        let entry_pos = entry.pos.clone();
-        // §26.3 and §94.1 rule 10: the standard runner kicks `main`, then
-        // each other async target in first entry export-site order, and then
-        // steps while pending work remains. An export kick starts a body and
-        // never drains ready work (rule 7).
-        let result = self.call_function(entry_id, Vec::new())?;
-        if let Value::Coroutine(coroutine) = result {
-            self.async_kick(&coroutine)?;
-        }
-        for function in self.module.async_roots.clone() {
-            let Value::Coroutine(coroutine) = self.call_function(function, Vec::new())? else {
-                return Err(self.invalid(None, "async export did not create a coroutine"));
-            };
-            self.async_kick(&coroutine)?;
-        }
-        while self.async_pending() != 0 {
-            self.async_step()?;
-        }
-        self.check_runtime(&entry_pos)?;
-        Ok(self.context.take_stdout())
     }
 
     fn function(&self, id: l::FunctionId) -> Result<&l::Function, InterpretError> {
@@ -1153,7 +1106,13 @@ impl<'m> Interpreter<'m> {
                 let mut handler = None;
                 for (instruction_index, instruction) in block.instructions.iter().enumerate() {
                     (*frame).instruction = instruction_index + 1;
-                    let outcome = self.execute_instruction(frame, function, instruction);
+                    let outcome = self.execute_checked(
+                        frame,
+                        function,
+                        block.id,
+                        instruction_index,
+                        instruction,
+                    );
                     // compiler.md §115.6 rule 2: a raise site with a handler
                     // edge takes it for an exception.
                     match (outcome, instruction.handler()) {
@@ -1514,104 +1473,6 @@ impl<'m> Interpreter<'m> {
             Some(Value::Callable(callable)) => Ok(Rc::clone(callable)),
             Some(other) => Err(type_error("callable", other)),
             None => Err(self.invalid(None, format!("{operation} has no callback"))),
-        }
-    }
-
-    fn invoke_builtin(
-        &mut self,
-        method: l::BuiltinMethod,
-        operands: Vec<Value>,
-        parameter_types: &[l::ValueType],
-        result_ty: Option<&l::ValueType>,
-        pos: Option<&Pos>,
-    ) -> Result<Value, InterpretError> {
-        match method {
-            l::BuiltinMethod::ArrayPush => {
-                let array = operands
-                    .first()
-                    .ok_or_else(|| self.invalid(None, "Array.push has no receiver"))?
-                    .as_handle()?;
-                let value = operands
-                    .get(1)
-                    .ok_or_else(|| self.invalid(None, "Array.push has no value"))?;
-                let element_ty = match parameter_types.get(1) {
-                    Some(l::ValueType::Data(ty)) => ty,
-                    _ => {
-                        return Err(
-                            self.invalid(None, "Array.push has no declared element parameter type")
-                        );
-                    }
-                };
-                let bytes = self.pack(element_ty, value)?;
-                // SAFETY: live array and readable element scratch.
-                let length = unsafe {
-                    ffi::subscript_rt_array_push(&mut *self.context, array, bytes.as_ptr(), 0)
-                };
-                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
-                Ok(Value::I(length as i64))
-            }
-            l::BuiltinMethod::ArrayClear => self.clear_array(&operands, pos),
-            l::BuiltinMethod::ArrayPop => {
-                let array = operands
-                    .first()
-                    .ok_or_else(|| self.invalid(None, "Array.pop has no receiver"))?
-                    .as_handle()?;
-                let ty = match result_ty {
-                    Some(l::ValueType::Data(ty)) => ty,
-                    _ => return Err(self.invalid(None, "Array.pop has no result type")),
-                };
-                let layout = self
-                    .layout_cached(ty)
-                    .ok_or_else(|| self.invalid(None, "Array.pop type has no layout"))?;
-                let mut bytes = vec![0; layout.size];
-                // compiler.md §196.1: the zeroed bytes are the absent value.
-                let pop = match parameter_types.first() {
-                    Some(l::ValueType::Data(Type::Array(element)))
-                        if crate::lir_types::removal_gives_absent(element, result_ty) =>
-                    {
-                        ffi::subscript_rt_array_pop_or_absent
-                    }
-                    _ => ffi::subscript_rt_array_pop,
-                };
-                // SAFETY: live array and writable element storage.
-                unsafe { pop(&mut *self.context, array, bytes.as_mut_ptr(), 0) };
-                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
-                self.unpack(ty, &bytes)
-            }
-            l::BuiltinMethod::StringSlice => {
-                let string = operands
-                    .first()
-                    .ok_or_else(|| self.invalid(None, "string.slice has no receiver"))?
-                    .as_handle()?;
-                let start = operands
-                    .get(1)
-                    .ok_or_else(|| self.invalid(None, "string.slice has no start"))?
-                    .as_i64()? as i32;
-                let end = operands
-                    .get(2)
-                    .ok_or_else(|| self.invalid(None, "string.slice has no end"))?
-                    .as_i64()? as i32;
-                // SAFETY: live string handle; runtime owns byte-boundary rules.
-                let value = unsafe {
-                    ffi::subscript_rt_str_slice(&mut *self.context, string, start, end, 0)
-                };
-                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
-                Ok(Value::Handle(value))
-            }
-            l::BuiltinMethod::GeneratorNext => {
-                let Value::Coroutine(coroutine) = operands
-                    .first()
-                    .cloned()
-                    .ok_or_else(|| self.invalid(None, "generator.next has no receiver"))?
-                else {
-                    return Err(self.invalid(None, "generator.next receiver is not a coroutine"));
-                };
-                let value_ty = match result_ty {
-                    Some(l::ValueType::Data(Type::IterResult(value))) => value,
-                    _ => return Err(self.invalid(None, "generator.next result is not IterResult")),
-                };
-                self.resume_generator(&coroutine, value_ty)
-            }
         }
     }
 }
@@ -1986,6 +1847,7 @@ use async_all::{AsyncJob, CoroutineKind};
 mod budget_tests;
 
 mod checkpoint;
+mod exits;
 
 #[cfg(test)]
 mod inspection_tests;
@@ -1994,6 +1856,9 @@ mod async_inspection;
 
 mod roots;
 
+mod allocation_check;
+mod automatic_collection;
+pub use automatic_collection::{interpret_with_collection, CollectionRun};
 mod dispatch;
 
 #[cfg(test)]

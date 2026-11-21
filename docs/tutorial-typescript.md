@@ -9,9 +9,10 @@ The syntax is a subset of TypeScript. Every accepted program also
 type-checks under stock `tsc`, so tsserver gives you completion,
 rename, and go-to-definition with no plugin. The semantics below the
 syntax are not JavaScript's. Values have C data layout. Integers have
-fixed widths. No collector runs unless the host or the script calls
-it. The compiler rejects the dynamic
-patterns that it cannot compile to predictable machine code.
+fixed widths. You write no release code, and the host controls when a
+collection runs. No collection moves an object. The compiler rejects
+the dynamic patterns that it cannot compile to predictable machine
+code.
 
 This page is the list of what changes. Every program and every output
 on this page was run against the repository as committed, and every
@@ -27,7 +28,7 @@ program type-checks under stock `tsc --strict`.
 | `interface` | A constraint for `T extends I`, which a class opts into with `implements I`; no value of an interface type |
 | `undefined`, `T \| U` | `Ref \| null`, narrowed before use; `Ref \| undefined` as a function result only |
 | `enum` of strings | `type Mode = "fast" \| "safe"`, closed and nominal |
-| Garbage collection | Nothing collects unbidden. The easiest start writes no release code and lets the host collect at a step boundary. `Context.free` and `using` are also available |
+| Garbage collection | Write no release code; the host controls when a collection runs. Three levels: automatic (the default), host-timed, and manual (`Context.free`). No object moves. `Context.free`, `Context.collect()`, and `using` are valid at each level |
 | `throw` / `try` | The seven `Error`-family classes only; `finally` runs on each exit; faults are traps, which no `catch` or `finally` stops |
 | Event loop, `Promise` | Host-stepped suspension; `Promise<T>` is an annotation |
 | `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
@@ -560,34 +561,44 @@ analysis, and it traps if execution arrives there.
 
 Numeric `enum` also exists, and it lowers to a C enum.
 
-## Memory is explicit
+## Memory: write no release code, and the host controls each pause
 
-No collector runs on its own. This is a design invariant, not a
-setting. The language does not prefer one release style. For a
-TypeScript user, the style below is the easiest start, because the
-script code looks like TypeScript code. The host does the release work:
+Write no release code. The Context reclaims unreachable memory, and the
+host controls when a collection runs. A collection runs only inside a
+call into the Context, on the thread of that call. No collector thread
+exists, and no collection moves an object.
 
-1. **The script writes no release code.** A handle and a generator
-   release themselves. Every other value stays until a collection. A
-   program that never frees and never collects is correct; it only
-   holds more memory.
-2. **The host collects at a step boundary**, for a game once per
-   frame. It calls `subscript_rt_ctx_collect` between script calls, at
-   script depth 0, on the thread of the Context (§18.2d). The call is
-   the same mark-and-sweep as `Context.collect()`. Its cost grows with
-   the live data, not with the allocations since the last collection
-   (§22.2, §22.4 criterion 4).
-3. **`Context.free`, `using`, and a script `Context.collect()` are
-   available when you need them.** They help where a measured peak
-   matters: a large temporary, or a loop that allocates many objects
-   in one call. A host collection runs between calls, so it does not
-   lower a peak inside one call. Use `using` where a resource needs
-   its release at a known point.
-4. **A value that crosses to the host follows the host's protocol.**
-   The script cannot free a host object behind a handle; the host
-   keeps it valid (§142). Callback userdata that the host holds stays
-   a collection root while its registration lives. A registration with
-   the default lifetime lives as long as the Context (§14.4b, §111).
+The host selects one of three levels. From the side of the script:
+
+| Level | Who decides | What the script does | What it is for |
+|---|---|---|---|
+| Automatic (the default) | The Context | Nothing. A collection runs at a poll that the compiler places where an allocation can repeat, and at the outermost exit of a host call. | Most scripts |
+| Host-timed | The host | Nothing. The host switches automatic collection off and collects at a point it selects, for example between two frames. | A frame loop with a fixed collection point |
+| Manual | The script | `Context.free(value)` releases an object at once. No collection runs. | An audio callback, a control step, or any place that allows no pause |
+
+The [C tutorial](tutorial-c-cpp.md#the-collection-mode) gives the host
+side of each level. Three script forms are valid at each level:
+
+- `Context.free(value)` releases one reference object at once.
+- `Context.collect()` is the explicit collection. It runs where it is
+  written, and it reports a failed task that nobody awaits at its own
+  position.
+- `using` releases a resource at a known point. Cleanup of an external
+  resource uses `using`, not reachability.
+
+These facts hold at each level:
+
+- No object moves.
+- An automatic collection does not change what a program prints or
+  where it traps. The development tier, the shipping tier, and the
+  interpreter print the same bytes.
+- A program that never collects is correct, merely larger.
+- A handle and a generator release themselves.
+- A value that crosses to the host follows the host's protocol. The
+  script cannot free a host object behind a handle; the host keeps it
+  valid (§142). Callback userdata that the host holds stays a
+  collection root while its registration lives. A registration with the
+  default lifetime lives as long as the Context (§14.4b, §111).
 
 Each value follows one of two release rules:
 
@@ -602,39 +613,41 @@ Each value follows one of two release rules:
   Context memory stays until a collection, `Context.free`, or the
   Context release.
 
-Three calls release Context memory. Each runs only where it is
-written:
+Four operations release Context memory:
 
-- The host's `subscript_rt_ctx_collect` collects what script references
-  no longer reach. The style above uses only this call.
+- An automatic collection reclaims what no script reference reaches.
+  It runs at a poll or at the outermost exit of a host call.
+- The host's `subscript_rt_ctx_collect` runs the same collection at a
+  point the host selects.
+- `Context.collect()` in a script runs the same collection where it is
+  written.
 - `Context.free(value)` releases one reference object at once.
-- `Context.collect()` in a script runs the same collection inside a
-  script call.
 
-Dropping the last reference to Context memory frees nothing by itself.
-Dropping the last holder of a counted value releases it. In the table
-below, `Context.collect()` stands for either collection call.
+Dropping the last reference to Context memory frees nothing at that
+point: the next collection reclaims it. Dropping the last holder of a
+counted value releases it at once. In the table below, "a collection"
+stands for each of the three collections.
 
 | Value | Who allocates it | What releases it |
 |---|---|---|
-| A reference object, `Map`, or `Set` | The program, with `new` | `Context.free`, `Context.collect()`, or the Context release |
-| A string or an array of uncounted values | The compiler and the runtime: an array literal, a concatenation, a template, a method result | `Context.collect()` or the Context release |
-| The capture environment of an async arrow (§181) or of a `then`/`catch`/`finally` callback (§186 rule 4) | The compiler, at each evaluation of a capturing lambda | `Context.collect()` after no held value and no live frame reaches it, or the Context release |
+| A reference object, `Map`, or `Set` | The program, with `new` | `Context.free`, a collection, or the Context release |
+| A string or an array of uncounted values | The compiler and the runtime: an array literal, a concatenation, a template, a method result | A collection, or the Context release |
+| The capture environment of an async arrow (§181) or of a `then`/`catch`/`finally` callback (§186 rule 4) | The compiler, at each evaluation of a capturing lambda | A collection after no held value and no live frame reaches it, or the Context release |
 | The captures of another synchronous lambda | The compiler, in the frame of the defining function | The exit of that frame (§118) |
 | A handle, including the handle of `then`, `catch`, or `finally` | An async call or one of those forms | The release by its last holder; an unfinished frame is freed when it finishes (§70, §172 rule 6) |
 | A generator | A generator call | The release by its last holder (§176) |
 | A dynamic array of handles or generators | An array literal, a spread, or an array method | The release by its last holder, which releases each element (§171 rule 4) |
-| A counted value in a class field or a `Map` value | A field store or `Map.set` | `Context.free` of the holder, or the `Context.collect()` that reclaims it; also a replacing store, `Map.delete`, or `Map.clear` (§172) |
+| A counted value in a class field or a `Map` value | A field store or `Map.set` | `Context.free` of the holder, or the collection that reclaims it; also a replacing store, `Map.delete`, or `Map.clear` (§172) |
 
-A program that never collects is **correct**. It holds more memory
-until the host releases the Context. Each capturing callback allocates
-one environment, and the host collection at each step boundary
-reclaims the environments that nothing reaches.
+A program that never collects is **correct**. If no collection runs, it
+holds more memory until the host releases the Context. Each capturing
+callback allocates one environment, and a collection reclaims the
+environments that nothing reaches.
 
 An example of these forms follows. `Context.free` ends an allocation at
-once, and a script `Context.collect()` reclaims inside the call. This
-program needs neither: a host collection after `main` reclaims `temp`
-and each `scratch`. They lower the peak of the call:
+once, and a script `Context.collect()` reclaims at the point where it
+is written. At the automatic level this program needs neither: an
+automatic collection reclaims `temp` and each `scratch`. They fix the point of the release:
 
 ```ts
 class Frame {
@@ -700,8 +713,8 @@ close 1
 
 The compiler warns where it proves unbounded growth. `W001` flags an
 allocation that a loop repeats and that neither escapes the iteration
-nor is released. That growth is inside one call, where a host
-collection does not reach. `W002` flags a local read after `Context.free`. `W003`
+nor is released. The Context grows with each iteration until a
+collection runs. `W002` flags a local read after `Context.free`. `W003`
 flags fresh callback userdata registered in a loop. `W004` flags a
 value copy that a function writes through and never reads. Warnings do
 not fail a build. `subscript check --deny-warnings` makes them fail in
@@ -897,7 +910,7 @@ parameter type is rejected. A `catch` callback returns the
 value type of its handle; another result type is rejected with `S013`.
 Each capturing async arrow or callback of these forms allocates an
 environment that stays until a collection; the handle is counted
-([Memory is explicit](#memory-is-explicit)).
+([Memory: write no release code](#memory-write-no-release-code-and-the-host-controls-each-pause)).
 The callbacks run in the order that `node` gives:
 
 ```ts
@@ -1053,6 +1066,12 @@ second boom
 
 If no `await` observes a failed handle, its last holder's release traps
 (§116.1 rule 4; [`t66`](../corpus/trap/t66-unobserved-async-exception.ts)).
+If the holder becomes unreachable instead, a collection finds the
+failed task. The Context then traps with `UncaughtException` at the
+throw position, at the end of a host call (§342 rules 14 and 15). The
+check runs at the first end while a failed task is unobserved, then
+after 2, 4, 8, and up to 1,024 more ends while one stays unobserved.
+`Context.collect()` reports such a failure at its own position.
 An exception that leaves a host-callable async export traps with
 `TrapKind::UncaughtException` (29), because the export has no script holder
 (§116.1 rule 5).
@@ -1358,7 +1377,7 @@ Common mistakes, each from the rules above:
   completes it with an `Error` that no `await` observed, the Context
   traps (§178 rule 8).
 
-[Memory is explicit](#memory-is-explicit) has the release table for
+[Memory: write no release code](#memory-write-no-release-code-and-the-host-controls-each-pause) has the release table for
 every value that the script allocates.
 
 ## Strings are UTF-8
@@ -1663,7 +1682,7 @@ A synchronous `then` or `catch` callback can capture a `const` local
 (§186). A capture of a `let`, a `var`, or `this` is S009.
 A capturing callback allocates an environment that waits for a
 collection, and each handle is counted
-([Memory is explicit](#memory-is-explicit)).
+([Memory: write no release code](#memory-write-no-release-code-and-the-host-controls-each-pause)).
 To update `this`, use a class method: the async method awaits the read
 and then updates the fields.
 

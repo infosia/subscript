@@ -1864,8 +1864,9 @@ fn ffi_ctx_collect_reclaims_unreachable_bytes() {
     }
 }
 
-/// The firing control for the test above. Nothing collects unbidden
-/// (invariant 2), so the same shape without the call keeps the bytes.
+/// The firing control for the test above. An allocation never collects
+/// (`compiler.md` §342 rule 5), and no script code runs here, so the same
+/// shape without the call keeps the bytes.
 #[test]
 fn ffi_ctx_collect_control_without_the_call_keeps_the_bytes() {
     for (tier, mut ctx) in [("dev", Context::new()), ("ship", Context::new_releasing())] {

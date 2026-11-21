@@ -1,8 +1,9 @@
 # Automatic collection — trial on the branch `gc-auto`
 
-Status: **IN PROGRESS.** The measurement round G0 is complete. The
-contract is `compiler.md` §342. The prototype is on the branch
-`gc-auto-proto` and does not land.
+Status: **§342 COMPLETE on the branch `gc-auto`.** The measurements of
+the implementation and the Phase Review are in `compiler.md` §342.4a.
+The prototype is on the branch `gc-auto-proto` and does not land. The
+branch is not merged.
 
 ## Question and owner decisions
 
@@ -21,6 +22,11 @@ The owner decided these points on 2026-11-21:
 4. After G0, the trial goes on to the contract.
 5. A detection collection at the host boundary runs on a schedule of
    exit counts with a backoff (§342 rules 14 and 15), not at each exit.
+6. `Context.free` stays. The round G4 does not run. W001 goes in a
+   section of its own after §342.
+7. The documents state the host's control of the pause first, then
+   three levels (automatic, host-timed, manual). Invariant 2 has the
+   same form (§342 rule 4a).
 
 ## Rounds
 
@@ -343,3 +349,19 @@ a failed unobserved task exists: about 10 ms for each step here. With
 `Context.suspend()`, the three configurations read 0.02 s, 0.02 s,
 and 0.06 s. The ship tier was not measured: the driver did not link
 the runtime library from that directory.
+
+## At the merge
+
+- The repository description on the hosting site states "no implicit
+  GC". The owner decided the new text on 2026-11-21: "Embeddable
+  statically-typed TypeScript-subset for native apps. C-ABI data
+  layout, zero-copy C interop, automatic host-controlled GC. JIT hot
+  reload in dev, ships as AOT C." The owner sets it.
+- If `main` has a §342, this section takes the next free number, and
+  each citation of §342 in the code and the documents moves with it.
+
+## Next
+
+- W001 (`specs/blocks/warnings.md`) states that the Context grows
+  until a collection. Its change is the next section.
+- `compiler.md` §342.5 holds the open items.

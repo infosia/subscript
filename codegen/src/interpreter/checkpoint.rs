@@ -31,11 +31,27 @@ impl Interpreter<'_> {
         let parked = std::mem::take(&mut self.async_parked);
         self.async_ready
             .extend(parked.into_iter().map(AsyncJob::Invocation));
-        while limit != Some(dispatched) {
+        if self.async_ready.is_empty() {
+            return Ok(self.async_report(dispatched, limit));
+        }
+        // compiler.md §342 rule 16: a checkpoint that dispatches is one
+        // host call, as in the native scheduler.
+        self.context.enter_script();
+        let outcome = self.drain_ready(limit, &mut dispatched);
+        self.exit_script(outcome)?;
+        Ok(self.async_report(dispatched, limit))
+    }
+
+    fn drain_ready(
+        &mut self,
+        limit: Option<u64>,
+        dispatched: &mut u64,
+    ) -> Result<(), InterpretError> {
+        while limit != Some(*dispatched) {
             let Some(frame) = self.async_ready.pop_front() else {
                 break;
             };
-            dispatched += 1;
+            *dispatched += 1;
             let outcome = match &frame {
                 AsyncJob::Invocation(handle) => self.async_resume(handle),
                 AsyncJob::Group { group, index } => self.task_group_react(group, *index),
@@ -55,7 +71,7 @@ impl Interpreter<'_> {
                 break;
             }
         }
-        Ok(self.async_report(dispatched, limit))
+        Ok(())
     }
 
     fn async_report(

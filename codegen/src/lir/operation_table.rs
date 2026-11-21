@@ -42,10 +42,13 @@ pub(super) fn lookup(kind: &l::CallTargetKind) -> &'static [l::IntrinsicOperatio
 }
 
 fn build_rows() -> Vec<l::IntrinsicOperation> {
-    fn append<T: fmt::Debug>(
+    // `can_allocate` is the total fact that each operation enum declares
+    // (`compiler.md` §342 rule 10).
+    fn append<T: fmt::Debug + Copy>(
         table: &mut Vec<l::IntrinsicOperation>,
         family: l::IntrinsicFamily,
         values: &[T],
+        can_allocate: fn(T) -> bool,
     ) {
         table.extend(
             values
@@ -57,6 +60,7 @@ fn build_rows() -> Vec<l::IntrinsicOperation> {
                     semantic_name: format!("{value:?}"),
                     runtime_symbol: intrinsic_runtime_symbol(family, &format!("{value:?}"))
                         .map(str::to_string),
+                    can_allocate: can_allocate(*value),
                     signatures: Vec::new(),
                 }),
         );
@@ -67,21 +71,68 @@ fn build_rows() -> Vec<l::IntrinsicOperation> {
         &mut table,
         l::IntrinsicFamily::Ambient,
         &hir::AmbientFn::ALL,
+        hir::AmbientFn::can_allocate,
     );
     append(
         &mut table,
         l::IntrinsicFamily::ContextBytes,
         &hir::ContextBytesFn::ALL,
+        hir::ContextBytesFn::can_allocate,
     );
-    append(&mut table, l::IntrinsicFamily::Math, &hir::MathFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Number, &hir::NumFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Date, &hir::DateFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Json, &hir::JsonFn::ALL);
-    append(&mut table, l::IntrinsicFamily::String, &hir::StrFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Regex, &hir::RegexFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Array, &hir::ArrFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Map, &hir::MapFn::ALL);
-    append(&mut table, l::IntrinsicFamily::Set, &hir::SetFn::ALL);
+    append(
+        &mut table,
+        l::IntrinsicFamily::Math,
+        &hir::MathFn::ALL,
+        hir::MathFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Number,
+        &hir::NumFn::ALL,
+        hir::NumFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Date,
+        &hir::DateFn::ALL,
+        hir::DateFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Json,
+        &hir::JsonFn::ALL,
+        hir::JsonFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::String,
+        &hir::StrFn::ALL,
+        hir::StrFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Regex,
+        &hir::RegexFn::ALL,
+        hir::RegexFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Array,
+        &hir::ArrFn::ALL,
+        hir::ArrFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Map,
+        &hir::MapFn::ALL,
+        hir::MapFn::can_allocate,
+    );
+    append(
+        &mut table,
+        l::IntrinsicFamily::Set,
+        &hir::SetFn::ALL,
+        hir::SetFn::can_allocate,
+    );
     table.extend(
         hir::WorkerFn::ALL
             .iter()
@@ -102,11 +153,17 @@ fn build_rows() -> Vec<l::IntrinsicOperation> {
                             .map_or(semantic_name.as_str(), |(name, _)| name),
                     )
                     .map(str::to_string),
+                    can_allocate: value.can_allocate(),
                     signatures: Vec::new(),
                 }
             }),
     );
-    append(&mut table, l::IntrinsicFamily::Text, &hir::TextFn::ALL);
+    append(
+        &mut table,
+        l::IntrinsicFamily::Text,
+        &hir::TextFn::ALL,
+        hir::TextFn::can_allocate,
+    );
     table
 }
 

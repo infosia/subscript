@@ -187,8 +187,9 @@ fn reference_holder_traps_and_reject_match_the_contract() {
             }
         } else {
             let expected = match name {
-                "t97.ts" => (19, 3, "Error: first"),
-                "t98.ts" => (20, 3, "Error: first"),
+                // compiler.md §342 rule 15: the detection collection of the
+                // exit before the collect call reports at the `throw`.
+                "t97.ts" | "t98.ts" => (11, 55, "Error: first"),
                 _ => (10, 40, "Error: lost"),
             };
             let tuple = interpreted

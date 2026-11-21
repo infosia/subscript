@@ -131,6 +131,14 @@ pub(super) struct Aggregate {
     reported: bool,
 }
 
+impl Aggregate {
+    /// True when the Context reported the failure of this aggregate at the
+    /// release of its last holder (`compiler.md` §342 rule 14a).
+    pub(super) fn reported(&self) -> bool {
+        self.reported
+    }
+}
+
 impl Context {
     /// Registers a fresh compiler-generated async frame. Its reference
     /// count starts at one in the frame header's `reserved` word.
@@ -307,7 +315,8 @@ impl Context {
     ///
     /// A frame whose completion holds an exception that no `await` raised
     /// traps with [`TrapKind::UncaughtException`] at that point
-    /// (`compiler.md` §116.1 rule 4).
+    /// (`compiler.md` §116.1 rule 4). During a collection the Context
+    /// records the failure instead (`compiler.md` §342 rule 12).
     ///
     /// # Safety
     ///
@@ -318,6 +327,7 @@ impl Context {
             unsafe { self.generator_release(frame, pos_id) };
             return;
         };
+        let task_id = meta.task_id;
         // SAFETY: guaranteed by the caller.
         let slot = unsafe { &mut *(frame.add(4) as *mut u32) };
         if *slot != 0 {
@@ -339,11 +349,15 @@ impl Context {
                         state.reported = true;
                     }
                 }
-                self.trap(
-                    TrapKind::UncaughtException,
-                    unobserved.message,
-                    unobserved.pos_id,
-                );
+                // compiler.md §342 rule 12: a collection records the
+                // failure; it does not trap.
+                if !self.record_unobserved_failure(task_id, &unobserved) {
+                    self.trap(
+                        TrapKind::UncaughtException,
+                        unobserved.message,
+                        unobserved.pos_id,
+                    );
+                }
             }
         }
     }

@@ -1900,7 +1900,9 @@ fn collected_tasks_trap_in_task_id_order() {
         panic!("collection must report a semantic trap");
     };
     assert_eq!(kind, "uncaught-exception");
-    assert_eq!((pos.line, pos.col), (23, 3));
+    // compiler.md §342 rule 15: the detection collection of the outermost
+    // exit before the collect call reports at the position of the `throw`.
+    assert_eq!((pos.line, pos.col), (11, 55));
     assert_eq!(message, "Error: first");
 }
 

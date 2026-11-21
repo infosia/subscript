@@ -453,7 +453,7 @@ pub(super) fn compare_static_array_callbacks(
             .filter(|(_, instruction)| {
                 matches!(&instruction.kind,
                 l::InstructionKind::Call(target)
-                    if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush))
+                    if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPushReserved))
             })
             .count();
         let required = sites.outputs.get(&key).copied().unwrap_or(0);
@@ -575,7 +575,7 @@ mod static_output_tests {
         let (hir, mut lir) = checked();
         remove_first(&mut lir, |kind| {
             matches!(kind, l::InstructionKind::Call(target)
-                if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPush))
+                if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayPushReserved))
         });
         let findings = findings(&hir, &lir);
         assert!(

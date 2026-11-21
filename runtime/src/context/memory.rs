@@ -187,9 +187,16 @@ impl Context {
         self.shadow.pop();
     }
 
-    /// Explicitly invoked collection (Q7): frees every allocation not
-    /// reachable from the registered roots. Never runs unbidden.
+    /// The explicit collection (Q7): frees every allocation not reachable
+    /// from the registered roots. It reports the failure of an unobserved
+    /// task that it finds or that an automatic collection recorded
+    /// (`compiler.md` §342 rule 13).
     pub fn collect(&mut self) {
+        Self::explicit_collection_with(self, |ctx| ctx, Context::collect_full);
+    }
+
+    /// One full collection of the roots that the Context holds.
+    pub(super) fn collect_full(&mut self) {
         #[cfg(debug_assertions)]
         {
             let violations = self.array_tail_violations();
@@ -492,6 +499,9 @@ impl Context {
             .iter()
             .map(|parked| (0, 0, parked.object));
         self.push_root_set(&mut work, &mut tracer, "parked_exceptions", parked);
+        // compiler.md §342 rule 12: a recorded failure keeps its Error object.
+        let recorded = self.recorded_failure_objects().map(|object| (0, 0, object));
+        self.push_root_set(&mut work, &mut tracer, "recorded_failures", recorded);
         // §94.2: every scheduler state is a collection root. Ready jobs,
         // parked frames, and blocked continuations are named separately, so
         // the enumeration shows each state rather than relying on the

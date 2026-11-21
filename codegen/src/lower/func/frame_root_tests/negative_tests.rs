@@ -1007,9 +1007,9 @@ fn an_instruction_clear_after_its_write_fails_in_both_tiers() {
         eprintln!("{error}");
         assert!(
             error.contains(if jit {
-                "JIT lifetime clear l0 at (0, 4)"
+                "JIT lifetime clear l0 at (0, 5)"
             } else {
-                "C lifetime clear l0 at (0, 4)"
+                "C lifetime clear l0 at (0, 5)"
             }),
             "{error}"
         );

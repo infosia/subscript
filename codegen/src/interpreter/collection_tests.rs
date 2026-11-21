@@ -117,6 +117,11 @@ fn interpreter_host_collection_reports_the_first_failure_through_context_trap_st
         )
         .expect("LIR");
         let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        // The test states the host collection, so no detection collection
+        // runs at the checkpoint exits (compiler.md §342 rule 14).
+        assert!(interpreter
+            .context
+            .set_collection(subscript_runtime::context::CollectionMode::Off, 0));
         if let Some(initializer) = module.initializer {
             interpreter
                 .call_function(initializer, Vec::new())
@@ -366,7 +371,7 @@ fn unfinished_loop_call_result_does_not_root_the_previous_iteration() {
         let files = [SourceFile::new("loop-result.ts", source)];
         let module =
             crate::lir::lower_module(&check_program(&files).expect("checked source")).expect("LIR");
-        let result = interpret(&module);
+        let result = interpret_without_automatic_collection(&module);
         if collect {
             let InterpretError::Execution { output, source } =
                 result.expect_err("second collect releases the previous result")
@@ -397,7 +402,7 @@ export function main():void{{const it=g();for(let i:i32=0;i<2;i++){{it.next();}}
         let files = [SourceFile::new("iterator-result.ts", source)];
         let module =
             crate::lir::lower_module(&check_program(&files).expect("checked source")).expect("LIR");
-        let result = interpret(&module);
+        let result = interpret_without_automatic_collection(&module);
         if collect {
             let InterpretError::Execution { output, source } =
                 result.expect_err("second collect releases the previous yield")
@@ -438,7 +443,7 @@ fn conditional_await_roots_the_current_holder_and_its_kept_control() {
         let files = [SourceFile::new("conditional-await.ts", source)];
         let module =
             crate::lir::lower_module(&check_program(&files).expect("checked input")).expect("LIR");
-        let result = interpret(&module);
+        let result = interpret_without_automatic_collection(&module);
         if keep {
             assert_eq!(
                 result.expect("live previous holder"),
@@ -466,7 +471,7 @@ fn unfinished_loop_call_collect_preserves_a_live_previous_result() {
     let module =
         crate::lir::lower_module(&check_program(&files).expect("checked input")).expect("LIR");
     assert_eq!(
-        interpret(&module).expect("live previous result"),
+        interpret_without_automatic_collection(&module).expect("live previous result"),
         b"step 0\nstep 1\nkept\n"
     );
 }
@@ -497,5 +502,84 @@ fn owned_async_environments_release_counted_fields_with_reachable_controls() {
                 started.elapsed()
             );
         }
+    }
+}
+
+/// A run with no automatic collection. The tests that use it state the
+/// roots of an explicit collection, so a detection collection at an
+/// outermost exit (`compiler.md` §342 rule 14) is not part of them.
+fn interpret_without_automatic_collection(module: &l::Module) -> Result<Vec<u8>, InterpretError> {
+    super::interpret_with_collection(module, subscript_runtime::context::CollectionMode::Off, 0)
+        .map(|(output, _)| output)
+}
+
+/// `compiler.md` §342 rule 12: in mode 2 the poll of the loop in `work`
+/// releases the last holder of a failed task. The Context records the
+/// failure, and the run continues. Rule 15: the outermost exit then runs the
+/// detection collection, which reports at the `throw` (3:55). Control: in
+/// mode 0 the poll records nothing and the exit reports nothing.
+#[test]
+fn a_poll_collection_records_and_the_outermost_exit_reports_at_the_throw() {
+    let source = r#"
+class Box { value: Promise<void>; constructor(value: Promise<void>) { this.value = value; } }
+async function fail(message: string): Promise<void> { throw new Error(message); }
+function hold(message: string): void { const box = new Box(fail(message)); }
+class Cell { v: i32; constructor(v: i32) { this.v = v; } }
+export function main(): void {
+  hold("lost");
+  let s: i32 = 0;
+  for (let i: i32 = 0; i < 4; i += 1) { const c: Cell = new Cell(i); s += c.v; }
+  print(`${s}`);
+}
+"#;
+    let files = [SourceFile::new("poll-record.ts", source)];
+    let module =
+        crate::lir::lower_module(&check_program(&files).expect("checked source")).expect("LIR");
+    for mode in [
+        subscript_runtime::context::CollectionMode::EachPoll,
+        subscript_runtime::context::CollectionMode::Off,
+    ] {
+        let records = mode == subscript_runtime::context::CollectionMode::EachPoll;
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        assert!(interpreter.context.set_collection(mode, 0));
+        interpreter.context.enter_script();
+        if let Some(initializer) = module.initializer {
+            interpreter
+                .call_function(initializer, Vec::new())
+                .expect("initializer");
+        }
+        let outcome = interpreter
+            .call_function(module.entry.expect("entry"), Vec::new())
+            .map(|_| ());
+        assert!(outcome.is_ok(), "{mode:?}: {outcome:?}");
+        assert!(!interpreter.context.trapped(), "{mode:?}");
+        assert_eq!(interpreter.context.stdout_bytes(), b"6\n");
+        assert_eq!(
+            interpreter.context.recorded_failure_count(),
+            usize::from(records),
+            "{mode:?}"
+        );
+        let result = interpreter.exit_script(outcome);
+        if records {
+            let Err(InterpretError::Trap {
+                runtime_kind: Some(RuntimeTrapKind::UncaughtException),
+                pos,
+                message,
+                ..
+            }) = result
+            else {
+                panic!("the detection collection must report: {result:?}");
+            };
+            assert_eq!(
+                (pos.line, pos.col, message.as_str()),
+                (3, 55, "Error: lost")
+            );
+            assert_eq!(interpreter.context.detection_collection_count(), 1);
+            assert_eq!(interpreter.context.recorded_failure_count(), 0);
+        } else {
+            assert!(result.is_ok(), "{result:?}");
+            assert_eq!(interpreter.context.detection_collection_count(), 0);
+        }
+        assert_eq!(interpreter.context.outermost_exit_count(), 1);
     }
 }

@@ -264,6 +264,8 @@ impl Context {
             })));
             let waiters = std::mem::take(&mut meta.waiters);
             self.async_ready.extend(waiters);
+            // compiler.md §342 rule 14b.
+            self.note_task_failure();
         }
     }
 

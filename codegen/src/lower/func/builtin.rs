@@ -102,7 +102,7 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         pos: &Pos,
     ) -> Result<RV, String> {
         match method {
-            l::BuiltinMethod::ArrayPush => {
+            l::BuiltinMethod::ArrayPush | l::BuiltinMethod::ArrayPushReserved => {
                 let l::ValueType::Data(Type::Array(element)) = parameter_types
                     .first()
                     .ok_or_else(|| internal("array push has no receiver type"))?

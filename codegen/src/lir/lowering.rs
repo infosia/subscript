@@ -422,7 +422,9 @@ impl<'a> Lowering<'a> {
                     continue;
                 };
                 let signature = l::CallSignature {
-                    target: l::CallSignatureTarget::BuiltinMethod(l::BuiltinMethod::ArrayPush),
+                    target: l::CallSignatureTarget::BuiltinMethod(
+                        l::BuiltinMethod::ArrayPushReserved,
+                    ),
                     parameter_types: vec![
                         l::ValueType::Data(Type::Array(element.clone())),
                         l::ValueType::Data((**element).clone()),

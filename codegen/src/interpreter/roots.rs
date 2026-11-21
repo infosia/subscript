@@ -50,7 +50,49 @@ impl Interpreter<'_> {
         Ok(())
     }
 
+    /// A collection poll (`compiler.md` §342 rule 7). If the pending flag is
+    /// set and the Context has no trap, it runs one automatic collection of
+    /// the interpreter's roots. The frame of the poll is at the poll, so its
+    /// live values are roots.
+    pub(super) fn collection_poll(&mut self, pos: &Pos) -> Result<(), InterpretError> {
+        if !self.context.collection_pending() || self.context.trapped() {
+            return Ok(());
+        }
+        Context::automatic_collection_with(
+            self,
+            |owner| &mut owner.context,
+            |owner| owner.full_collection(pos),
+        )
+    }
+
+    /// The explicit collection at `pos` (`compiler.md` §342 rule 13). It
+    /// reports the failed task with the lowest task id, of the failures that
+    /// it finds and the failures that an automatic collection recorded, at
+    /// `pos`.
     pub(super) fn collect_interpreter(&mut self, pos: &Pos) -> Result<(), InterpretError> {
+        let trapped = self.context.trapped();
+        Context::explicit_collection_with(
+            self,
+            |owner| &mut owner.context,
+            |owner| owner.full_collection(pos),
+        )?;
+        match self.context.trap_record() {
+            Some(trap) if !trapped && trap.kind == RuntimeTrapKind::UncaughtException => {
+                Err(InterpretError::Trap {
+                    kind: trap.kind.rule().to_string(),
+                    runtime_kind: Some(trap.kind),
+                    pos: pos.clone(),
+                    message: trap.message.clone(),
+                })
+            }
+            _ => self.check_runtime(pos),
+        }
+    }
+
+    /// One full collection of the interpreter's roots. The Context records
+    /// the failure of each released failed unobserved task (`compiler.md`
+    /// §342 rule 12); the caller states the report.
+    pub(super) fn full_collection(&mut self, pos: &Pos) -> Result<(), InterpretError> {
         if self.context.live_count() == 0 && self.generator_handles.borrow().is_empty() {
             self.context.collect();
             return self.check_runtime(pos);
@@ -69,6 +111,16 @@ impl Interpreter<'_> {
             root_snapshot(snapshot, &mut words, &mut coroutines);
         }
         coroutines.extend(self.async_handles.borrow().values().cloned());
+        // compiler.md §342 rule 12: the Error object of each exception
+        // completion is a root, as in the native root set, so a failure that
+        // this collection records keeps its Error object.
+        for coroutine in self.async_handles.borrow().values() {
+            if let Ok(state) = coroutine.try_borrow() {
+                if let Some(Completion::Exception(payload)) = &state.completion {
+                    words.push(payload.exception.0);
+                }
+            }
+        }
 
         coroutines.extend(self.async_ready.iter().filter_map(AsyncJob::handle));
         coroutines.extend(self.async_parked.iter().cloned());

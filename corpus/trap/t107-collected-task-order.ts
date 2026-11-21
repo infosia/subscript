@@ -1,11 +1,11 @@
 // corpus: trap/t107-collected-task-order
-// purpose: Collection releases failed field owners in increasing task id.
+// purpose: The outermost exit of the step before the collect call reports the lowest failed task id at the throw.
 // exercises: counted-map, counted-field, async-handle, ownership
-// questions: compiler.md §177, §172, §171, §70, §116
+// questions: compiler.md §342, §177, §172, §171, §70, §116
 // tsc: accepts
 // js-comparable: no C8: Context collection and coroutine handles have no JavaScript shim.
 // tier-policy: both tiers trap
-// expected-trap: uncaught-exception at Context.collect; message Error: first
+// expected-trap: uncaught-exception at the throw; message Error: first
 
 class Box { value: Promise<void>; constructor(value: Promise<void>) { this.value = value; } }
 async function fail(message: string): Promise<void> { throw new Error(message); }
@@ -24,9 +24,8 @@ export async function main(): Promise<void> {
   print("after");
 }
 
-// pin: dc3acdb4
-// pin-dev-jit: Exit 3; uncaught-exception at 23:3; message Error: first; no stdout.
-// pin-c-aot: Exit 3; uncaught-exception at 23:3; message Error: first; no stdout.
-// pin-interpreter: uncaught-exception at 23:3; message Error: first; no stdout.
-// round-1-release-interpreter: Red; message Error: third instead of Error: first; no stdout.
+// pin: ca3fc9ed
+// pin-dev-jit: Trap uncaught-exception at 23:3; message Error: first; no stdout.
+// pin-c-aot: Trap uncaught-exception at 23:3; message Error: first; no stdout.
+// pin-interpreter: Trap uncaught-exception at 23:3; message Error: first; no stdout.
 // tsc-version: TypeScript 5.9.2; exit 0.

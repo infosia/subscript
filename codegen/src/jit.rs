@@ -90,6 +90,12 @@ pub struct JitMemoryAccounting {
     /// and poisoned layouts when §8.1a-3's freed-handle diagnostics are
     /// enabled with threshold 0 and the recommended default budget.
     pub reserved_bytes: u64,
+    /// Automatic collections of the run (`compiler.md` §342 rule 7).
+    pub automatic_collections: u64,
+    /// Detection collections of the run (`compiler.md` §342 rule 15).
+    pub detection_collections: u64,
+    /// Outermost exits of the run (`compiler.md` §342 rule 16).
+    pub outermost_exits: u64,
 }
 
 impl std::fmt::Display for TrapReport {

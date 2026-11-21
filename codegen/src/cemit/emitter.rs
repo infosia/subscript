@@ -401,6 +401,15 @@ impl<'m> Emitter<'m> {
              #define SUBSCRIPT_SWITCH_VOLATILE\n\
              #endif\n",
         );
+        // compiler.md §342 rule 9: the call of a poll is on the unlikely
+        // path. MSVC `cl` has no branch hint, so the condition stays plain.
+        source.push_str(
+            "#if defined(__GNUC__) || defined(__clang__)\n\
+             #define SUBSCRIPT_UNLIKELY(condition) __builtin_expect(!!(condition), 0)\n\
+             #else\n\
+             #define SUBSCRIPT_UNLIKELY(condition) (condition)\n\
+             #endif\n",
+        );
         source.push_str(PREAMBLE);
         let mut emitted_includes = HashSet::new();
         let boundary_headers = self.module.classes.iter().filter_map(|class| {

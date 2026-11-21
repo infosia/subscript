@@ -8,6 +8,8 @@
 use crate::diag::Pos;
 use crate::types::{CallbackLifetime, ClassId, EnumId, StringAliasId, Type};
 
+mod allocation;
+
 macro_rules! id_type {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
@@ -862,6 +864,10 @@ pub enum InstructionKind {
     /// operand and no result. It also carries the completion count action.
     /// A completion that cannot raise has no trap sites.
     AwaitRaise,
+    /// A collection poll (`compiler.md` §342 rules 7 and 9). It has no
+    /// operand, no result, and no trap site. If the pending flag of the
+    /// Context is set, it runs one automatic collection. It cannot allocate.
+    CollectionPoll,
 }
 
 impl InstructionKind {
@@ -1020,6 +1026,8 @@ pub struct IntrinsicOperation {
     pub semantic_name: String,
     /// Runtime C symbol for operations with one context-independent entry.
     pub runtime_symbol: Option<String>,
+    /// Whether the operation can allocate in the Context (`compiler.md` §342 rule 10).
+    pub can_allocate: bool,
     /// Shard of the checker-derived intrinsic and built-in signature table.
     pub signatures: Vec<CallSignature>,
 }
@@ -1088,6 +1096,9 @@ pub enum IntrinsicFamily {
 pub enum BuiltinMethod {
     /// Dynamic-array `push`.
     ArrayPush,
+    /// Dynamic-array `push` into capacity that the lowering reserved before
+    /// a loop whose trip count cannot exceed it (`compiler.md` §342 rule 10b).
+    ArrayPushReserved,
     /// Dynamic-array `pop`.
     ArrayPop,
     /// Clears a dynamic array for a zero length store.
@@ -1717,6 +1728,7 @@ mod tests {
             operation: 0,
             semantic_name: "Abs".to_string(),
             runtime_symbol: Some("subscript_rt_math_abs".to_string()),
+            can_allocate: false,
             signatures: Vec::new(),
         };
         assert_eq!(operation.runtime_symbol(), Some("subscript_rt_math_abs"));

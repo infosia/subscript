@@ -271,6 +271,73 @@ Each measurement names the result that fails the section.
 | 3 | Rule 16, the corpus entries, the stress test, acceptance 2, 3, and 5. |
 | 4 | Documentation, the example host, a reload session that sets the mode, acceptance 4 and 9. |
 
+### 342.4a Phase Review
+
+Form.
+
+- `runtime/src/context/collection.rs` holds the mode, the threshold
+  and its base, the pending flag (one byte in the fixed prefix of the
+  Context), the recorded failures, the schedule of rules 14 and 15,
+  and the flag of rule 14b. `exit_script` is `exit_script_with_tasks`
+  and `finish_exit_service`; the interpreter calls the same pair with
+  its own root walk (`codegen/src/interpreter/exits.rs`).
+- The allocation fact is a field of each row of the operation table
+  and a total match on each HIR intrinsic enum, on `BuiltinMethod`, on
+  `InstructionKind`, and on `Terminator`. The fact of a function is an
+  analysis result (`codegen/src/lir/allocation.rs`), not a stored
+  field, so the LIR text does not carry it.
+- `InstructionKind::CollectionPoll` has no operand, no result, and no
+  trap site. The pass is `codegen/src/lir/collection_poll.rs`. The
+  verifier (`verify_collection_poll.rs`) uses strongly connected
+  components and does not call the pass.
+- The emitted C tests the byte through the macro `SUBSCRIPT_UNLIKELY`
+  of the prelude (`__builtin_expect` under clang and gcc, the plain
+  condition under MSVC). The MSVC form is not built on this host.
+- A dev run and a reload session take the mode in
+  `RunConfig::collection`. A session keeps it for each Context that it
+  builds.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| Stress sweep, mode 2, 594 entries | dev JIT 591 of 591 equal, ship tier 589 of 589, interpreter 486 of 486; 29,889 and 12,295 automatic collections in the dev JIT and the interpreter |
+| Entries that the sweep does not run | dev JIT 3, ship tier 5, interpreter 108; each has its reason in `exclusion()` of `codegen/tests/collection_stress.rs` |
+| Cost of the sweep | 68 s in a debug build, 36 to 49 s in a release build; it runs in `tools/gate.sh full` only |
+| Exit count, interpreter against dev JIT | 398 of 398 entries equal |
+| Rule 10a over the corpus | no `Internal` error; the interpreter sweep moved from 8.33–8.40 s to 8.57–8.62 s |
+| Tree without `free`, ship tier, polls only (no bracket) | mode 0: at least 29 trees live; mode 1 with 64 KiB headroom: under 3 |
+| 10,000 host calls of a straight-line entry, ship tier | mode 0: 83,530,016 live bytes; mode 1: 16 |
+| Held failed handle, 2,000 steps | 2,003 exits and 10 detection collections in the interpreter and the dev JIT; `caught` in the three tiers |
+| Poll cost, mode off, release, against the commit before the polls | `callbacks` ship 37.0 against 37.0–37.1 ms; `particles`, `sort`, `fib-recursive`, `mandelbrot`, `fib-loop` 0.99 to 1.00 in both native tiers |
+| Outermost exit with no failed task, mode 1 (rule 14b) | 5.2 ns with 100 and with 10,000 suspended tasks |
+| `perf-gate --gate`, one quiet run | each criterion met: `a22` ship 1.44x, `a22` dev 20.01x, `collect` ship 1.18x, `collect` dev 2.77x |
+| LIR golden | 869 `CollectionPoll()` lines added, then 7 removed and 8 pushes renamed by rule 10b |
+| Corpus | `t97`, `t98`, `t107` trap at `11:55`; `t116` and `t117` are new and Red at `ca3fc9ed` (no trap) in the three tiers; no other golden moved |
+
+The `perf-gate` figure of `a22` on the ship tier at the pin was not
+measured in this section.
+
+Phase Review (a subagent with no context, on the cumulative diff): no
+CRITICAL, 4 MAJOR, 6 MINOR. Each MAJOR is closed.
+
+| Finding | Close |
+|---|---|
+| MAJOR, realistic: `subscript_rt_ctx_set_collection` computed the threshold from the present live bytes, so a host that switched the mode at each frame never collected | rule 17 states the base; a 2,000-frame test gives the same 400 collections as mode 1 left set (0 before) |
+| MAJOR, realistic: a reload after an initializer trap lost the mode | the session keeps the mode; a test shows it by behaviour |
+| MAJOR: no test showed that a ship-tier poll collects | the test without the bracket, and a ship-tier mode control in the sweep |
+| MAJOR: acceptance 8 was wider than its test | acceptance 8 states the scope that the test has |
+| MINOR: the tiers differed on a reported aggregate | rule 14a; 0 detection collections after the report (4 before) |
+| MINOR: three public functions had no direct test | three runtime tests |
+| MINOR: the cost of the task scan at each exit | rule 14b |
+| MINOR: text in the header, the two tutorials, a test comment, and `stdlib.md` | corrected |
+
+`tools/hygiene.sh`: exit 0.
+
+`tools/gate.sh full` on the tree before this record: exit 0, debug
+3905 passed, release 3886 passed, 0 failed, 5 ignored in each. No
+golden moved.
+
 ### 342.5 Open
 
 1. The conservative scan can keep an unreachable object alive if an
@@ -288,3 +355,7 @@ Each measurement names the result that fails the section.
    interpreter prints `findLast 32`, and the ship tier prints
    `findLast 2055278416`. The literal-lambda path is a script-level
    loop and has roots.
+5. The dev tier compares the exit count with the interpreter only. The
+   ship tier has no function that reads the count (acceptance 8).
+6. `Context.free` and W001: W001 states that the Context grows until a
+   collection. That is false in mode 1. Its change is the next section.

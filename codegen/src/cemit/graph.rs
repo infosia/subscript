@@ -252,6 +252,10 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             }
             l::InstructionKind::ExceptionPark => self.emit_exception_park(out),
             l::InstructionKind::ExceptionResume => self.emit_exception_resume(out),
+            l::InstructionKind::CollectionPoll => {
+                self.emit_collection_poll(out);
+                Ok(())
+            }
             // compiler.md §116.2 rule 3: the resume made the exception of
             // an exception completion pending; the raise site checks it.
             l::InstructionKind::AwaitRaise => {
@@ -894,6 +898,27 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
 
     pub(super) fn consume(&mut self, trap: &l::Trap) {
         self.consumed_traps.push(trap.clone());
+    }
+
+    /// Emits a collection poll (`compiler.md` §342 rule 9): one read of the
+    /// pending flag and one branch. The unlikely path calls the runtime and
+    /// tests the trap word, because a collection in a debug build can set an
+    /// `Internal` trap. The path where the flag is clear has no trap test.
+    fn emit_collection_poll(&mut self, out: &mut String) {
+        let call = self.emitter.runtime_call(
+            "void",
+            "subscript_rt_collect_poll",
+            &["void*".into()],
+            &["ctx".into()],
+        );
+        let _ = writeln!(
+            out,
+            "    if (SUBSCRIPT_UNLIKELY(*((const uint8_t*)ctx + {}u) != 0u)) {{",
+            subscript_runtime::Context::collection_pending_offset()
+        );
+        let _ = writeln!(out, "        {call};");
+        self.emit_pending_check(out);
+        out.push_str("    }\n");
     }
 
     /// Loads the word and leaves on a nonzero state. At a raise site with

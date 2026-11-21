@@ -229,8 +229,8 @@ fn the_hidden_local_of_a_call_result_is_released_at_the_loop_exit() {
     const PREFIX: &str = "class Holder { n: i32 = 7; task: Promise<void>; constructor(t: Promise<void>) { this.task = t; } }\n\
                           async function fail(): Promise<void> { throw new Error(\"lost\"); }\n\
                           function one(h: Holder): FixedArray<Holder, 1> { return [h]; }\n";
-    let run = |name: &str, body: &str| {
-        let source = format!("{PREFIX}export function main(): void {{\n{body}\n}}\n");
+    let run = |name: &str, globals: &str, body: &str| {
+        let source = format!("{PREFIX}{globals}export function main(): void {{\n{body}\n}}\n");
         let files = [SourceFile::entry(name, &source)];
         let module = check_program(&files).expect("checks clean");
         let lir = lower_module(&module).expect("lowers");
@@ -245,14 +245,16 @@ fn the_hidden_local_of_a_call_result_is_released_at_the_loop_exit() {
     let released = "for (const h of one(new Holder(fail()))) { print(\"step\"); }\n\
                     Context.collect();\n\
                     print(\"end\");";
-    for outcome in run("released.ts", released) {
+    for outcome in run("released.ts", "", released) {
         assert_eq!(outcome, Err(true));
     }
-    let held = "const kept = new Holder(fail());\n\
-                for (const h of one(kept)) { print(\"step\"); }\n\
+    // The holder is a module global, so it stays reachable at the outermost
+    // exit and no detection collection reports it (compiler.md §342 rule 15).
+    let kept = "const kept = new Holder(fail());\n";
+    let held = "for (const h of one(kept)) { print(\"step\"); }\n\
                 Context.collect();\n\
                 print(`end ${kept.n}`);";
-    for outcome in run("held.ts", held) {
+    for outcome in run("held.ts", kept, held) {
         assert_eq!(outcome, Ok(b"step\nend 7\n".to_vec()));
     }
 }

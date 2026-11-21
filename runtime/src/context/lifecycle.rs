@@ -34,6 +34,7 @@ impl Context {
             fn_table: std::ptr::null(),
             globals: std::ptr::null_mut(),
             host_entry_active: 0,
+            collection_pending: collection::CollectionState::initial_pending(),
             module_globals: None,
             workers: WorkerSet::default(),
             is_worker: false,
@@ -51,6 +52,7 @@ impl Context {
             file_provider: None,
             task_groups: HashMap::new(),
             live_bytes_counter: 0,
+            collection: collection::CollectionState::new(),
             allocations: HashMap::new(),
             boundary_scratch: Vec::new(),
             boundary_watch: Default::default(),
@@ -145,8 +147,11 @@ impl Context {
             entry,
             input_descriptor,
             output_descriptor,
-            self.ship_arena,
-            fn_table,
+            crate::worker::WorkerContextSetup {
+                releasing_context: self.ship_arena,
+                fn_table,
+                collection: self.collection_settings(),
+            },
         ) {
             Ok(worker) => worker,
             Err(error) => {
@@ -475,16 +480,6 @@ impl Context {
     /// Marks entry into script code (the host called into the script).
     pub fn enter_script(&mut self) {
         self.script_depth = self.script_depth.saturating_add(1);
-    }
-
-    /// Marks return from script code.
-    pub fn exit_script(&mut self) {
-        self.script_depth = self.script_depth.saturating_sub(1);
-        // compiler.md §115.4 item 1: an exception that leaves the
-        // outermost script frame of a host entry becomes a trap.
-        if self.script_depth == 0 {
-            self.settle_uncaught_exception();
-        }
     }
 
     /// Number of host-to-script calls currently on the stack. A hot
@@ -947,7 +942,18 @@ impl Context {
     /// zeroes fresh storage and reused classes that can hold handles.
     /// A handle-free class must replace all exposed bytes before a read.
     /// [`Context::alloc_str_with`] supplies that writer for strings.
+    ///
+    /// A successful allocation sets the pending flag when live bytes exceed
+    /// the threshold. It never collects (`compiler.md` §342 rule 5).
     pub fn alloc(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
+        let payload = self.alloc_unflagged(size, class_id, pos_id);
+        if !payload.is_null() {
+            self.note_allocation();
+        }
+        payload
+    }
+
+    fn alloc_unflagged(&mut self, size: usize, class_id: u32, pos_id: u32) -> *mut u8 {
         self.allocation_started = true;
         if self.allocation_fault(pos_id) {
             return std::ptr::null_mut();

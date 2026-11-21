@@ -845,8 +845,8 @@ pub fn run_c_aot(files: &[SourceFile]) -> Result<Vec<u8>, RunError> {
 /// # Errors
 ///
 /// Returns the same [`RunError`] variants as [`run_c_aot`]. A request for
-/// development-tier memory accounting or a Rust file provider produces
-/// [`RunError::Internal`].
+/// development-tier memory accounting, a collection mode, or a Rust file
+/// provider produces [`RunError::Internal`].
 pub fn run_c_aot_configured(
     files: &[SourceFile],
     config: RunConfig<'_>,
@@ -854,6 +854,11 @@ pub fn run_c_aot_configured(
     if config.memory_accounting {
         return Err(RunError::Internal(internal(
             "Context memory accounting is not available in the shipping tier",
+        )));
+    }
+    if config.collection.is_some() {
+        return Err(RunError::Internal(internal(
+            "the shipping tier sets the collection mode in a pre-init host hook",
         )));
     }
     let stdout = execute_c_aot(files, config)?;

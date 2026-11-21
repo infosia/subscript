@@ -67,6 +67,7 @@ impl Interpreter<'_> {
     ) -> Result<(), InterpretError> {
         let key = Rc::as_ptr(coroutine) as usize;
         let mut state = coroutine.borrow_mut();
+        let task_id = state.task_id;
         if state.owners != 0 {
             state.owners -= 1;
         }
@@ -148,6 +149,15 @@ impl Interpreter<'_> {
                 self.async_handles.borrow_mut().remove(&key);
             }
             if let Some((object, message, pos)) = unobserved {
+                // compiler.md §342 rule 12: a collection records the
+                // failure; it does not trap.
+                let pos_id = self.failure_position_id(&pos)?;
+                if self
+                    .context
+                    .record_task_failure(task_id, object, message.clone(), pos_id)
+                {
+                    return Ok(());
+                }
                 return Err(InterpretError::Exception {
                     object,
                     message,

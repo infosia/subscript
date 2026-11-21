@@ -12,6 +12,17 @@ const TASK_SOURCE: &str = include_str!("context/async_inspection.rs");
 const CONTEXT_SOURCE: &str = include_str!("context.rs");
 const WORKER_SOURCE: &str = include_str!("worker.rs");
 
+/// Context functions whose `ffi.rs` documentation the header carries: the
+/// bracket of the outermost exit, the explicit collection, and the memory
+/// metrics (`compiler.md` §342 rules 8a, 13, and 20).
+const DOCUMENTED_CONTEXT_FUNCTIONS: [&str; 5] = [
+    "subscript_rt_ctx_enter_script",
+    "subscript_rt_ctx_exit_script",
+    "subscript_rt_ctx_collect",
+    "subscript_rt_ctx_live_allocations",
+    "subscript_rt_ctx_live_bytes",
+];
+
 #[derive(Debug)]
 struct Function {
     name: String,
@@ -44,6 +55,10 @@ pub fn render() -> Result<String, String> {
     let freed_handle_diagnostics_docs = docs_for(
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_set_freed_handle_diagnostics",
+    )?;
+    let collection_setter_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_set_collection",
     )?;
     let print_observer_setter_docs = docs_for(
         FFI_SOURCE,
@@ -317,11 +332,18 @@ pub fn render() -> Result<String, String> {
             let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
             push_comment(&mut out, &docs_for(FFI_SOURCE, &declaration)?);
         }
+        if DOCUMENTED_CONTEXT_FUNCTIONS.contains(&function.name.as_str()) {
+            let declaration = format!("pub unsafe extern \"C\" fn {}", function.name);
+            push_comment(&mut out, &docs_for(FFI_SOURCE, &declaration)?);
+        }
         if function.name == "subscript_rt_ctx_visit_async_tasks" {
             push_comment(&mut out, &task_visit_docs);
         }
         if function.name == "subscript_rt_ctx_set_freed_handle_diagnostics" {
             push_comment(&mut out, &freed_handle_diagnostics_docs);
+        }
+        if function.name == "subscript_rt_ctx_set_collection" {
+            push_comment(&mut out, &collection_setter_docs);
         }
         if function.name == "subscript_rt_ctx_set_print_observer" {
             push_comment(&mut out, &print_observer_setter_docs);
@@ -654,8 +676,15 @@ mod tests {
  * C calling convention shared by the module initializer (`subscript_init`) and every
  * supported host export.
  *
- * A host that may clear traps brackets each call with
- * `subscript_rt_ctx_enter_script` and `subscript_rt_ctx_exit_script`.
+ * The host brackets each call with `subscript_rt_ctx_enter_script` and
+ * `subscript_rt_ctx_exit_script` (compiler.md §342 rule 8a). A call does not
+ * mark the outermost exit by itself. The exit that takes the script depth to
+ * zero runs the collection that an allocation requested, and reports a failed
+ * task that nobody awaits as an `UncaughtException` trap at the throw position,
+ * on the detection schedule (rules 8, 14, and 15). Without the bracket, an
+ * export with no loop and no call does not reclaim its memory across calls,
+ * and no outermost exit reports such a failure. The bracket also lets the
+ * host clear a trap.
  *
  * An ordinary run entry uses `subscript_export_main`; a host-owned entry may instead
  * drive other zero-argument `void` exports using the symbol
@@ -686,6 +715,27 @@ mod tests {
 typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
 "#
         ));
+    }
+
+    #[test]
+    fn generated_host_header_states_the_collection_rules_for_the_host() {
+        let header = render().expect("render host header");
+        let lines: Vec<&str> = header.lines().collect();
+        for name in DOCUMENTED_CONTEXT_FUNCTIONS {
+            let index = lines
+                .iter()
+                .position(|line| line.contains(&format!(" {name}(")))
+                .unwrap_or_else(|| panic!("{name} is declared"));
+            assert_eq!(lines[index - 1], " */", "{name} carries its documentation");
+        }
+        // Control: an undocumented declaration has no comment before it.
+        let index = lines
+            .iter()
+            .position(|line| line.contains(" subscript_rt_ctx_reserved_bytes("))
+            .expect("reserved bytes is declared");
+        assert_ne!(lines[index - 1], " */");
+        assert_eq!(header.matches("§342 rule 19").count(), 3);
+        assert_eq!(header.matches("§342 rule 20").count(), 2);
     }
 
     #[test]

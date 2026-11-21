@@ -11,6 +11,7 @@ pub use standard_host::StandardHostOperation;
 mod names;
 pub use names::{declaration_label, source_name, Symbol};
 
+mod allocation;
 mod collections;
 mod counted_arrays;
 pub use counted_arrays::CountedArrayMethod;

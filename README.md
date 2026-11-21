@@ -4,8 +4,8 @@ A statically-typed, AOT-compilable **embedded scripting language for
 native applications**: a **C-compatible execution and memory model
 wearing a TypeScript-subset syntax**. Because the syntax is a subset of
 TypeScript, standard TypeScript editor tooling works against it; the
-compiler adds sound static types, C-ABI data layout, deterministic
-memory, and zero-copy C interop.
+compiler adds sound static types, C-ABI data layout, collection pauses
+that the host controls, and zero-copy C interop.
 
 It is built for a host that **owns its main loop and exposes a C ABI**,
 and that wants user-authored logic to be fast to iterate on and
@@ -62,11 +62,11 @@ control step in an embedded system — who want:
   the language's structs *are* the C structs (layout is machine-verified
   against the platform C compiler), so no data is converted or copied at
   the boundary.
-- **Deterministic memory** — Context-scoped allocation, explicit
-  `Context.free(value)`, and `Context.collect()` only when you ask for it.
-  No collector runs unbidden, so there is no pause the host did not ask
-  for — the property a frame loop, an audio callback, or a control step
-  all need.
+- **Collection pauses that the host controls** — a collection runs only
+  inside a call into the Context, on the thread of that call, and moves no
+  object. The host selects one of three levels: automatic (the default,
+  with no release code), host-timed (the host collects at a point it
+  selects), or manual (`Context.free`, and no collection).
 
 ### Who it's *not* for
 
@@ -98,7 +98,7 @@ gaps to be closed later:
 - [subscript for TypeScript developers](docs/tutorial-typescript.md) —
   what changes coming from TypeScript: sized integers, nominal and value
   classes, `null` as the absent value and `undefined` as a function
-  result only, explicit memory, `Error`-family
+  result only, the three collection levels, `Error`-family
   exceptions beside uncatchable traps, host-stepped `async`, coroutines,
   workers, and the complete rejection table.
 - [subscript for Rust embedders](docs/tutorial-rust.md) — embedding
@@ -148,7 +148,7 @@ export function main(): void {
 
 `@ValueType class` is a C-layout value type (copy-on-assign, copy-on-pass);
 `f32`/`i32`/`u32`/`i64`/`u64`/`f64` are sized numerics with C conversion
-semantics; a plain `class` is a heap reference type with manual lifetime.
+semantics; a plain `class` is a reference type that the Context allocates.
 There is no default `number` type — a sized type is always required.
 An `interface` is a compile-time constraint: a class opts in with
 `implements`, and a generic `T extends I` calls the members directly in
@@ -173,13 +173,31 @@ handles all cross the boundary with no conversion. No specific host header
 is privileged by the language; if host data must become script-visible,
 the host grows a C facade.
 
-### No implicit GC
+### Collection pauses that the host controls
 
-Memory is Context-scoped. Allocate objects normally, release finished
-objects with `Context.free(value)`, and call `Context.collect()` when you
-want unreachable allocations reclaimed. Nothing collects unbidden — a
-program that never collects is correct, merely larger — so there are no
-collector pauses in the frame loop.
+A collection of a Context runs only inside a call into that Context, on
+the thread of that call. No collector thread exists, and no collection
+moves an object.
+
+The host selects one of three levels:
+
+| Level | Who decides | What happens | What it is for |
+|---|---|---|---|
+| Automatic (the default) | The Context | Script code has no release code. The Context reclaims unreachable memory at polls that the compiler places, and at `subscript_rt_ctx_exit_script` when a host call ends. | Most programs |
+| Host-timed | The host | The host switches automatic collection off with `subscript_rt_ctx_set_collection(ctx, 0, 0)`. It collects with `subscript_rt_ctx_collect` at a point it selects, for example between two frames. No automatic collection runs. | A frame loop with a fixed collection point |
+| Manual | The script | Script code releases an object at once with `Context.free(value)`. Automatic collection is off, and no collection runs. | An audio callback, a control step, or any place that allows no pause |
+
+`Context.free` and `Context.collect()` are valid at each level.
+
+These facts hold at each level:
+
+- No object moves, so a pointer that C holds keeps its address while
+  the object lives.
+- A collection runs only inside a call into the Context.
+- An automatic collection does not change what a program prints or where
+  it traps. The two tiers and the interpreter agree byte for byte.
+- A program that never collects is correct, merely larger.
+- Cleanup of an external resource uses `using`, not reachability.
 
 ### A deterministic standard library
 

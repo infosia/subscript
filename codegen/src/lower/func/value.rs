@@ -529,6 +529,28 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         self.builder.switch_to_block(next);
     }
 
+    /// Lowers a collection poll (`compiler.md` §342 rule 9): one load of the
+    /// pending flag and one branch. The cold block calls the runtime and
+    /// tests the trap word, because a collection in a debug build can set an
+    /// `Internal` trap. The path where the flag is clear has no trap test.
+    pub(super) fn collection_poll(&mut self) -> Result<(), String> {
+        let offset = i32::try_from(rtc::Context::collection_pending_offset())
+            .map_err(|_| internal("the pending flag offset does not fit in i32"))?;
+        let flag = self
+            .builder
+            .ins()
+            .load(types::I8, MemFlags::trusted(), self.ctx, offset);
+        let cold = self.builder.create_block();
+        let join = self.builder.create_block();
+        self.builder.set_cold_block(cold);
+        self.builder.ins().brif(flag, cold, &[], join, &[]);
+        self.builder.switch_to_block(cold);
+        self.call_runtime(self.ml.rt.collect_poll, &[self.ctx], true)?;
+        self.builder.ins().jump(join, &[]);
+        self.builder.switch_to_block(join);
+        Ok(())
+    }
+
     fn guard(&mut self, condition: Value, kind: TrapKind, position: &Pos) -> Result<(), String> {
         let ok = self.builder.create_block();
         let bad = self.builder.create_block();

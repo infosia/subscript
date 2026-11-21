@@ -918,6 +918,8 @@ pub(super) fn take_defined_function_texts() -> Vec<(String, String)> {
 }
 
 #[cfg(test)]
+mod collection_poll_tests;
+#[cfg(test)]
 mod frame_root_tests;
 
 #[cfg(test)]
