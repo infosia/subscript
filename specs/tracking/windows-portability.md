@@ -1723,3 +1723,53 @@ and §112 also: debug 1670 on the unix hosts at `afd51d7`, and debug
 number of tests to the count on each host. A test that returns early
 at the fixture exclusion counts as passed, so the count does not show
 which tests ran the fixture side.
+
+## Gate state at `9db9f08e` and `6169b0e5`, 2026-11-20 and 2026-11-22
+
+Host `x86_64-pc-windows-msvc`, Windows 11 Pro 10.0.26200. rustc 1.95.0
+(59807616e), node v24.22.1, tsc 5.9.2. The `cc` version probe of
+`tools/gate.sh` prints "cc: command not found". That line is a probe
+result only; the ship tier finds MSVC `cl` by §11c.
+
+### `9db9f08e`: two Windows-only test defects
+
+```text
+gate full 9db9f08e3a2c85bb50b2e80fd3736459b3d2df78 clean debug 3731/7/5 release 3719/1/5 skips 1/0 clippy 4/10/13 goldens-moved 0 exit 1
+```
+
+1. `codegen/src/jit/output.rs`,
+   `a_closed_temporary_file_returns_an_error_that_names_its_path`
+   (§340). `TemporaryFile::take_parts` wrote the path with `{:?}`. On
+   Windows that form escapes each backslash, so the message did not
+   contain the `display()` form that the test reads. The message now
+   uses `display()`, as `file_mut` does.
+2. `cli/tests/gate.rs`, six `full_*` tests (§276). `command_text` in
+   `tools/gate.sh` quotes an argument that contains a character
+   outside `[a-zA-Z0-9_./:=+-]`. A Windows stub path contains `\`, so
+   the record holds the quoted form. The tests now derive the expected
+   `command:` line by that rule, in the helper `command_argument`.
+
+Each defect is reachable only on Windows, so no unix host ran it. The
+fix is `ca3fc9ed`. The full gate on the fixed tree, before the commit:
+
+```text
+gate full 9db9f08e3a2c85bb50b2e80fd3736459b3d2df78 dirty:2 debug 3738/0/5 release 3720/0/5 skips 1/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+The two `dirty` paths are the two fixed files. Step wall seconds: fmt
+3, build 111, debug 411, release 262, clippy 11, tsc 1, hygiene 2.
+
+### `6169b0e5`: automatic collection (§342 to §346) is green
+
+```text
+gate full 6169b0e5bf1c888dc9b0cb385f4781757cd2e7b0 clean debug 3840/0/5 release 3822/0/5 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 10, build 145, debug 423, release 374, clippy
+29, tsc 1, hygiene 2.
+
+The two debug skips are the `perf_gate` line and the
+`collection_stress_sweep` line. The sweep runs in the release step
+only, with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`. There it passed in
+20.82 s. The `native fixture unavailable` lines (foreign callback
+control, host initializer) do not count as skips, as at `9db9f08e`.
