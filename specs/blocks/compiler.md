@@ -29,7 +29,7 @@ The stages of the current form and the sections that hold their rules:
 | reference interpreter | §68.7 |
 | runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344, §345, §346, §347, §348 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
-| workers | §38–§40, §84, §152 |
+| workers | §38–§40, §84, §152, §349 |
 | the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222, §225, §226 |
 
 Every section, with its status:
@@ -389,3 +389,4 @@ Every section, with its status:
 | §346 | The trigger counts the bytes that the program requests | active | [`s346-the-trigger-counts-the-bytes-that-the-program-requests.md`](compiler/s346-the-trigger-counts-the-bytes-that-the-program-requests.md) |
 | §347 | A received array has a test of the mark, and `arrops.rs` is under the file limit | active | [`s347-a-received-array-has-a-test-of-the-mark.md`](compiler/s347-a-received-array-has-a-test-of-the-mark.md) |
 | §348 | A collection reclaims a completed task that only unreachable objects hold | active | [`s348-a-collection-reclaims-a-completed-task-that-only-unreachable-objects-hold.md`](compiler/s348-a-collection-reclaims-a-completed-task-that-only-unreachable-objects-hold.md) |
+| §349 | A Worker has an awaitable receive | active | [`s349-a-worker-has-an-awaitable-receive.md`](compiler/s349-a-worker-has-an-awaitable-receive.md) |
