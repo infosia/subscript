@@ -575,3 +575,9 @@ nested generators.
 one more chain, the resumes of an async recursion in one drain, and
 §351 rule 12 gives the drain a poll between two jobs. The evidence is
 in `compiler.md` §351.5.
+
+A second review at `524edac8` found one more return path: a function
+that resumes a generator and then allocates. §352 states for each LIR
+instruction what script code it runs, builds the graph from that
+fact, and checks the fact in the interpreter. The evidence is in
+`compiler.md` §352.5.

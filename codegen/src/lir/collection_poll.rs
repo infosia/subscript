@@ -1,9 +1,9 @@
-//! Placement of collection polls (`compiler.md` §342 rule 11, §351).
+//! Placement of collection polls (`compiler.md` §342 rule 11, §351, §352).
 //!
 //! The pass runs once per module, after local storage classification and
 //! before the verifier. It reads the allocation facts of
 //! [`AllocationFacts::of_module`] and inserts
-//! [`l::InstructionKind::CollectionPoll`] at four kinds of site:
+//! [`l::InstructionKind::CollectionPoll`] at five kinds of site:
 //!
 //! - **Backedge (rule 11a).** A depth-first search from the entry block
 //!   finds each retreating edge. The natural loop of the edge is its header
@@ -19,26 +19,47 @@
 //!   block (`lower/func.rs`, the parameter loop before the entry jump;
 //!   `cemit/body.rs`, the parameter copies before the first block), so the
 //!   poll is after those stores too.
-//! - **After a call into the cycle (rule 11e, §351 rule 1).** In a
-//!   function of a cycle, a call whose possible callee is in that cycle
-//!   gets one poll directly after it if its continuation can reach an
-//!   instruction that can allocate, or a suspension, before a poll.
+//! - **After a call into the cycle (rule 11e, §351 rule 1, §352 rule 4).**
+//!   In a function of a cycle, a call or a generator resume whose possible
+//!   callee is in that cycle gets one poll directly after it if its
+//!   continuation can reach an instruction that can allocate, or a
+//!   suspension, before a poll.
 //! - **Handler (rule 11f, §351 rule 2).** In a function of a cycle, a
 //!   handler block whose path can allocate before a poll gets one poll
 //!   after its leading instructions that take the exception.
+//! - **Resume point (rule 11h, §352 rule 9).** In a generator of a cycle,
+//!   a resume point (the successor block of a `yield` suspension) whose
+//!   path can allocate or suspend before a poll gets one poll at its start.
 //!
-//! The call graph with indirect edges has an edge for each direct call, and
-//! an edge from each function with an indirect call, or with a runtime
-//! operation that has an operand of a function type, to each function whose
-//! address is taken. The language has no other dispatch: an interface is a
-//! constraint, and each instance calls the member of its type argument
-//! directly (`compiler.md` §208).
+//! The call graph with indirect edges is built from the script entry fact
+//! of each instruction and each terminator ([`super::script_entry`],
+//! §352 rules 1 and 2). A fact that names a function is an edge to it: a
+//! direct call, and an await of a direct async call. The fact "each
+//! function whose address is taken" (an indirect call, a runtime operation
+//! with a function-value operand, a foreign call, whose host can call a
+//! registered callback) is an edge to each such function. The
+//! fact "each generator body" (a resume or a close of a generator) is an
+//! edge to each generator function of the module, because the handle does
+//! not name its body (§352 rule 3). The language has no other dispatch: an
+//! interface is a constraint, and each instance calls the member of its
+//! type argument directly (`compiler.md` §208).
 //!
 //! The scan of a continuation follows the handler edges of the instructions
 //! it passes and ends at a return, a trap, or an unreachable point. A poll
 //! and a direct call to a function with an entry poll end a path of the
-//! scan (§351 rule 3). A function outside each cycle gets no poll of the
-//! last two kinds (§351 rule 4).
+//! scan (§351 rule 3). A resume of a generator does not end a path: the
+//! generator can resume at a suspension point, past its entry poll (§352
+//! rule 5). A function outside each cycle gets no poll of the last two
+//! kinds (§351 rule 4).
+//!
+//! The poll after a resume is on the normal return of the resume only. A
+//! `for…of` over a generator resumes with `next()` in its loop header, and
+//! the poll goes directly after that call, before the read of `done`, so
+//! the exhausted path and the body path both pass it. The close of the
+//! generator at a `break`, a `return`, or an exception of the loop body
+//! runs its `finally` code, and a poll goes directly after the close by the
+//! same rule. An exception from the body of the generator leaves the
+//! resume by its handler edge, which §351 rule 2 serves.
 //!
 //! A poll cannot allocate, so the allocation facts of a module are the same
 //! before and after the pass. The pass computes them again after the first
@@ -58,20 +79,29 @@
 //!    the cycle. A path with no poll is then a path with no repeated
 //!    allocating block. Its count of instructions that can allocate is at
 //!    most the size of the function.
-//! 2. **Calls and returns (§351 rule 6).** A path with no poll enters
-//!    activations by calls and leaves them by normal or exceptional returns.
-//!    Each call goes to a function of the cycle of the caller, or to a
+//! 2. **Calls and returns (§351 rule 6, §352 rule 8).** A path with no poll
+//!    enters activations by calls and generator resumes, and leaves them by
+//!    normal or exceptional returns. A resume enters the body of a
+//!    generator, and the return from it is a return of that body, at its
+//!    end or at a yield. Each call goes to a function of the cycle of the caller, or to a
 //!    function that does not reach the caller. So the functions of one stack, in stack order, pass through the
 //!    cycles of the call graph with indirect edges in one order, and a
 //!    function outside each cycle has one frame on the stack at most.
 //!    - *Descent.* A chain of calls with no poll has no allocating function
 //!      twice: a repeated function is in a cycle, and each function of a
-//!      cycle that can allocate has an entry poll. An indirect call and a
-//!      runtime operation with a function-value operand reach only
-//!      functions whose address is taken, and each of those that can
-//!      allocate has an entry poll.
-//!    - *Normal return.* A return from a callee in the cycle of the caller
-//!      reaches the poll directly after the call, or a continuation that
+//!      cycle that can allocate has an entry poll. An indirect call, a
+//!      runtime operation with a function-value operand, and a foreign call
+//!      reach only functions whose address is taken, and each of those that can
+//!      allocate has an entry poll. A resume reaches only a generator body.
+//!      The first resume of a generator runs its entry block, and a
+//!      generator that can allocate has an entry poll. A later resume runs
+//!      a resume point. In a generator of a cycle, the path from a resume
+//!      point reaches a poll before it can allocate, suspend, or resume a
+//!      generator (§352 rule 9). A generator outside each cycle does not
+//!      reach itself, so its frame is on the stack one time at most.
+//!    - *Normal return.* A return from a callee or a generator body in the
+//!      cycle of the caller reaches the poll directly after the call or the
+//!      resume, or a continuation that
 //!      reaches no instruction that can allocate and no suspension before a
 //!      poll or its own return (§351 rules 1 and 3). Such a continuation
 //!      makes no call that can allocate. So a chain of returns inside one
@@ -91,13 +121,12 @@
 //!    instructions of the handlers of one function. The count of
 //!    instructions that can allocate with no poll has a bound that only the
 //!    module sets, for direct calls, indirect calls, callback operations,
-//!    normal returns, and exceptional returns.
+//!    generator resumes, normal returns, and exceptional returns.
 //!
-//!    Not in the bound (§351 rule 7): a recursion that passes through the
-//!    host, which the call graph of the module does not show; a value that
-//!    passes up through nested generators, one suspension for each
-//!    generator with no poll between them; and the allocations of one
-//!    runtime operation (point 3).
+//!    Not in the bound (§351 rule 7, §352 rule 8): an export that the host
+//!    calls from inside a foreign call, which the call graph of the module
+//!    does not show (§351.4 item 1), and the allocations of one runtime
+//!    operation (point 3).
 //! 3. **Runtime operations.** The bound counts instructions, not
 //!    allocations. One runtime operation can allocate in proportion to its
 //!    input, and no poll is in a runtime loop: a poll there needs a root for
@@ -107,31 +136,96 @@
 //!    operation with a function-value callback calls a function whose
 //!    address is taken. That function has an entry poll if it can allocate.
 //!
-//! # Resume (rule 11c)
+//! # Resume (rule 11c, rule 11h)
 //!
 //! A resume of an async function or a generator enters the function at the
-//! successor block of a suspension. The suspension edge is a control-flow
-//! edge of the LIR, so a loop that contains an `await` or a `yield` is a
-//! cycle of the graph, and point 1 above gives it a poll. A first start
-//! enters at the entry block, which has an entry poll. Between two
-//! suspensions of one activation, the resumed code is bounded by point 1 and
-//! point 2.
+//! successor block of a suspension: a resume point. A first start enters at
+//! the entry block, which has an entry poll. The suspension edge is a
+//! control-flow edge of the LIR, so a loop that contains an `await` or a
+//! `yield` is a cycle of the graph, and point 1 above gives it a poll: rule
+//! 11c bounds the code that one activation runs between two suspensions.
+//! A resume point is not after a poll by rule 11c alone. The backedge poll
+//! of a loop is on the path from its resume point only if that path passes
+//! the source block of the retreating edge first.
+//!
+//! A resume point of a generator is an entry of a chain of resumes: a
+//! generator resumes its child from the code after a `yield`, and the child
+//! enters at its own resume point. So in a generator of a cycle, a resume
+//! point whose path can allocate or suspend before a poll has a poll on
+//! that path (`compiler.md` §352 rule 9). The scan is the scan of a
+//! continuation: a direct call to a function with an entry poll counts as a
+//! poll, and a resume does not. A resume point is a dispatch: the test of
+//! the close request, then a branch to the close continuation, which runs
+//! the `finally` code of the generator, or to the normal continuation. The
+//! scan reads the two branches separately. If the normal branch is open,
+//! the poll is at the start of the resume point, before the test, and the
+//! two branches pass it. If only the close branch is open, the poll is at
+//! the start of the close continuation, and a normal resume runs no poll
+//! there. The test and the branch cannot allocate, and neither block has a
+//! required leading instruction. A resume point that is not a plain
+//! dispatch gets the poll at its start if its path is open. A resume of a
+//! generator can allocate, so a path from a resume point to a resume has
+//! the poll. A generator outside each cycle gets no such poll: it does not
+//! reach itself, so one frame of it is on a stack one time at most (§351
+//! rule 4).
 //!
 //! The scheduler drain (`Context::async_step`) resumes each ready job in one
 //! script entry. Each resume runs the bounded code of one activation by the
 //! points above. The drain serves the flag between two jobs (`compiler.md`
 //! §351 rule 12, §342 rule 11g). So a chain of resumes in one drain, such as
 //! the return chain of an async recursion, reaches a poll after each job.
-//! The interpreter's drain has the same poll.
+//! The interpreter's drain has the same poll. An async function thus gets
+//! no poll at its resume points: each resume of it is a job of a drain.
 
 use super::allocation::AllocationFacts;
+use super::script_entry::{
+    instruction_script_entry, terminator_script_entry, ScriptEntry, ScriptMethods,
+};
 use super::*;
 
+mod return_path;
+use return_path::return_path_sites;
+#[cfg(test)]
+use return_path::{resume_dispatch, resume_points, takes_the_exception, ContinuationScan};
+
+/// A map of the script entry fact. The placement reads each fact through
+/// it; the identity map gives the placement of the module.
+#[doc(hidden)]
+pub type FactMap = fn(ScriptEntry) -> ScriptEntry;
+
 /// Inserts the collection polls of each function of the module
-/// (`compiler.md` §342 rule 11, §351 rules 1 to 5).
+/// (`compiler.md` §342 rule 11, §351 rules 1 to 5, §352 rules 2 to 5 and 9).
 pub(super) fn place_collection_polls(module: &mut l::Module) {
+    place(module, |fact| fact);
+}
+
+/// Removes each collection poll of a lowered module and places the polls
+/// again, with each script entry fact read through `map`. This function is
+/// for tests of the call graph of the placement (`compiler.md` §352
+/// acceptance 5), which read the poll sites of the accept corpus with and
+/// without the edges of one fact. The map takes the fact of each
+/// instruction and each terminator and returns the fact that the graph
+/// uses: the identity map gives the polls of [`super::lower_module`] again,
+/// because the placement is its last pass, and a map that returns
+/// [`ScriptEntry::None`] for a fact removes the edges of that fact. The
+/// result is not verified.
+#[doc(hidden)]
+pub fn place_collection_polls_with(module: &mut l::Module, map: FactMap) {
+    for block in module
+        .functions
+        .iter_mut()
+        .flat_map(|function| function.blocks.iter_mut())
+    {
+        block
+            .instructions
+            .retain(|instruction| instruction.kind != l::InstructionKind::CollectionPoll);
+    }
+    place(module, map);
+}
+
+fn place(module: &mut l::Module, map: FactMap) {
     let facts = AllocationFacts::of_module(module);
-    let graph = CallGraph::of_module(module);
+    let graph = CallGraph::of_module(module, map);
     let entry = entry_polls(module, &facts, &graph);
     for (function, entry_poll) in module.functions.iter_mut().zip(entry.iter().copied()) {
         if !facts.function_can_allocate(function.id) {
@@ -312,115 +406,84 @@ fn backedge_poll_sites(
     sites
 }
 
-/// The direct callees of an instruction, for the call graph.
-fn direct_callees(
-    methods: &HashMap<l::MethodId, l::FunctionId>,
-    instruction: &l::Instruction,
-) -> Option<l::FunctionId> {
-    match &instruction.kind {
-        l::InstructionKind::Call(target) | l::InstructionKind::AsyncHandleCreate(target) => {
-            target_callee(methods, target)
-        }
-        _ => None,
-    }
-}
-
-/// The async call of a suspension: an await of a direct async call
-/// creates its callee and runs it (`compiler.md` §351 "Terms").
-fn suspension_call(terminator: &l::Terminator) -> Option<&l::CallTarget> {
-    match terminator {
-        l::Terminator::Suspend {
-            kind: l::SuspendKind::AsyncCall { target, .. },
-            ..
-        } => Some(target),
-        _ => None,
-    }
-}
-
-/// The script function that a call target names directly.
-fn target_callee(
-    methods: &HashMap<l::MethodId, l::FunctionId>,
-    target: &l::CallTarget,
-) -> Option<l::FunctionId> {
-    match &target.kind {
-        l::CallTargetKind::Function(id)
-        | l::CallTargetKind::LambdaSelf(id)
-        | l::CallTargetKind::StaticClosure(id) => Some(*id),
-        l::CallTargetKind::ClosureDefault { helper, .. } => Some(*helper),
-        l::CallTargetKind::Method(id) => methods.get(id).copied(),
-        _ => None,
-    }
-}
-
-/// The call graph with indirect edges (`compiler.md` §351 "Terms").
+/// The call graph with indirect edges (`compiler.md` §351 "Terms", §352
+/// rules 2 and 3), built from the script entry fact of each instruction and
+/// each terminator.
 ///
-/// A function has an edge to each direct callee. A function with an
-/// indirect call, or with a runtime operation that takes a function value,
-/// has an edge to each function whose address is taken. The pass decides
-/// cycles by reachability; the verifier builds its own graph and uses
-/// strongly connected components.
+/// A function has an edge to each function that a fact names. A function
+/// with the fact "each function whose address is taken" has an edge to
+/// each such function, and a function with the fact "each generator body"
+/// has an edge to each generator function. The pass decides cycles by
+/// reachability; the verifier builds its own graph and uses strongly
+/// connected components.
 struct CallGraph {
     /// The functions whose address is taken.
     taken: Vec<usize>,
+    /// The generator functions.
+    generators: Vec<usize>,
     /// The functions that each function reaches by one edge or more.
     reaches: Vec<Vec<bool>>,
-    /// The method bodies, for the direct callee of a method call.
-    methods: HashMap<l::MethodId, l::FunctionId>,
+    /// The method bodies, for the fact of a method call.
+    methods: ScriptMethods,
+    /// The map of each fact.
+    map: FactMap,
 }
 
 impl CallGraph {
-    fn of_module(module: &l::Module) -> Self {
+    fn of_module(module: &l::Module, map: FactMap) -> Self {
         let count = module.functions.len();
-        let methods = module
-            .classes
-            .iter()
-            .flat_map(|class| class.constructor.iter().chain(class.methods.iter()))
-            .map(|method| (method.id, method.function))
-            .collect::<HashMap<_, _>>();
+        let methods = ScriptMethods::of_module(module);
         let mut callees = vec![Vec::new(); count];
         let mut taken = BTreeSet::new();
         let mut indirect = vec![false; count];
+        let mut resumes = vec![false; count];
         for (index, function) in module.functions.iter().enumerate() {
-            for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-                if let l::InstructionKind::FunctionRef(id) | l::InstructionKind::MakeClosure(id) =
-                    &instruction.kind
-                {
-                    if (id.0 as usize) < count {
-                        taken.insert(id.0 as usize);
-                    }
-                }
-                if let Some(callee) = direct_callees(&methods, instruction) {
+            let mut add = |fact: ScriptEntry| match fact {
+                ScriptEntry::Function(callee) | ScriptEntry::AsyncFunction(callee) => {
                     if (callee.0 as usize) < count {
                         callees[index].push(callee.0 as usize);
                     }
                 }
-                if calls_a_function_value(function, instruction) {
-                    indirect[index] = true;
-                }
-            }
-            // An await of a direct async call is an edge to its callee.
-            for target in function
-                .blocks
-                .iter()
-                .filter_map(|block| suspension_call(&block.terminator))
-            {
-                match target_callee(&methods, target) {
-                    Some(callee) if (callee.0 as usize) < count => {
-                        callees[index].push(callee.0 as usize);
-                    }
-                    Some(_) => {}
-                    None => {
-                        if matches!(target.kind, l::CallTargetKind::Indirect) {
-                            indirect[index] = true;
+                ScriptEntry::AddressTaken => indirect[index] = true,
+                ScriptEntry::GeneratorBody => resumes[index] = true,
+                ScriptEntry::None => {}
+            };
+            for block in &function.blocks {
+                for instruction in &block.instructions {
+                    if let l::InstructionKind::FunctionRef(id)
+                    | l::InstructionKind::MakeClosure(id) = &instruction.kind
+                    {
+                        if (id.0 as usize) < count {
+                            taken.insert(id.0 as usize);
                         }
                     }
+                    add(map(instruction_script_entry(
+                        &methods,
+                        function,
+                        instruction,
+                    )));
                 }
+                add(map(terminator_script_entry(
+                    &methods,
+                    function,
+                    &block.terminator,
+                )));
             }
         }
         let taken = taken.into_iter().collect::<Vec<_>>();
+        let generators = module
+            .functions
+            .iter()
+            .enumerate()
+            .filter(|(_, function)| function.is_generator)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
         for (index, row) in callees.iter_mut().enumerate() {
             if indirect[index] {
                 row.extend(taken.iter().copied());
+            }
+            if resumes[index] {
+                row.extend(generators.iter().copied());
             }
         }
         let reaches = (0..count)
@@ -437,9 +500,20 @@ impl CallGraph {
             .collect();
         Self {
             taken,
+            generators,
             reaches,
             methods,
+            map,
         }
+    }
+
+    /// The fact of one instruction, through the map of the graph.
+    fn fact(&self, function: &l::Function, instruction: &l::Instruction) -> ScriptEntry {
+        (self.map)(instruction_script_entry(
+            &self.methods,
+            function,
+            instruction,
+        ))
     }
 
     /// True if the function reaches itself: it is in a cycle.
@@ -462,52 +536,28 @@ impl CallGraph {
             .unwrap_or(false)
     }
 
-    /// True if a possible callee of the instruction is in the cycle of
-    /// `caller` (`compiler.md` §351 rule 1).
+    /// True if a function that the instruction can run is in the cycle of
+    /// `caller` (`compiler.md` §351 rule 1, §352 rule 4).
     fn calls_into_cycle(
         &self,
         function: &l::Function,
         caller: usize,
         instruction: &l::Instruction,
     ) -> bool {
-        if let Some(callee) = direct_callees(&self.methods, instruction) {
-            if self.same_cycle(caller, callee.0 as usize) {
-                return true;
+        match self.fact(function, instruction) {
+            ScriptEntry::Function(callee) | ScriptEntry::AsyncFunction(callee) => {
+                self.same_cycle(caller, callee.0 as usize)
             }
-        }
-        calls_a_function_value(function, instruction)
-            && self
+            ScriptEntry::AddressTaken => self
                 .taken
                 .iter()
-                .any(|&target| self.same_cycle(caller, target))
-    }
-}
-
-/// True if the instruction is an indirect call, or a runtime operation
-/// with an operand of a function type (`compiler.md` §351 "Terms").
-fn calls_a_function_value(function: &l::Function, instruction: &l::Instruction) -> bool {
-    let target = match &instruction.kind {
-        l::InstructionKind::Call(target) | l::InstructionKind::AsyncHandleCreate(target) => target,
-        _ => return false,
-    };
-    match &target.kind {
-        l::CallTargetKind::Indirect => true,
-        l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_) => {
-            instruction.operands.iter().any(|operand| {
-                match operand {
-                l::Operand::Value(value) => function
-                    .values
-                    .get(value.0 as usize)
-                    .filter(|data| data.id == *value)
-                    .or_else(|| function.values.iter().find(|data| data.id == *value))
-                    .is_some_and(|data| {
-                        matches!(&data.ty, l::ValueType::Data(ty) if ty.function_type().is_some())
-                    }),
-                l::Operand::Constant(constant) => constant.ty.function_type().is_some(),
-            }
-            })
+                .any(|&target| self.same_cycle(caller, target)),
+            ScriptEntry::GeneratorBody => self
+                .generators
+                .iter()
+                .any(|&target| self.same_cycle(caller, target)),
+            ScriptEntry::None => false,
         }
-        _ => false,
     }
 }
 
@@ -539,159 +589,6 @@ fn entry_polls(module: &l::Module, facts: &AllocationFacts, graph: &CallGraph) -
         .collect()
 }
 
-/// The leading instructions of a handler block that take the exception.
-/// A poll goes after them (`compiler.md` §351 rule 2).
-fn takes_the_exception(instruction: &l::Instruction) -> bool {
-    matches!(
-        instruction.kind,
-        l::InstructionKind::CatchEntry
-            | l::InstructionKind::ExceptionPark
-            | l::InstructionKind::ExceptionMessage
-            | l::InstructionKind::ExceptionPosition
-    )
-}
-
-/// The return-path poll sites of one function, sorted, as (block,
-/// instruction index) pairs (`compiler.md` §351 rules 1, 2, and 4). The
-/// poll goes before the instruction at the index.
-fn return_path_sites(
-    module: &l::Module,
-    function: &l::Function,
-    index: usize,
-    facts: &AllocationFacts,
-    graph: &CallGraph,
-    entry: &[bool],
-) -> Vec<(usize, usize)> {
-    // Rule 4: a function outside each cycle gets no new poll.
-    if !graph.in_cycle(index) || !facts.function_can_allocate(function.id) {
-        return Vec::new();
-    }
-    let scan = ContinuationScan {
-        module,
-        function,
-        facts,
-        graph,
-        entry,
-    };
-    let mut sites = BTreeSet::new();
-    let mut handlers = BTreeSet::new();
-    for (block_index, block) in function.blocks.iter().enumerate() {
-        for (position, instruction) in block.instructions.iter().enumerate() {
-            if let Some(handler) = instruction.handler() {
-                handlers.insert(handler.0 as usize);
-            }
-            // Rule 1: a poll directly after a call into the cycle.
-            if graph.calls_into_cycle(function, index, instruction)
-                && scan.allocates_before_a_poll(block_index, position + 1)
-            {
-                sites.insert((block_index, position + 1));
-            }
-        }
-    }
-    // Rule 2: a poll in a handler, after the instructions that take the
-    // exception.
-    for handler in handlers {
-        let Some(block) = function.blocks.get(handler) else {
-            continue;
-        };
-        let start = block
-            .instructions
-            .iter()
-            .take_while(|instruction| takes_the_exception(instruction))
-            .count();
-        if scan.allocates_before_a_poll(handler, start) {
-            sites.insert((handler, start));
-        }
-    }
-    sites.into_iter().collect()
-}
-
-/// The forward scan of a continuation (`compiler.md` §351 rules 1 to 3).
-struct ContinuationScan<'a> {
-    module: &'a l::Module,
-    function: &'a l::Function,
-    facts: &'a AllocationFacts,
-    graph: &'a CallGraph,
-    entry: &'a [bool],
-}
-
-impl ContinuationScan<'_> {
-    /// True if a direct call reaches the entry poll of its callee before
-    /// the callee can allocate. Rule 3 counts it as a poll. A call to a
-    /// generator or an async function creates its frame and does not run
-    /// the entry block at the call, so it is not a poll.
-    fn is_entry_polled_call(&self, instruction: &l::Instruction) -> bool {
-        let l::InstructionKind::Call(_) = &instruction.kind else {
-            return false;
-        };
-        direct_callees(&self.graph.methods, instruction).is_some_and(|callee| {
-            self.module
-                .functions
-                .get(callee.0 as usize)
-                .is_some_and(|function| {
-                    function.id == callee && !function.is_generator && !function.is_async
-                })
-                && self.entry.get(callee.0 as usize).copied().unwrap_or(false)
-        })
-    }
-
-    /// True if a path from instruction `start` of `block` reaches an
-    /// instruction that can allocate, or a suspension, before a poll. A
-    /// path follows the handler edges of the instructions it passes, and
-    /// ends at a return, a trap, or an unreachable point.
-    fn allocates_before_a_poll(&self, block: usize, start: usize) -> bool {
-        let function = self.function;
-        let count = function.blocks.len();
-        let mut seen = vec![false; count];
-        let mut work = vec![(block, start)];
-        while let Some((block, start)) = work.pop() {
-            let Some(body) = function.blocks.get(block) else {
-                return true;
-            };
-            let mut stopped = false;
-            for (offset, instruction) in body.instructions.iter().enumerate().skip(start) {
-                if instruction.kind == l::InstructionKind::CollectionPoll
-                    || self.is_entry_polled_call(instruction)
-                {
-                    stopped = true;
-                    break;
-                }
-                if self
-                    .facts
-                    .instruction_can_allocate(function.id, body.id, offset)
-                {
-                    return true;
-                }
-                if let Some(handler) = instruction.handler() {
-                    let handler = handler.0 as usize;
-                    if handler >= count {
-                        return true;
-                    }
-                    if !std::mem::replace(&mut seen[handler], true) {
-                        work.push((handler, 0));
-                    }
-                }
-            }
-            if stopped {
-                continue;
-            }
-            if super::allocation::terminator_can_allocate(&body.terminator) {
-                return true;
-            }
-            for successor in body.terminator.successors() {
-                let successor = successor.0 as usize;
-                if successor >= count {
-                    return true;
-                }
-                if !std::mem::replace(&mut seen[successor], true) {
-                    work.push((successor, 0));
-                }
-            }
-        }
-        false
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -717,10 +614,14 @@ mod tests {
         entry: usize,
         /// Polls before a terminator.
         backedge: usize,
-        /// Polls directly after a call (`compiler.md` §351 rule 1).
+        /// Polls directly after a call or a close of a generator
+        /// (`compiler.md` §351 rule 1, §352 rule 4).
         call: usize,
         /// Polls after the leading instructions of a handler (rule 2).
         handler: usize,
+        /// Polls at the start of a resume point or of its close
+        /// continuation (`compiler.md` §352 rule 9).
+        resume: usize,
     }
 
     fn kinds(module: &l::Module, name: &str) -> Kinds {
@@ -731,8 +632,14 @@ mod tests {
             .flat_map(|block| &block.instructions)
             .filter_map(l::Instruction::handler)
             .collect::<BTreeSet<_>>();
+        let resumes = resume_points(function);
+        let closes = resumes
+            .iter()
+            .filter_map(|resume| resume_dispatch(function, *resume))
+            .map(|(close, _)| close)
+            .collect::<BTreeSet<_>>();
         let mut kinds = Kinds::default();
-        for block in &function.blocks {
+        for (block_index, block) in function.blocks.iter().enumerate() {
             for (index, instruction) in block.instructions.iter().enumerate() {
                 if instruction.kind != l::InstructionKind::CollectionPoll {
                     continue;
@@ -740,9 +647,17 @@ mod tests {
                 let previous = index.checked_sub(1).map(|at| &block.instructions[at].kind);
                 if matches!(
                     previous,
-                    Some(l::InstructionKind::Call(_) | l::InstructionKind::AsyncHandleCreate(_))
+                    Some(
+                        l::InstructionKind::Call(_)
+                            | l::InstructionKind::AsyncHandleCreate(_)
+                            | l::InstructionKind::GeneratorClose
+                    )
                 ) {
                     kinds.call += 1;
+                } else if index == 0
+                    && (resumes.contains(&block_index) || closes.contains(&block_index))
+                {
+                    kinds.resume += 1;
                 } else if handlers.contains(&block.id)
                     && block.instructions[..index].iter().all(takes_the_exception)
                 {
@@ -968,6 +883,7 @@ export function main(): void {
             backedge: 0,
             call,
             handler,
+            resume: 0,
         }
     }
 
@@ -1107,10 +1023,14 @@ export async function main(): Promise<void> {
                         target.kind,
                         l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_)
                     )
-                ) && calls_a_function_value(visit, instruction)
+                ) && instruction_script_entry(
+                    &ScriptMethods::of_module(&module),
+                    visit,
+                    instruction,
+                ) == ScriptEntry::AddressTaken
             });
         assert!(operation, "visit calls a runtime operation with a callback");
-        let graph = CallGraph::of_module(&module);
+        let graph = CallGraph::of_module(&module, |fact| fact);
         let index = module
             .functions
             .iter()
@@ -1142,20 +1062,469 @@ export async function main(): Promise<void> {
             .position(|function| function.source_name == "awaits")
             .expect("awaits");
         let awaits = &module.functions[index];
-        let graph = CallGraph::of_module(&module);
-        assert!(awaits
-            .blocks
-            .iter()
-            .any(|block| suspension_call(&block.terminator).is_some()));
+        let graph = CallGraph::of_module(&module, |fact| fact);
+        assert!(awaits.blocks.iter().any(|block| matches!(
+            terminator_script_entry(&graph.methods, awaits, &block.terminator),
+            ScriptEntry::AsyncFunction(callee) if callee == awaits.id
+        )));
         // No call instruction of `awaits` names itself: the edge is the
         // await.
         assert!(awaits
             .blocks
             .iter()
             .flat_map(|block| &block.instructions)
-            .filter_map(|instruction| direct_callees(&graph.methods, instruction))
-            .all(|callee| callee.0 as usize != index));
+            .all(|instruction| {
+                graph.fact(awaits, instruction) != ScriptEntry::Function(awaits.id)
+            }));
         assert!(graph.in_cycle(index));
         assert_eq!(kinds(&module, "awaits"), expect(1, 0, 0));
+    }
+
+    /// The shapes of `compiler.md` §352 rules 3 to 5: a function resumes a
+    /// generator whose body calls back into it.
+    const GENERATORS: &str = r#"
+class P { a: i64 = 0; }
+function* child(d: i32): Generator<i32> {
+  if (d >= 0) { step(d); return; }
+  yield 1;
+}
+function step(d: i32): void {
+  if (d > 0) {
+    const it = child(d - 1);
+    it.next();
+  }
+  new P(); new P();
+}
+function* other(d: i32): Generator<i32> {
+  if (d >= 0) { start(d); return; }
+  yield 1;
+}
+function drive(it: Generator<i32>): void {
+  it.next();
+  new P();
+}
+function start(d: i32): void {
+  if (d > 0) { drive(other(d - 1)); }
+}
+function* walk(d: i32): Generator<i32> {
+  if (d > 0) { for (const x of walk(d - 1)) { } }
+  new P();
+  if (d < 0) { yield 1; }
+}
+function* pass(d: i32): Generator<i32> {
+  if (d === 0) { yield 1; return; }
+  for (const v of pass(d - 1)) { yield v; }
+  new P();
+}
+function* up(d: i32): Generator<i32> {
+  if (d === 0) { yield 1; return; }
+  const it: Generator<i32> = up(d - 1);
+  const r = it.next();
+  yield r.value + 1;
+}
+function* leaf(n: i32): Generator<i32> { yield n; }
+function rec(d: i32): i32 {
+  if (d === 0) { return 0; }
+  const it: Generator<i32> = leaf(d);
+  const v: i32 = it.next().value;
+  const p: P = new P();
+  p.a = v as i64;
+  return rec(d - 1) + v;
+}
+export function main(): void {
+  step(2);
+  start(2);
+  for (const x of walk(2)) { }
+  for (const v of pass(2)) { print(`${v}`); }
+  print(`${up(2).next().value} ${rec(2)}`);
+}
+"#;
+
+    /// For each resume of the function: true if a poll directly follows it.
+    fn polls_after_resumes(module: &l::Module, name: &str) -> Vec<bool> {
+        let function = function(module, name);
+        let methods = ScriptMethods::of_module(module);
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| {
+                block
+                    .instructions
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, instruction)| {
+                        matches!(instruction.kind, l::InstructionKind::Call(_))
+                            && instruction_script_entry(&methods, function, instruction)
+                                == ScriptEntry::GeneratorBody
+                    })
+                    .map(|(index, _)| {
+                        block.instructions.get(index + 1).map(|next| &next.kind)
+                            == Some(&l::InstructionKind::CollectionPoll)
+                    })
+            })
+            .collect()
+    }
+
+    /// Rule 4: a resume whose possible body is in the cycle of the caller,
+    /// with a continuation that can allocate or suspend, has a poll
+    /// directly after it. `up` passes a value up: its continuation reaches
+    /// a yield.
+    #[test]
+    fn a_resume_into_the_cycle_gets_a_poll() {
+        let module = lower(GENERATORS);
+        for name in ["step", "drive", "walk", "pass", "up"] {
+            assert_eq!(polls_after_resumes(&module, name), vec![true], "{name}");
+        }
+        // A generator body that does not reach the caller is not in its
+        // cycle.
+        assert_eq!(polls_after_resumes(&module, "rec"), vec![false]);
+    }
+
+    /// Rule 3: the resume is an edge to each generator function. `drive`
+    /// enters the cycle only through its resume, so it gets an entry poll
+    /// (§351 rule 5). With the fact of the resume read as "none", the edge
+    /// and the entry poll are not there.
+    #[test]
+    fn a_resume_is_an_edge_to_each_generator() {
+        let module = lower(GENERATORS);
+        let index = |name: &str| {
+            module
+                .functions
+                .iter()
+                .position(|function| function.source_name == name)
+                .unwrap_or_else(|| panic!("{name}"))
+        };
+        let graph = CallGraph::of_module(&module, |fact| fact);
+        assert!(graph.in_cycle(index("drive")));
+        assert!(graph.same_cycle(index("drive"), index("other")));
+        assert!(!graph.same_cycle(index("rec"), index("leaf")));
+        assert_eq!(kinds(&module, "drive").entry, 1);
+        let masked = CallGraph::of_module(&module, |fact| match fact {
+            ScriptEntry::GeneratorBody => ScriptEntry::None,
+            other => other,
+        });
+        assert!(!masked.in_cycle(index("drive")));
+        let mut replaced = module.clone();
+        place_collection_polls_with(&mut replaced, |fact| match fact {
+            ScriptEntry::GeneratorBody => ScriptEntry::None,
+            other => other,
+        });
+        assert_eq!(kinds(&replaced, "drive"), expect(0, 0, 0));
+        assert_eq!(polls_after_resumes(&replaced, "step"), vec![false]);
+        // The identity map gives the placement of the module again.
+        let mut same = module.clone();
+        place_collection_polls_with(&mut same, |fact| fact);
+        assert_eq!(same, module);
+    }
+
+    /// Rule 5: a resume is not a poll in the scan, also when the generator
+    /// has an entry poll: it can resume at a suspension point.
+    #[test]
+    fn a_resume_does_not_count_as_a_poll() {
+        let module = lower(GENERATORS);
+        assert_eq!(kinds(&module, "leaf").entry, 1);
+        let rec = function(&module, "rec");
+        let methods = ScriptMethods::of_module(&module);
+        let graph = CallGraph::of_module(&module, |fact| fact);
+        let facts = AllocationFacts::of_module(&module);
+        let entry = entry_polls(&module, &facts, &graph);
+        let scan = ContinuationScan {
+            module: &module,
+            function: rec,
+            facts: &facts,
+            graph: &graph,
+            entry: &entry,
+        };
+        let resumes = rec
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|instruction| {
+                instruction_script_entry(&methods, rec, instruction) == ScriptEntry::GeneratorBody
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(resumes.len(), 1);
+        assert!(resumes
+            .iter()
+            .all(|instruction| !scan.is_entry_polled_call(instruction)));
+        // `up` is a generator with an entry poll; a resume of it is still
+        // followed by a poll.
+        assert_eq!(kinds(&module, "up").entry, 1);
+        assert_eq!(polls_after_resumes(&module, "up"), vec![true]);
+    }
+
+    /// The shapes of `compiler.md` §352 rule 9. `stage` resumes its child
+    /// from the code after a `yield`: a chain of `stage` frames that each
+    /// enter at a resume point. `again` resumes a child in a loop, and the
+    /// backedge poll of the loop is on the path from its resume point.
+    /// `plain` resumes no generator, so it is in no cycle. `walk` walks a
+    /// tree: from the resume point after `yield x`, the normal branch
+    /// reaches the backedge poll of the inner loop first, and only the close
+    /// branch can allocate.
+    const RESUME_POINTS: &str = r#"
+class P { a: i64 = 0; }
+class Node { value: i32 = 0; children: Node[] = []; }
+function* walk(n: Node): Generator<i32> {
+  yield n.value;
+  for (const c of n.children) { for (const x of walk(c)) { yield x; } }
+}
+function* stage(d: i32): Generator<i32> {
+  if (d === 0) { yield 0; yield 0; return; }
+  const child: Generator<i32> = stage(d - 1);
+  child.next(); yield 1;
+  new P(); child.next(); yield 2;
+}
+function* again(d: i32): Generator<i32> {
+  for (let i: i32 = 0; i < 2; i += 1) {
+    if (d > 0) { for (const x of again(d - 1)) { } }
+    new P();
+    yield i;
+  }
+}
+function* plain(): Generator<i32> { yield 1; new P(); yield 2; }
+export function main(): void {
+  const a: Generator<i32> = stage(2);
+  a.next();
+  a.next();
+  for (const x of again(2)) { }
+  for (const x of plain()) { }
+  const root: Node = new Node();
+  root.children.push(new Node());
+  for (const x of walk(root)) { }
+}
+"#;
+
+    /// For each resume point of the function, in block order: the block of
+    /// its close continuation, if it is a plain dispatch, and whether the
+    /// first instruction of the resume point and of the close continuation
+    /// is a poll.
+    fn resume_point_polls(module: &l::Module, name: &str) -> Vec<(Option<usize>, bool, bool)> {
+        let function = function(module, name);
+        let first_is_poll = |block: usize| {
+            function.blocks[block]
+                .instructions
+                .first()
+                .map(|first| &first.kind)
+                == Some(&l::InstructionKind::CollectionPoll)
+        };
+        resume_points(function)
+            .into_iter()
+            .map(|resume| {
+                let close = resume_dispatch(function, resume).map(|(close, _)| close);
+                (
+                    close,
+                    first_is_poll(resume),
+                    close.is_some_and(first_is_poll),
+                )
+            })
+            .collect()
+    }
+
+    /// For each resume point of the function, in block order: true if its
+    /// first instruction is a poll.
+    fn polls_at_resume_points(module: &l::Module, name: &str) -> Vec<bool> {
+        let function = function(module, name);
+        resume_points(function)
+            .into_iter()
+            .map(|block| {
+                function.blocks[block]
+                    .instructions
+                    .first()
+                    .map(|first| &first.kind)
+                    == Some(&l::InstructionKind::CollectionPoll)
+            })
+            .collect()
+    }
+
+    /// Rule 9: in `stage`, the resume point after the first `yield 0`
+    /// reaches the second `yield`, the resume point after `yield 1` reaches
+    /// an allocation, and the resume point after `yield 2` reaches the
+    /// release of `child`, which can allocate: each has a poll. The resume
+    /// point after the second `yield 0` reaches a return and has none.
+    #[test]
+    fn a_resume_point_of_a_generator_of_a_cycle_gets_a_poll() {
+        let module = lower(RESUME_POINTS);
+        let index = module
+            .functions
+            .iter()
+            .position(|function| function.source_name == "stage")
+            .expect("stage");
+        assert!(CallGraph::of_module(&module, |fact| fact).in_cycle(index));
+        assert_eq!(
+            polls_at_resume_points(&module, "stage"),
+            vec![true, false, true, true]
+        );
+        assert_eq!(kinds(&module, "stage").resume, 3);
+    }
+
+    /// Rule 9 adds no poll where the path from the resume point reaches the
+    /// backedge poll of its loop first, and none in a generator in no cycle.
+    #[test]
+    fn a_resume_point_after_a_poll_or_outside_a_cycle_gets_none() {
+        let module = lower(RESUME_POINTS);
+        let again = module
+            .functions
+            .iter()
+            .position(|function| function.source_name == "again")
+            .expect("again");
+        assert!(CallGraph::of_module(&module, |fact| fact).in_cycle(again));
+        assert_eq!(polls_at_resume_points(&module, "again"), vec![false]);
+        assert_eq!(kinds(&module, "again").resume, 0);
+        assert!(kinds(&module, "again").backedge > 0);
+        let index = module
+            .functions
+            .iter()
+            .position(|function| function.source_name == "plain")
+            .expect("plain");
+        assert!(!CallGraph::of_module(&module, |fact| fact).in_cycle(index));
+        assert_eq!(polls_at_resume_points(&module, "plain"), vec![false, false]);
+        assert_eq!(kinds(&module, "plain"), expect(1, 0, 0));
+        // The firing controls: with the polls of `again` removed, the scan
+        // from its resume point reaches an allocation, and the scan from
+        // the first resume point of `plain` reaches one.
+        let mut stripped = module.clone();
+        for block in &mut stripped.functions[again].blocks {
+            block
+                .instructions
+                .retain(|instruction| instruction.kind != l::InstructionKind::CollectionPoll);
+        }
+        let graph = CallGraph::of_module(&stripped, |fact| fact);
+        let facts = AllocationFacts::of_module(&stripped);
+        let entry = entry_polls(&stripped, &facts, &graph);
+        let opens = |function: &l::Function| {
+            let scan = ContinuationScan {
+                module: &stripped,
+                function,
+                facts: &facts,
+                graph: &graph,
+                entry: &entry,
+            };
+            resume_points(function)
+                .into_iter()
+                .map(|block| scan.allocates_before_a_poll(block, 0))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(opens(&stripped.functions[again]), vec![true]);
+        assert_eq!(opens(&stripped.functions[index]), vec![true, false]);
+    }
+
+    /// Rule 9, the finer placement: in `walk`, the resume point after `yield
+    /// x` gets its poll at the start of its close continuation, because its
+    /// normal branch reaches the backedge poll before an allocation. The
+    /// resume point after `yield n.value` has an open normal branch, so its
+    /// poll is at its start: after the placement, that block is not a plain
+    /// dispatch any more.
+    #[test]
+    fn a_resume_point_open_only_on_its_close_branch_polls_in_the_close_continuation() {
+        let module = lower(RESUME_POINTS);
+        let polls = resume_point_polls(&module, "walk");
+        assert_eq!(polls.len(), 2, "{polls:?}");
+        assert_eq!(polls[0], (None, true, false), "{polls:?}");
+        assert!(!polls[1].1 && polls[1].2, "{polls:?}");
+        assert_eq!(kinds(&module, "walk").resume, 2);
+        // Each resume point of `stage` has an open normal branch.
+        assert!(resume_point_polls(&module, "stage")
+            .iter()
+            .all(|(_, _, close)| !close));
+        // The firing control: with the close poll removed, the scan from the
+        // close continuation reaches an allocation, and the scan of the
+        // normal continuation does not.
+        let index = module
+            .functions
+            .iter()
+            .position(|function| function.source_name == "walk")
+            .expect("walk");
+        let close = polls[1].0.expect("a dispatch");
+        let mut stripped = module.clone();
+        stripped.functions[index].blocks[close]
+            .instructions
+            .remove(0);
+        let graph = CallGraph::of_module(&stripped, |fact| fact);
+        let facts = AllocationFacts::of_module(&stripped);
+        let entry = entry_polls(&stripped, &facts, &graph);
+        let walk = &stripped.functions[index];
+        let scan = ContinuationScan {
+            module: &stripped,
+            function: walk,
+            facts: &facts,
+            graph: &graph,
+            entry: &entry,
+        };
+        let resume = resume_points(walk).into_iter().nth(1).expect("two points");
+        let (_, next) = resume_dispatch(walk, resume).expect("a dispatch");
+        assert!(scan.allocates_before_a_poll(close, 0));
+        assert!(!scan.allocates_before_a_poll(next, 0));
+        assert_eq!(scan.resume_point_site(resume), Some((close, 0)));
+    }
+
+    /// The shape of a recursion through a host callback: `visit` calls the
+    /// host, which can call `visit` back, because its address is taken, and
+    /// allocates after the foreign call returns (`compiler.md` §352 rule 1).
+    const FOREIGN_HOST: &str =
+        "// @subscript-c-header include=\"host.h\"\ndeclare function hostWalk(n: i32): void;";
+
+    fn foreign_source(taken: bool) -> String {
+        format!(
+            "class P {{ x: i32 = 0; }}\n\
+             {}\
+             function visit(n: i32): void {{ if (n > 0) {{ hostWalk(n - 1); }} new P(); new P(); }}\n\
+             export function main(): void {{ visit(2); }}\n",
+            if taken {
+                "let keep: (n: i32) => void = visit;\n"
+            } else {
+                ""
+            }
+        )
+    }
+
+    fn lower_foreign(taken: bool) -> l::Module {
+        let files = [
+            SourceFile::ambient("host.d.ts", FOREIGN_HOST),
+            SourceFile::new("foreign.ts", foreign_source(taken)),
+        ];
+        super::super::lower_module(&check_program(&files).expect("checks")).expect("lowers")
+    }
+
+    /// True for each foreign call of the function: a poll directly follows
+    /// it.
+    fn polls_after_foreign_calls(module: &l::Module, name: &str) -> Vec<bool> {
+        let function = function(module, name);
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| {
+                block
+                    .instructions
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, instruction)| {
+                        matches!(
+                            &instruction.kind,
+                            l::InstructionKind::Call(l::CallTarget {
+                                kind: l::CallTargetKind::Foreign(_),
+                                ..
+                            })
+                        )
+                    })
+                    .map(|(index, _)| {
+                        block.instructions.get(index + 1).map(|next| &next.kind)
+                            == Some(&l::InstructionKind::CollectionPoll)
+                    })
+            })
+            .collect()
+    }
+
+    /// A foreign call is an edge to each function whose address is taken:
+    /// `visit` is in a cycle through the host, and the foreign call gets a
+    /// poll after it. The control: with no taken function, `visit` is in no
+    /// cycle and gets no poll there.
+    #[test]
+    fn a_foreign_call_is_an_edge_to_each_taken_function() {
+        let module = lower_foreign(true);
+        assert_eq!(polls_after_foreign_calls(&module, "visit"), vec![true]);
+        assert_eq!(kinds(&module, "visit"), expect(1, 1, 0));
+        let control = lower_foreign(false);
+        assert_eq!(polls_after_foreign_calls(&control, "visit"), vec![false]);
+        assert_eq!(kinds(&control, "visit"), expect(0, 0, 0));
     }
 }

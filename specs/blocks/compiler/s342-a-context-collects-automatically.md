@@ -137,6 +137,9 @@ Problem, measured at `ca3fc9ed`:
        generator. The entry poll is after the parameter stores.
     c. A resume of an async function or of a generator reaches a poll
        before it can allocate an unbounded count of objects.
+       *(Amended 2026-11-22, §352 rule 9: rule 11h gives a resume
+       point of a generator of a cycle a poll of its own; §351 rule
+       12 serves an async resume in the drain.)*
     d. Each allocation path reaches a poll, or the outermost exit,
        after a bounded count of allocations. The bound of straight-line
        code is its size. *(Amended 2026-11-21, §345 rule 3.)* The
@@ -149,11 +152,19 @@ Problem, measured at `ca3fc9ed`:
        continuation can allocate or suspend before a poll. The call
        graph has an edge for each indirect call and each callback
        operation to each function whose address is taken; rule 11b
-       uses the same graph (§351 rule 5).
+       uses the same graph (§351 rule 5). *(Amended 2026-11-22, §352
+       rule 1: each instruction states what script code it runs, in a
+       total match; the graph has an edge for an `await` of a direct
+       async call, for a resume or a close of a generator, and for a
+       foreign call.)*
     f. *(Added 2026-11-22, §351 rule 2.)* A handler of a function of a
        cycle has a poll, if its path can allocate before a poll.
     g. *(Added 2026-11-22, §351 rule 12.)* The drain of the scheduler
        serves the flag between two jobs.
+    h. *(Added 2026-11-22, §352 rule 9.)* A resume point of a generator
+       of a cycle has a poll, if its path can allocate or suspend
+       before a poll. A resume of a generator is a call of rule 11e
+       (§352 rules 3 and 4).
 
 **Failure of an unobserved task**
 

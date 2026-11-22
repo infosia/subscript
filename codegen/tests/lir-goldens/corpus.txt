@@ -55421,6 +55421,7 @@ fn f9 "relay" kind=Free exported=false generator=true async=false -> Generator(I
     AsyncHandleArrayRetain(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 61, col: 3 } }] @ a409-fixed-array-traversal-counted-result.ts:61:3
     AsyncHandleArrayRetain(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 62, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:62:11
     %9: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 62, col: 11 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 62, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 62, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:62:11
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:62:11
     AsyncHandleArrayRelease(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 62, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 62, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:62:11
     %10: Data(I32) = LoadField(IterValue)(%9) @ a409-fixed-array-traversal-counted-result.ts:62:20
     %12: Data(FixedArray(Generator(I32), 2)) = LoadLocal(LocalId(0))() @ a409-fixed-array-traversal-counted-result.ts:62:5
@@ -55437,6 +55438,7 @@ fn f9 "relay" kind=Free exported=false generator=true async=false -> Generator(I
     StoreLocal(LocalId(0))(%29) @ a409-fixed-array-traversal-counted-result.ts:61:3
     -> Return { value: None, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 60, col: 11 } }
   b5(%13: Data(FixedArray(Generator(I32), 2)), %11: Data(Generator(I32)), %30: Data(I32), %31: Data(I32)) Some("yield.resume"):
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:62:5
     %14: Data(Bool) = GeneratorIsClosing() @ a409-fixed-array-traversal-counted-result.ts:62:5
     -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(6), arguments: [Value(ValueId(11))], ownership: [true] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(11))], ownership: [true] } }
   b6(%15: Data(Generator(I32))) Some("generator.close"):
@@ -55448,11 +55450,13 @@ fn f9 "relay" kind=Free exported=false generator=true async=false -> Generator(I
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 63, col: 5 } }] @ a409-fixed-array-traversal-counted-result.ts:63:5
     AsyncHandleArrayRetain(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:64:11
     %18: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 11 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:64:11
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:64:11
     AsyncHandleArrayRelease(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:64:11
     %19: Data(I32) = LoadField(IterValue)(%18) @ a409-fixed-array-traversal-counted-result.ts:64:20
     %21: Data(FixedArray(Generator(I32), 2)) = LoadLocal(LocalId(0))() @ a409-fixed-array-traversal-counted-result.ts:64:5
     -> Suspend { kind: Yield(Some(ValueId(19))), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 64, col: 5 }, successor: BlockId(8), resume_value: None, arguments: [Value(ValueId(21)), Value(ValueId(16)), Value(ValueId(30)), Value(ValueId(31))], ownership: [false, true, false, false], invalidates: [], traps: [] }
   b8(%22: Data(FixedArray(Generator(I32), 2)), %20: Data(Generator(I32)), %32: Data(I32), %33: Data(I32)) Some("yield.resume"):
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:64:5
     %23: Data(Bool) = GeneratorIsClosing() @ a409-fixed-array-traversal-counted-result.ts:64:5
     -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(9), arguments: [Value(ValueId(20))], ownership: [true] }, else_target: BlockTarget { block: BlockId(10), arguments: [Value(ValueId(20))], ownership: [true] } }
   b9(%24: Data(Generator(I32))) Some("generator.close"):
@@ -55517,6 +55521,7 @@ fn f10 "placeRelay" kind=Free exported=false generator=true async=false -> Gener
     AsyncHandleArrayRetain(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 70, col: 3 } }] @ a409-fixed-array-traversal-counted-result.ts:70:3
     AsyncHandleArrayRetain(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 71, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:71:11
     %9: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 71, col: 11 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 71, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 71, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:71:11
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:71:11
     AsyncHandleArrayRelease(%8) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 71, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 71, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:71:11
     %10: Data(I32) = LoadField(IterValue)(%9) @ a409-fixed-array-traversal-counted-result.ts:71:20
     %12: Data(FixedArray(Generator(I32), 2)) = LoadLocal(LocalId(0))() @ a409-fixed-array-traversal-counted-result.ts:71:5
@@ -55530,6 +55535,7 @@ fn f10 "placeRelay" kind=Free exported=false generator=true async=false -> Gener
     AsyncHandleArrayRelease(%28) traps=[Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 68, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:68:11
     -> Return { value: None, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 68, col: 11 } }
   b5(%13: Data(FixedArray(Generator(I32), 2)), %11: Data(Generator(I32)), %29: Data(I32), %30: Data(I32)) Some("yield.resume"):
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:71:5
     %14: Data(Bool) = GeneratorIsClosing() @ a409-fixed-array-traversal-counted-result.ts:71:5
     -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(6), arguments: [Value(ValueId(11))], ownership: [true] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(11))], ownership: [true] } }
   b6(%15: Data(Generator(I32))) Some("generator.close"):
@@ -55541,11 +55547,13 @@ fn f10 "placeRelay" kind=Free exported=false generator=true async=false -> Gener
     Call(CallTarget { kind: Intrinsic(Intrinsic { family: Ambient, operation: 2, type_argument: None, worker_entry: None }), parameter_types: [], return_type: None })() traps=[Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 72, col: 5 } }] @ a409-fixed-array-traversal-counted-result.ts:72:5
     AsyncHandleArrayRetain(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:73:11
     %18: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 11 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:73:11
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:73:11
     AsyncHandleArrayRelease(%16) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:73:11
     %19: Data(I32) = LoadField(IterValue)(%18) @ a409-fixed-array-traversal-counted-result.ts:73:20
     %21: Data(FixedArray(Generator(I32), 2)) = LoadLocal(LocalId(0))() @ a409-fixed-array-traversal-counted-result.ts:73:5
     -> Suspend { kind: Yield(Some(ValueId(19))), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 73, col: 5 }, successor: BlockId(8), resume_value: None, arguments: [Value(ValueId(21)), Value(ValueId(16)), Value(ValueId(29)), Value(ValueId(30))], ownership: [false, true, false, false], invalidates: [], traps: [] }
   b8(%22: Data(FixedArray(Generator(I32), 2)), %20: Data(Generator(I32)), %31: Data(I32), %32: Data(I32)) Some("yield.resume"):
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:73:5
     %23: Data(Bool) = GeneratorIsClosing() @ a409-fixed-array-traversal-counted-result.ts:73:5
     -> ConditionalBranch { condition: Value(ValueId(23)), then_target: BlockTarget { block: BlockId(9), arguments: [Value(ValueId(20))], ownership: [true] }, else_target: BlockTarget { block: BlockId(10), arguments: [Value(ValueId(20))], ownership: [true] } }
   b9(%24: Data(Generator(I32))) Some("generator.close"):
@@ -55597,6 +55605,7 @@ fn f11 "namedRelay" kind=Free exported=false generator=true async=false -> Gener
     %7: Data(Generator(I32)) = LoadAddress(%6) @ a409-fixed-array-traversal-counted-result.ts:80:15
     AsyncHandleArrayRetain(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 80, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:80:11
     %8: Data(IterResult(I32)) = Call(CallTarget { kind: BuiltinMethod(GeneratorNext), parameter_types: [Data(Generator(I32))], return_type: Some(Data(IterResult(I32))) })(%7) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 81, col: 11 } }, Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 81, col: 11 } }, Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 81, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:81:11
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:81:20
     %9: Data(I32) = LoadField(IterValue)(%8) @ a409-fixed-array-traversal-counted-result.ts:81:20
     %12: Data(FixedArray(Generator(I32), 2)) = LoadLocal(LocalId(0))() @ a409-fixed-array-traversal-counted-result.ts:81:5
     -> Suspend { kind: Yield(Some(ValueId(9))), pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 81, col: 5 }, successor: BlockId(5), resume_value: None, arguments: [Value(ValueId(12)), Value(ValueId(1)), Value(ValueId(7))], ownership: [false, false, true], invalidates: [], traps: [] }
@@ -55609,6 +55618,7 @@ fn f11 "namedRelay" kind=Free exported=false generator=true async=false -> Gener
     AsyncHandleArrayRelease(%21) traps=[Trap { kind: Call, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 77, col: 11 } }] @ a409-fixed-array-traversal-counted-result.ts:77:11
     -> Return { value: None, pos: Pos { file: "a409-fixed-array-traversal-counted-result.ts", line: 77, col: 11 } }
   b5(%13: Data(FixedArray(Generator(I32), 2)), %10: Data(I32), %11: Data(Generator(I32))) Some("yield.resume"):
+    CollectionPoll() @ a409-fixed-array-traversal-counted-result.ts:81:5
     %14: Data(Bool) = GeneratorIsClosing() @ a409-fixed-array-traversal-counted-result.ts:81:5
     -> ConditionalBranch { condition: Value(ValueId(14)), then_target: BlockTarget { block: BlockId(6), arguments: [Value(ValueId(10)), Value(ValueId(11))], ownership: [false, true] }, else_target: BlockTarget { block: BlockId(7), arguments: [Value(ValueId(10)), Value(ValueId(11))], ownership: [false, true] } }
   b6(%15: Data(I32), %16: Data(Generator(I32))) Some("generator.close"):

@@ -16,17 +16,35 @@
 //!    that can allocate (§351 rule 5).
 //! 3. A function that cannot allocate has no poll.
 //! 4. In a function of a cycle, no path from the instruction after a call
-//!    into that cycle reaches an instruction that can allocate, or a
-//!    suspension, before a poll (§351 rule 1).
+//!    or a generator resume into that cycle reaches an instruction that can
+//!    allocate, or a suspension, before a poll (§351 rule 1, §352 rule 4).
 //! 5. In a function of a cycle, no path from a handler block, after its
 //!    leading instructions that take the exception, reaches an instruction
 //!    that can allocate before a poll (§351 rule 2).
+//! 6. In a generator of a cycle, no path from the start of a resume point
+//!    (the successor block of a `yield` suspension) reaches an instruction
+//!    that can allocate, or a suspension, before a poll (§352 rule 9). A
+//!    resume point has no leading instruction that must come before the
+//!    poll. The property holds with the poll at the start of the resume
+//!    point, or at the start of each branch that is open, such as the close
+//!    continuation: the test of the close request and the branch cannot
+//!    allocate.
 //!
-//! In properties 4 and 5 a direct call to a function whose entry block has
+//! The call graph has the edges of the script entry fact of each
+//! instruction and terminator (§352 rules 1 to 3): an edge to each function
+//! that a fact names, to each function whose address is taken (also from a
+//! foreign call, whose host can call a registered callback), and, from a
+//! resume or a close of a generator, to each generator function.
+//!
+//! In properties 4 to 6 a direct call to a function whose entry block has
 //! a poll before each instruction that can allocate is a poll (§351 rule
-//! 3). A path follows the handler edges of the instructions it passes.
+//! 3). A resume of a generator is not (§352 rule 5). A path follows the
+//! handler edges of the instructions it passes.
 
 use super::allocation::{terminator_can_allocate, AllocationFacts};
+use super::script_entry::{
+    instruction_script_entry, terminator_script_entry, ScriptEntry, ScriptMethods,
+};
 use super::*;
 
 /// Records each violation of the poll property (`compiler.md` §342 rule 11,
@@ -64,6 +82,9 @@ pub(super) fn verify(module: &l::Module, errors: &mut Vec<VerifyError>) {
         if graph.cyclic[index] {
             let suffixes = Suffixes::of_function(function, &facts, &graph, &entry_polled);
             verify_return_paths(function, index, &graph, &suffixes, errors);
+            if function.is_generator {
+                verify_resume_points(function, &suffixes, errors);
+            }
         }
     }
 }
@@ -142,12 +163,15 @@ fn verify_entry_poll(
 }
 
 /// The call graph with indirect edges of a finished module (`compiler.md`
-/// §351 "Terms") and its cycles.
+/// §351 "Terms", §352 rules 2 and 3) and its cycles. The edges come from
+/// the script entry fact of each instruction and each terminator.
 struct Graph {
-    /// The method bodies, for the callee of a method call.
-    methods: HashMap<l::MethodId, usize>,
+    /// The method bodies, for the fact of a method call.
+    methods: ScriptMethods,
     /// True for each function whose address is taken.
     taken: Vec<bool>,
+    /// True for each generator function.
+    generator: Vec<bool>,
     /// The strongly connected component of each function.
     components: Vec<usize>,
     /// True for each function in a component with an edge inside it.
@@ -160,54 +184,61 @@ struct Graph {
 impl Graph {
     fn of_module(module: &l::Module) -> Self {
         let count = module.functions.len();
-        let methods = module
-            .classes
-            .iter()
-            .flat_map(|class| class.constructor.iter().chain(class.methods.iter()))
-            .map(|method| (method.id, method.function.0 as usize))
-            .collect::<HashMap<_, _>>();
+        let methods = ScriptMethods::of_module(module);
         let mut taken = vec![false; count];
         let mut edges = vec![Vec::new(); count];
         let mut value_callers = Vec::new();
+        let mut resumers = Vec::new();
         for (index, function) in module.functions.iter().enumerate() {
             let mut value_caller = false;
-            for instruction in function.blocks.iter().flat_map(|block| &block.instructions) {
-                if let l::InstructionKind::FunctionRef(id) | l::InstructionKind::MakeClosure(id) =
-                    &instruction.kind
-                {
-                    if let Some(slot) = taken.get_mut(id.0 as usize) {
-                        *slot = true;
-                    }
-                    continue;
-                }
-                if let Some(callee) = direct_callee(&methods, instruction) {
-                    if callee < count {
-                        edges[index].push(callee);
-                    }
-                }
-                value_caller |= takes_function_value(function, instruction);
-            }
-            // An await of a direct async call is an edge to its callee.
+            let mut resumer = false;
+            let mut facts = Vec::new();
             for block in &function.blocks {
-                let l::Terminator::Suspend {
-                    kind: l::SuspendKind::AsyncCall { target, .. },
-                    ..
-                } = &block.terminator
-                else {
-                    continue;
-                };
-                match callee_of_target(&methods, target) {
-                    Some(callee) if callee < count => edges[index].push(callee),
-                    Some(_) => {}
-                    None => value_caller |= matches!(target.kind, l::CallTargetKind::Indirect),
+                for instruction in &block.instructions {
+                    if let l::InstructionKind::FunctionRef(id)
+                    | l::InstructionKind::MakeClosure(id) = &instruction.kind
+                    {
+                        if let Some(slot) = taken.get_mut(id.0 as usize) {
+                            *slot = true;
+                        }
+                    }
+                    facts.push(instruction_script_entry(&methods, function, instruction));
+                }
+                facts.push(terminator_script_entry(
+                    &methods,
+                    function,
+                    &block.terminator,
+                ));
+            }
+            for fact in facts {
+                match fact {
+                    ScriptEntry::Function(callee) | ScriptEntry::AsyncFunction(callee) => {
+                        if (callee.0 as usize) < count {
+                            edges[index].push(callee.0 as usize);
+                        }
+                    }
+                    ScriptEntry::AddressTaken => value_caller = true,
+                    ScriptEntry::GeneratorBody => resumer = true,
+                    ScriptEntry::None => {}
                 }
             }
             if value_caller {
                 value_callers.push(index);
             }
+            if resumer {
+                resumers.push(index);
+            }
         }
+        let generator = module
+            .functions
+            .iter()
+            .map(|function| function.is_generator)
+            .collect::<Vec<_>>();
         for caller in value_callers {
             edges[caller].extend((0..count).filter(|target| taken[*target]));
+        }
+        for caller in resumers {
+            edges[caller].extend((0..count).filter(|target| generator[*target]));
         }
         let components = strongly_connected_components(&edges);
         let mut size = vec![0usize; count];
@@ -225,6 +256,7 @@ impl Graph {
         Self {
             methods,
             taken,
+            generator,
             components,
             cyclic,
             creates_a_frame,
@@ -241,8 +273,8 @@ impl Graph {
             || self.cyclic.get(index).copied().unwrap_or(false)
     }
 
-    /// True if a possible callee of the instruction is in the component of
-    /// the function `caller`.
+    /// True if a function that the instruction can run is in the component
+    /// of the function `caller`.
     fn enters_component(
         &self,
         function: &l::Function,
@@ -253,73 +285,19 @@ impl Graph {
         let same = |callee: usize| {
             component.is_some() && self.components.get(callee).copied() == component
         };
-        if direct_callee(&self.methods, instruction).is_some_and(same) {
-            return true;
-        }
-        takes_function_value(function, instruction)
-            && self
-                .taken
-                .iter()
+        let any = |set: &[bool]| {
+            set.iter()
                 .enumerate()
-                .any(|(target, taken)| *taken && same(target))
-    }
-}
-
-/// The script function that a call or a task creation names directly.
-fn direct_callee(
-    methods: &HashMap<l::MethodId, usize>,
-    instruction: &l::Instruction,
-) -> Option<usize> {
-    match &instruction.kind {
-        l::InstructionKind::Call(target) | l::InstructionKind::AsyncHandleCreate(target) => {
-            callee_of_target(methods, target)
+                .any(|(target, member)| *member && same(target))
+        };
+        match instruction_script_entry(&self.methods, function, instruction) {
+            ScriptEntry::Function(callee) | ScriptEntry::AsyncFunction(callee) => {
+                same(callee.0 as usize)
+            }
+            ScriptEntry::AddressTaken => any(&self.taken),
+            ScriptEntry::GeneratorBody => any(&self.generator),
+            ScriptEntry::None => false,
         }
-        _ => None,
-    }
-}
-
-/// The script function that a call target names directly.
-fn callee_of_target(
-    methods: &HashMap<l::MethodId, usize>,
-    target: &l::CallTarget,
-) -> Option<usize> {
-    match &target.kind {
-        l::CallTargetKind::Function(id)
-        | l::CallTargetKind::LambdaSelf(id)
-        | l::CallTargetKind::StaticClosure(id)
-        | l::CallTargetKind::ClosureDefault { helper: id, .. } => Some(id.0 as usize),
-        l::CallTargetKind::Method(id) => methods.get(id).copied(),
-        _ => None,
-    }
-}
-
-/// True if the instruction calls a function value: an indirect call, or a
-/// runtime operation with an operand of a function type.
-fn takes_function_value(function: &l::Function, instruction: &l::Instruction) -> bool {
-    let target = match &instruction.kind {
-        l::InstructionKind::Call(target) | l::InstructionKind::AsyncHandleCreate(target) => target,
-        _ => return false,
-    };
-    let function_operand = || {
-        instruction.operands.iter().any(|operand| {
-            let ty = match operand {
-                l::Operand::Constant(constant) => Some(&constant.ty),
-                l::Operand::Value(id) => function
-                    .values
-                    .iter()
-                    .find(|value| value.id == *id)
-                    .and_then(|value| match &value.ty {
-                        l::ValueType::Data(ty) => Some(ty),
-                        _ => None,
-                    }),
-            };
-            ty.is_some_and(|ty| ty.function_type().is_some())
-        })
-    };
-    match &target.kind {
-        l::CallTargetKind::Indirect => true,
-        l::CallTargetKind::Intrinsic(_) | l::CallTargetKind::BuiltinMethod(_) => function_operand(),
-        _ => false,
     }
 }
 
@@ -386,21 +364,28 @@ impl<'a> Suffixes<'a> {
 
     /// True if the instruction is a poll, or a direct call to a function
     /// with an entry poll (`compiler.md` §351 rule 3). A call to a generator
-    /// or an async function creates its frame and runs no entry poll.
+    /// or an async function creates its frame and runs no entry poll. A
+    /// resume of a generator is not a direct call (§352 rule 5).
     fn closes(&self, instruction: &l::Instruction) -> bool {
         if instruction.kind == l::InstructionKind::CollectionPoll {
             return true;
         }
-        matches!(instruction.kind, l::InstructionKind::Call(_))
-            && direct_callee(&self.graph.methods, instruction).is_some_and(|callee| {
-                self.entry_polled.get(callee).copied().unwrap_or(false)
-                    && !self
-                        .graph
-                        .creates_a_frame
-                        .get(callee)
-                        .copied()
-                        .unwrap_or(true)
-            })
+        if !matches!(instruction.kind, l::InstructionKind::Call(_)) {
+            return false;
+        }
+        let ScriptEntry::Function(callee) =
+            instruction_script_entry(&self.graph.methods, self.function, instruction)
+        else {
+            return false;
+        };
+        let callee = callee.0 as usize;
+        self.entry_polled.get(callee).copied().unwrap_or(false)
+            && !self
+                .graph
+                .creates_a_frame
+                .get(callee)
+                .copied()
+                .unwrap_or(true)
     }
 
     /// The suffix of `block` from instruction `start`, with the present
@@ -468,6 +453,37 @@ fn verify_return_paths(
                 message: format!(
                     "function {} handler block {} reaches an allocation with no collection poll",
                     function.id.0, block.id.0
+                ),
+            });
+        }
+    }
+}
+
+/// Property 6 for one generator of a cycle.
+fn verify_resume_points(
+    function: &l::Function,
+    suffixes: &Suffixes<'_>,
+    errors: &mut Vec<VerifyError>,
+) {
+    let resumes = function
+        .blocks
+        .iter()
+        .filter_map(|block| match &block.terminator {
+            l::Terminator::Suspend {
+                kind: l::SuspendKind::Yield(_),
+                successor,
+                ..
+            } => Some(*successor),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    for resume in resumes {
+        if suffixes.open_from(resume.0 as usize, 0) {
+            errors.push(VerifyError {
+                message: format!(
+                    "function {} resume point block {} reaches an allocation with no collection \
+                     poll",
+                    function.id.0, resume.0
                 ),
             });
         }
@@ -965,5 +981,353 @@ export async function main(): Promise<void> {
         let graph = Graph::of_module(&module);
         assert!(graph.cyclic[index]);
         assert!(graph.creates_a_frame[index]);
+    }
+
+    /// The shapes of `compiler.md` §352 rules 3 to 5: a function resumes a
+    /// generator whose body calls back into it.
+    const GENERATORS: &str = r#"
+class P { a: i64 = 0; }
+function* child(d: i32): Generator<i32> {
+  if (d >= 0) { step(d); return; }
+  yield 1;
+}
+function step(d: i32): void {
+  if (d > 0) {
+    const it = child(d - 1);
+    it.next();
+  }
+  new P(); new P();
+}
+function* other(d: i32): Generator<i32> {
+  if (d >= 0) { start(d); return; }
+  yield 1;
+}
+function drive(it: Generator<i32>): void {
+  it.next();
+  new P();
+}
+function start(d: i32): void {
+  if (d > 0) { drive(other(d - 1)); }
+}
+function* walk(d: i32): Generator<i32> {
+  if (d > 0) { for (const x of walk(d - 1)) { } }
+  new P();
+  if (d < 0) { yield 1; }
+}
+function* pass(d: i32): Generator<i32> {
+  if (d === 0) { yield 1; return; }
+  for (const v of pass(d - 1)) { yield v; }
+  new P();
+}
+function* up(d: i32): Generator<i32> {
+  if (d === 0) { yield 1; return; }
+  const it: Generator<i32> = up(d - 1);
+  const r = it.next();
+  yield r.value + 1;
+}
+export function main(): void {
+  step(2);
+  start(2);
+  for (const x of walk(2)) { }
+  for (const v of pass(2)) { print(`${v}`); }
+  print(`${up(2).next().value}`);
+}
+"#;
+
+    fn lower_generators() -> l::Module {
+        let hir = check_program(&[SourceFile::new("generators.ts", GENERATORS)]).expect("checks");
+        super::super::lower_module(&hir).expect("lowers")
+    }
+
+    /// Removes each poll directly after a resume of a generator and returns
+    /// the count. Each other poll stays: the entry poll and the poll after
+    /// the creation of the generator.
+    fn remove_polls_after_resumes(module: &l::Module, name: &str) -> (l::Module, usize) {
+        let mut module = module.clone();
+        let methods = ScriptMethods::of_module(&module);
+        let function = function_mut(&mut module, name);
+        let snapshot = function.clone();
+        let mut removed = 0;
+        for (block, original) in function.blocks.iter_mut().zip(&snapshot.blocks) {
+            let resumes = original
+                .instructions
+                .iter()
+                .enumerate()
+                .filter(|(index, instruction)| {
+                    matches!(instruction.kind, l::InstructionKind::Call(_))
+                        && instruction_script_entry(&methods, &snapshot, instruction)
+                            == ScriptEntry::GeneratorBody
+                        && original.instructions.get(index + 1).map(|next| &next.kind)
+                            == Some(&l::InstructionKind::CollectionPoll)
+                })
+                .map(|(index, _)| index + 1)
+                .collect::<Vec<_>>();
+            for index in resumes.into_iter().rev() {
+                block.instructions.remove(index);
+                removed += 1;
+            }
+        }
+        (module, removed)
+    }
+
+    fn poll_count(function: &l::Function) -> usize {
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+            .filter(|instruction| instruction.kind == l::InstructionKind::CollectionPoll)
+            .count()
+    }
+
+    /// For each shape of §352 acceptance 1 and 2, the module with only the
+    /// poll after the resume removed is rejected, with each other poll
+    /// present (acceptance 3).
+    #[test]
+    fn a_generator_shape_with_its_resume_poll_removed_is_rejected() {
+        let module = lower_generators();
+        assert_eq!(messages(&module), Vec::<String>::new());
+        for name in ["step", "drive", "walk", "pass", "up"] {
+            let (removed, count) = remove_polls_after_resumes(&module, name);
+            assert_eq!(count, 1, "{name}");
+            let before = module
+                .functions
+                .iter()
+                .find(|function| function.source_name == name)
+                .map(poll_count)
+                .expect("the function");
+            let function = removed
+                .functions
+                .iter()
+                .find(|function| function.source_name == name)
+                .expect("the function");
+            // Only the poll after the resume is gone.
+            assert_eq!(poll_count(function) + 1, before, "{name}");
+            let id = function.id.0;
+            let messages = messages(&removed);
+            assert!(
+                messages
+                    .iter()
+                    .any(|message| message.starts_with(&format!("function {id} "))
+                        && message.contains("a return into the cycle")),
+                "{name}: {messages:?}"
+            );
+            assert!(
+                !messages
+                    .iter()
+                    .any(|message| message.contains("needs an entry collection poll")),
+                "{name}: {messages:?}"
+            );
+        }
+    }
+
+    /// The resume is an edge to each generator function: `drive` is in a
+    /// cycle only through it.
+    #[test]
+    fn a_resume_is_an_edge_of_the_graph() {
+        let module = lower_generators();
+        let index = |name: &str| {
+            module
+                .functions
+                .iter()
+                .position(|function| function.source_name == name)
+                .unwrap_or_else(|| panic!("{name}"))
+        };
+        let graph = Graph::of_module(&module);
+        assert!(graph.cyclic[index("drive")]);
+        assert_eq!(
+            graph.components[index("drive")],
+            graph.components[index("other")]
+        );
+        assert!(graph.entry_poll_required(&module, index("drive")));
+    }
+
+    /// The shapes of `compiler.md` §352 rule 9: `stage` resumes its child
+    /// from the code after a `yield`, `walk` walks a tree, and `plain`
+    /// resumes no generator, so it is in no cycle.
+    const RESUME_POINTS: &str = r#"
+class P { a: i64 = 0; }
+class Node { value: i32 = 0; children: Node[] = []; }
+function* stage(d: i32): Generator<i32> {
+  if (d === 0) { yield 0; yield 0; return; }
+  const child: Generator<i32> = stage(d - 1);
+  child.next(); yield 1;
+  new P(); child.next(); yield 2;
+}
+function* walk(n: Node): Generator<i32> {
+  yield n.value;
+  for (const c of n.children) { for (const x of walk(c)) { yield x; } }
+}
+function* plain(): Generator<i32> { yield 1; new P(); yield 2; }
+export function main(): void {
+  const a: Generator<i32> = stage(2);
+  a.next();
+  a.next();
+  const root: Node = new Node();
+  root.children.push(new Node());
+  for (const x of walk(root)) { }
+  for (const x of plain()) { }
+}
+"#;
+
+    fn lower_resume_points() -> l::Module {
+        let hir =
+            check_program(&[SourceFile::new("resume-points.ts", RESUME_POINTS)]).expect("checks");
+        super::super::lower_module(&hir).expect("lowers")
+    }
+
+    /// The poll of each resume point of a function, as the resume point
+    /// and the block whose first instruction is that poll: the resume point
+    /// itself, or the close continuation that its branch on the close
+    /// request names.
+    fn polled_resume_points(function: &l::Function) -> Vec<(usize, usize)> {
+        let first_is_poll = |block: usize| {
+            function.blocks[block]
+                .instructions
+                .first()
+                .map(|first| &first.kind)
+                == Some(&l::InstructionKind::CollectionPoll)
+        };
+        function
+            .blocks
+            .iter()
+            .filter_map(|block| match &block.terminator {
+                l::Terminator::Suspend {
+                    kind: l::SuspendKind::Yield(_),
+                    successor,
+                    ..
+                } => Some(successor.0 as usize),
+                _ => None,
+            })
+            .filter_map(|resume| {
+                if first_is_poll(resume) {
+                    return Some((resume, resume));
+                }
+                let l::Terminator::ConditionalBranch { then_target, .. } =
+                    &function.blocks[resume].terminator
+                else {
+                    return None;
+                };
+                let close = then_target.block.0 as usize;
+                first_is_poll(close).then_some((resume, close))
+            })
+            .collect()
+    }
+
+    /// Property 6: for `stage` and `walk`, the module with only the poll of
+    /// one resume point removed is rejected, with the entry poll and each
+    /// poll after a resume present. `plain` has no such poll and passes.
+    /// The poll of the resume point after `yield x` in `walk` is at the
+    /// start of its close continuation, and the property accepts it there.
+    #[test]
+    fn a_resume_point_with_its_poll_removed_is_rejected() {
+        let module = lower_resume_points();
+        assert_eq!(messages(&module), Vec::<String>::new());
+        let plain = module
+            .functions
+            .iter()
+            .find(|function| function.source_name == "plain")
+            .expect("plain");
+        assert_eq!(polled_resume_points(plain), Vec::<(usize, usize)>::new());
+        for name in ["stage", "walk"] {
+            let function = module
+                .functions
+                .iter()
+                .find(|function| function.source_name == name)
+                .expect("the function");
+            let resumes = polled_resume_points(function);
+            assert!(!resumes.is_empty(), "{name}");
+            if name == "walk" {
+                assert!(
+                    resumes.iter().any(|(resume, block)| resume != block),
+                    "{name}: {resumes:?}"
+                );
+            }
+            for (resume, block) in resumes {
+                let mut removed = module.clone();
+                let target = function_mut(&mut removed, name);
+                let polls = poll_count(target);
+                target.blocks[block].instructions.remove(0);
+                assert_eq!(poll_count(target) + 1, polls, "{name}");
+                let id = target.id.0;
+                let messages = messages(&removed);
+                assert_eq!(
+                    messages,
+                    vec![format!(
+                        "function {id} resume point block {resume} reaches an allocation with no \
+                         collection poll"
+                    )],
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    /// A foreign call is an edge to each function whose address is taken
+    /// (`compiler.md` §352 rule 1): `visit` calls the host, which can call
+    /// `visit` back, and allocates after the foreign call. The module with
+    /// only the poll after the foreign call removed is rejected, with the
+    /// entry poll present.
+    #[test]
+    fn a_foreign_call_shape_with_its_poll_removed_is_rejected() {
+        let files = [
+            SourceFile::ambient(
+                "host.d.ts",
+                "// @subscript-c-header include=\"host.h\"\ndeclare function hostWalk(n: i32): void;",
+            ),
+            SourceFile::new(
+                "foreign.ts",
+                "class P { x: i32 = 0; }\n\
+                 let keep: (n: i32) => void = visit;\n\
+                 function visit(n: i32): void { if (n > 0) { hostWalk(n - 1); } new P(); new P(); }\n\
+                 export function main(): void { visit(2); }\n",
+            ),
+        ];
+        let module =
+            super::super::lower_module(&check_program(&files).expect("checks")).expect("lowers");
+        assert_eq!(messages(&module), Vec::<String>::new());
+        let mut removed = module.clone();
+        let visit = function_mut(&mut removed, "visit");
+        let polls = poll_count(visit);
+        let mut taken = 0;
+        for block in &mut visit.blocks {
+            let after = block
+                .instructions
+                .iter()
+                .position(|instruction| {
+                    matches!(
+                        &instruction.kind,
+                        l::InstructionKind::Call(l::CallTarget {
+                            kind: l::CallTargetKind::Foreign(_),
+                            ..
+                        })
+                    )
+                })
+                .map(|index| index + 1);
+            if let Some(index) = after {
+                assert_eq!(
+                    block.instructions[index].kind,
+                    l::InstructionKind::CollectionPoll
+                );
+                block.instructions.remove(index);
+                taken += 1;
+            }
+        }
+        assert_eq!(taken, 1);
+        assert_eq!(poll_count(visit) + 1, polls);
+        let id = visit.id.0;
+        let messages = messages(&removed);
+        assert!(
+            messages
+                .iter()
+                .any(|message| message.starts_with(&format!("function {id} "))
+                    && message.contains("a return into the cycle")),
+            "{messages:?}"
+        );
+        assert!(
+            !messages
+                .iter()
+                .any(|message| message.contains("needs an entry collection poll")),
+            "{messages:?}"
+        );
     }
 }

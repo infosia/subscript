@@ -38,7 +38,10 @@ call is the path from the instruction after the call.
    §342).** For each call in a function of a cycle whose possible
    callee is in that cycle: if a path of the continuation reaches an
    instruction that can allocate, or a suspension, before it reaches a
-   poll, the placement puts one poll directly after the call. A path
+   poll, the placement puts one poll directly after the call.
+   *(Amended 2026-11-22, §352 rules 1 to 4: the graph comes from a
+   total fact of each instruction; a resume or a close of a generator
+   and a foreign call are calls of this rule.)* A path
    follows the handler edges of later instructions and ends at a
    return, a trap, or an unreachable point.
 2. **A handler of a function of a cycle has a poll (rule 11f).** In
@@ -49,7 +52,9 @@ call is the path from the instruction after the call.
    in the scan of rules 1 and 2, if the callee is not a generator and
    not async: a call of those creates a frame and does not run the
    entry block. So a function that calls itself two times and then
-   allocates gets one poll, after the second call.
+   allocates gets one poll, after the second call. *(Amended
+   2026-11-22, §352 rule 5: a resume of a generator does not count as
+   a poll.)*
 4. **A function outside each cycle gets no new poll.** A frame of it
    is on the stack one time at most.
 5. **The entry poll rule uses the same graph.** A function that can
@@ -60,13 +65,16 @@ call is the path from the instruction after the call.
    or the outermost exit, after a count of allocating instructions
    that only the module bounds, for direct calls, indirect calls,
    callback operations, normal returns, exceptional returns, and the
-   resumes of one drain (rule 12). The
+   resumes of one drain (rule 12). *(Amended 2026-11-22, §352 rules 8
+   and 9: also for the resumes and the closes of generators.)* The
    module documentation of the placement pass states the argument
    with the chain of returns.
-7. **Not in the bound**, each recorded in §351.4: a recursion that
-   passes through the host; a value that passes up through nested
-   generators; the allocations of one runtime operation (§345 rule
-   3).
+7. **Not in the bound**, each recorded in §351.4: a recursion in
+   which the host calls an export from inside a foreign call; the
+   allocations of one runtime operation (§345 rule 3). *(Amended
+   2026-11-22, §352: a value that passes up through nested generators,
+   and a callback that the host calls from a foreign call, are in the
+   bound.)*
 8. **The verifier checks rules 1, 2, and 5** by a derivation of its
    own: a backward fixpoint over block suffixes for "an allocation is
    reachable with no poll", against the forward scan of the placement.
@@ -163,9 +171,13 @@ call is the path from the instruction after the call.
 
 1. A recursion that passes through the host is not in the call graph:
    a foreign call, then an export call from the host. Contrived.
-2. A value that a chain of nested generators passes up crosses one
-   suspension for each generator, with no poll between them. The
-   allocation of that path is not measured.
+   *(Amended 2026-11-22: §352 rule 1 gives a foreign call an edge to
+   each function whose address is taken, so a registered callback is
+   in the graph. The export form stays here; the ship tier traps a
+   host entry inside a host entry, §223.)*
+2. Closed by §352, which measures the path (its acceptance 2). A
+   value that a chain of nested generators passes up crosses one
+   suspension for each generator, with no poll between them.
 3. The interpreter runs each level of a held async chain on the host
    stack. The held form of acceptance 2b ends the stack of a 2 MiB
    test thread at depth 32 in a debug build, so the interpreter test

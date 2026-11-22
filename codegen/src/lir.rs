@@ -19,7 +19,7 @@ mod array_ownership;
 mod async_defaults;
 mod builder;
 mod call;
-mod collection_poll;
+pub mod collection_poll;
 mod completion;
 mod construct;
 mod defaults;
@@ -35,6 +35,7 @@ mod lowering;
 mod place;
 #[cfg(test)]
 mod reference_description_tests;
+pub mod script_entry;
 mod stmt;
 mod unroll;
 mod using;

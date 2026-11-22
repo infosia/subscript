@@ -28,13 +28,12 @@
 //! dev JIT 1.8 s and 0.1 s, async ship tier 1.4 s and 1.2 s, async dev JIT
 //! 0.6 s and 0.05 s, roots 1.0 s and 0.8 s, async roots 0.5 s and 0.4 s,
 //! workloads 0.04 s and 0.01 s, async interpreter 0.02 s and under 0.01 s.
+//! The foreign test builds one ship program with the archive of the interop
+//! fixture and runs the dev JIT two times for each depth: 0.7 s and 0.3 s.
 
 use std::path::PathBuf;
 
 use subscript_codegen::interpreter::interpret_with_collection;
-use subscript_codegen::lir::allocation::{
-    instruction_allocation, InstructionAllocation, MethodBodies,
-};
 use subscript_codegen::lir::lower_module;
 use subscript_codegen::{
     run_c_aot_configured, run_jit_configured, EntryArg, NativeLibrary, ReloadSession, RunConfig,
@@ -45,17 +44,23 @@ use subscript_runtime::context::CollectionMode;
 
 #[allow(dead_code)]
 mod corpus;
+#[allow(dead_code)]
+#[path = "support/native_fixture.rs"]
+mod native_fixture;
+#[allow(dead_code)]
+#[path = "support/return_path.rs"]
+mod return_path;
 
-/// The minimum headroom of each run of acceptance 1 and 2.
-const HEADROOM: usize = 64;
+use return_path::{
+    dev_marker, dev_output, dev_run, per_frame_of, scratch, ship_output, ship_run, ship_run_linked,
+    Sample, ShipFigures, HEADROOM, MARKER, SIZE,
+};
+use subscript_codegen::lir::allocation::{
+    instruction_allocation, InstructionAllocation, MethodBodies,
+};
 
 /// The two depths of acceptance 1.
 const DEPTHS: [i32; 2] = [256, 1024];
-
-/// The payload size of `P`: four `i64` fields in the C layout (invariant
-/// 1). The trigger counts the payload bytes that allocations request
-/// (§346 rule 1).
-const SIZE: usize = 4 * 8;
 
 /// The class of each shape, and the exports that the two tiers call.
 /// `probe` stops on an index trap after the shape returns: the index is
@@ -204,34 +209,9 @@ fn source(shape: &Shape, depth: i32) -> String {
 }
 
 /// The most instructions with the fact "can allocate" in one function of
-/// the shape, other than calls of script functions. No function of a shape
-/// has a loop, so a frame runs each of them once at most.
+/// the shape, other than calls of script functions.
 fn per_frame(shape: &Shape) -> usize {
-    per_frame_of(&source(shape, 0))
-}
-
-/// [`per_frame`] of one program text.
-fn per_frame_of(text: &str) -> usize {
-    let files = [SourceFile::new("return-path.ts", text)];
-    let module = lower_module(&check_program(&files).expect("checks")).expect("lowers");
-    let methods = MethodBodies::of_module(&module);
-    module
-        .functions
-        .iter()
-        .filter(|function| !function.exported)
-        .map(|function| {
-            function
-                .blocks
-                .iter()
-                .flat_map(|block| &block.instructions)
-                .filter(|instruction| {
-                    instruction_allocation(&module, &methods, function, instruction)
-                        == InstructionAllocation::Can
-                })
-                .count()
-        })
-        .max()
-        .unwrap_or(0)
+    per_frame_of(&[SourceFile::new("return-path.ts", source(shape, 0))])
 }
 
 /// The bound of the objects over the base before the outermost exit.
@@ -246,110 +226,10 @@ fn bound(per_frame: usize) -> usize {
     (HEADROOM / SIZE + 2) * per_frame
 }
 
-/// One sample: live objects and automatic collections.
-#[derive(Debug, Clone, Copy)]
-struct Sample {
-    objects: u64,
-    collections: u64,
-}
-
-/// The objects over the base before the exit, and the automatic
-/// collections in the call, of one depth in the ship tier.
-#[derive(Clone, Copy)]
-struct ShipFigures {
-    depth: i32,
-    objects: u64,
-    collections: u64,
-}
-
-fn scratch(tag: &str) -> PathBuf {
-    let directory = std::env::temp_dir().join(format!(
-        "subscript-return-path-{tag}-{}-{:?}",
-        std::process::id(),
-        std::thread::current().id()
-    ));
-    std::fs::create_dir_all(&directory).expect("create the scratch directory");
-    directory
-}
-
 /// Runs each depth of a shape in the ship tier, in one build.
 fn ship(shape: &Shape) -> Vec<ShipFigures> {
-    let directory = scratch(shape.name);
-    let hooks = directory.join("return_path_hooks.c");
-    let calls = depths(shape)
-        .iter()
-        .map(|depth| {
-            format!(
-                "  subscript_rt_ctx_collect(ctx);\n  sample(ctx, {depth}, \"base\");\n\
-                 \x20 subscript_rt_ctx_enter_script(ctx);\n\
-                 \x20 subscript_export_run(ctx, {depth});\n\
-                 \x20 sample(ctx, {depth}, \"before-exit\");\n\
-                 \x20 subscript_rt_ctx_exit_script(ctx);\n"
-            )
-        })
-        .collect::<String>();
-    std::fs::write(
-        &hooks,
-        format!(
-            "#include <stdint.h>\n\
-             #include <stdio.h>\n\
-             #include \"program.h\"\n\
-             uint64_t subscript_rt_automatic_collection_count(const subscript_rt_context* ctx);\n\
-             void subscript_test_return_path_setup(subscript_rt_context* ctx) {{\n\
-               if (subscript_rt_ctx_set_collection(ctx, 1, {HEADROOM}u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
-             }}\n\
-             static void sample(subscript_rt_context* ctx, int depth, const char* tag) {{\n\
-               printf(\"%d %s %llu %llu\\n\", depth, tag,\n\
-                 (unsigned long long)subscript_rt_ctx_live_allocations(ctx),\n\
-                 (unsigned long long)subscript_rt_automatic_collection_count(ctx));\n\
-             }}\n\
-             void subscript_test_return_path_run(subscript_rt_context* ctx) {{\n\
-             {calls}\
-               fflush(stdout);\n\
-             }}\n"
-        ),
-    )
-    .expect("write the hook source");
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    // SAFETY: the library defines only host hooks, which the C build links.
-    let library = [unsafe {
-        NativeLibrary::new(vec![repo.join("runtime/include")], vec![hooks], Vec::new())
-    }];
-    let mut config = RunConfig::default().with_native_libraries(&library);
-    config.pre_init_hook = Some("subscript_test_return_path_setup");
-    config.pre_entry_hook = Some("subscript_test_return_path_run");
     let files = [SourceFile::new("return-path.ts", source(shape, 0))];
-    let output = run_c_aot_configured(&files, config).expect("the ship tier runs");
-    let _ = std::fs::remove_dir_all(&directory);
-    let text = String::from_utf8(output.stdout).expect("utf-8 output");
-    assert!(!text.contains("setup-refused"), "{}: {text}", shape.name);
-    let read = |depth: i32, tag: &str| -> Sample {
-        let line = text
-            .lines()
-            .find(|line| line.starts_with(&format!("{depth} {tag} ")))
-            .unwrap_or_else(|| panic!("{}: no {tag} sample in {text}", shape.name));
-        let numbers = line
-            .split_whitespace()
-            .skip(2)
-            .map(|value| value.parse::<u64>().expect("a count"))
-            .collect::<Vec<_>>();
-        Sample {
-            objects: numbers[0],
-            collections: numbers[1],
-        }
-    };
-    depths(shape)
-        .iter()
-        .map(|&depth| {
-            let base = read(depth, "base");
-            let exit = read(depth, "before-exit");
-            ShipFigures {
-                depth,
-                objects: exit.objects - base.objects,
-                collections: exit.collections - base.collections,
-            }
-        })
-        .collect()
+    ship_run(shape.name, &files, &depths(shape), false)
 }
 
 /// The objects over the base before the outermost exit of one depth in the
@@ -357,26 +237,7 @@ fn ship(shape: &Shape) -> Vec<ShipFigures> {
 /// `main` at that depth.
 fn dev(shape: &Shape, depth: i32) -> (usize, u64, u64) {
     let files = [SourceFile::new("return-path.ts", source(shape, depth))];
-    let mut config = RunConfig::default();
-    config.collection = Some((CollectionMode::Automatic, HEADROOM));
-    let mut session = ReloadSession::new_configured(&files, config).expect("the session starts");
-    session.call_export("settle").expect("settle runs");
-    let base = session.live_allocations();
-    match session.call_export_with("probe", &[EntryArg::I32(depth)]) {
-        Err(RunError::Trap(_)) => {}
-        other => panic!("{}: probe({depth}) does not trap: {other:?}", shape.name),
-    }
-    let objects = session.live_allocations() - base;
-    let mut config = RunConfig::default();
-    config.collection = Some((CollectionMode::Automatic, HEADROOM));
-    config.memory_accounting = true;
-    let run = run_jit_configured(&files, config).expect("main runs");
-    let accounting = run.memory_accounting.expect("accounting");
-    (
-        objects,
-        accounting.automatic_collections,
-        accounting.outermost_exits,
-    )
+    dev_run(shape.name, &files, depth, &[])
 }
 
 /// The finding of one depth of one shape, if it has one. The control keeps
@@ -491,45 +352,6 @@ export function main(): void {
 }
 "#;
 
-/// The ship tier with the collection mode set before the initializer.
-fn ship_output(source: &str, mode: i32) -> String {
-    let directory = scratch(&format!("roots-{mode}"));
-    let hooks = directory.join("return_path_roots.c");
-    std::fs::write(
-        &hooks,
-        format!(
-            "#include <stdio.h>\n\
-             #include \"subscript_runtime.h\"\n\
-             void subscript_test_return_path_mode(subscript_rt_context* ctx) {{\n\
-               if (subscript_rt_ctx_set_collection(ctx, {mode}, {HEADROOM}u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
-             }}\n"
-        ),
-    )
-    .expect("write the hook source");
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    // SAFETY: the library defines only a host hook, which the C build links.
-    let library = [unsafe {
-        NativeLibrary::new(vec![repo.join("runtime/include")], vec![hooks], Vec::new())
-    }];
-    let mut config = RunConfig::default().with_native_libraries(&library);
-    config.pre_init_hook = Some("subscript_test_return_path_mode");
-    let files = [SourceFile::new("return-path-roots.ts", source)];
-    let output = run_c_aot_configured(&files, config).expect("the ship tier runs");
-    let _ = std::fs::remove_dir_all(&directory);
-    String::from_utf8(output.stdout).expect("utf-8 output")
-}
-
-/// The dev JIT with a collection mode. Memory accounting keeps the run in
-/// the test process, as the other runs of this file.
-fn dev_output(source: &str, mode: CollectionMode) -> String {
-    let files = [SourceFile::new("return-path-roots.ts", source)];
-    let mut config = RunConfig::default();
-    config.collection = Some((mode, HEADROOM));
-    config.memory_accounting = true;
-    let run = run_jit_configured(&files, config).expect("the dev JIT runs");
-    String::from_utf8(run.stdout).expect("utf-8 output")
-}
-
 #[test]
 fn a_value_that_the_continuation_reads_is_rooted_at_the_new_poll() {
     let files = [SourceFile::new("return-path-roots.ts", ROOTS)];
@@ -608,6 +430,169 @@ fn the_workloads_keep_their_poll_sites() {
             .count();
         assert_eq!(polls, expected, "{name}");
     }
+}
+
+/// The recursion through a host callback (`compiler.md` §352 rule 1): the
+/// lambda that the program registers with the interop fixture calls `step`,
+/// and `step` calls `subDeviceSubmit`, which calls the registered lambda
+/// before it returns. `subDeviceSetLogger` starts the recursion: it calls
+/// the lambda one time when it registers it. Each level allocates five `P`
+/// after the foreign call returns, and the bottom calls `markBottom`. A
+/// foreign call is an edge to each function whose address is taken, so
+/// `step` has a poll after the call. The interpreter runs no foreign call,
+/// so the shape runs in the two native tiers only.
+const FOREIGN: &str = r#"
+class Level {
+  device: SubDevice;
+  left: i32 = 0;
+  constructor(device: SubDevice) { this.device = device; }
+}
+const commands: u32[] = [0];
+function step(level: Level): void {
+  if (level.left > 0) {
+    level.left -= 1;
+    subDeviceSubmit(level.device, commands);
+  } else { markBottom(); }
+  new P(); new P(); new P(); new P(); new P();
+}
+export function run(depth: i32): void {
+  const device: SubDevice = subDeviceCreate(null);
+  const level: Level = new Level(device);
+  level.left = depth;
+  const info: SubCallbackInfo = new SubCallbackInfo(
+    (message, userdata1, userdata2) => {
+      if (userdata1 !== null) { step(userdata1 as Level); }
+    },
+    level,
+    null,
+  );
+  subDeviceSetLogger(device, info);
+  subDeviceRelease(device);
+}
+"#;
+
+/// The depths of the foreign shape: each level nests a C frame of the
+/// fixture and a callback adapter (§352.2).
+const FOREIGN_DEPTHS: [i32; 2] = [128, 256];
+
+/// The objects of one level of the foreign shape, and the largest payload
+/// capacity of a live allocation at the bottom in the ship tier, which the
+/// ship test reads at the bottom marker.
+const FOREIGN_OBJECTS: usize = 5;
+const FOREIGN_CAPACITY: usize = 48;
+
+fn foreign_files(depth: i32) -> [SourceFile; 3] {
+    let mirror =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus/interop/interop.generated.d.ts");
+    [
+        SourceFile::ambient("return_path_marker.d.ts", MARKER),
+        SourceFile::ambient(
+            "interop.generated.d.ts",
+            std::fs::read_to_string(mirror).expect("read the interop mirror"),
+        ),
+        SourceFile::new(
+            "return-path-foreign.ts",
+            format!("const DEPTH: i32 = {depth};\n{COMMON}{FOREIGN}"),
+        ),
+    ]
+}
+
+/// The bound of the objects over the base before the outermost exit, in
+/// the form of the bound of the generator shapes (`generator_resume_polls`):
+/// a level requests `FOREIGN_OBJECTS * SIZE` bytes, and the live bytes of a
+/// level at a collection are at most `FOREIGN_CAPACITY`, the largest live
+/// capacity at the bottom. Let the last collection of the call run with `r`
+/// levels of the return path left. Then `r <= HEADROOM / net + 1` if the
+/// headroom is the limit, and `r <= (net + 3 * capacity) / (net -
+/// capacity)` if the live bytes are the limit (§346 rule 2), with `net =
+/// FOREIGN_OBJECTS * SIZE - capacity`. The bound is `r + 1` levels of
+/// `per_frame` objects, and the objects that `run` allocates before the
+/// recursion: they are live at each collection of the call.
+fn foreign_bound() -> usize {
+    let files = foreign_files(0);
+    let per_frame = per_frame_of(&files);
+    let net = FOREIGN_OBJECTS * SIZE - FOREIGN_CAPACITY;
+    assert!(net > FOREIGN_CAPACITY);
+    let headroom_levels = HEADROOM / net + 1;
+    let live_levels = (net + 3 * FOREIGN_CAPACITY) / (net - FOREIGN_CAPACITY);
+    (headroom_levels.max(live_levels) + 1) * per_frame + run_objects(&files)
+}
+
+/// The instructions of `run` with the fact "can allocate".
+fn run_objects(files: &[SourceFile]) -> usize {
+    let module = lower_module(&check_program(files).expect("checks")).expect("lowers");
+    let methods = MethodBodies::of_module(&module);
+    let run = module
+        .functions
+        .iter()
+        .find(|function| function.source_name == "run")
+        .expect("run");
+    run.blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter(|instruction| {
+            instruction_allocation(&module, &methods, run, instruction)
+                == InstructionAllocation::Can
+        })
+        .count()
+}
+
+/// The shape with its poll after the foreign call: the objects before the
+/// outermost exit are under [`foreign_bound`] at the two depths, in the
+/// ship tier and the dev JIT, and the ship tier collects after the bottom
+/// of the recursion. If the fact of a foreign call is "none", `step` has no
+/// poll after the call: each level keeps its five objects, so the count
+/// follows the depth and passes the bound, and the ship tier does not
+/// collect after the bottom.
+#[test]
+fn a_return_through_a_host_callback_reaches_a_poll() {
+    let Some(fixture) = native_fixture::fixture() else {
+        println!(
+            "a_return_through_a_host_callback_reaches_a_poll: skipped: interop fixture excluded \
+             here (compiler.md §11c)"
+        );
+        return;
+    };
+    let bound = foreign_bound();
+    let mut findings = Vec::new();
+    for figure in ship_run_linked(
+        "foreign",
+        &foreign_files(0),
+        &FOREIGN_DEPTHS,
+        true,
+        vec![fixture.archive_library()],
+    ) {
+        let after_bottom = figure.after_bottom.unwrap_or(0);
+        let capacity = figure.bottom_capacity.unwrap_or(0);
+        let figures = format!(
+            "depth={} objects={} collections={} after-bottom={after_bottom} capacity={capacity}",
+            figure.depth, figure.objects, figure.collections
+        );
+        eprintln!("ship foreign bound={bound}: {figures}");
+        // The premise of the bound: the capacity that it assumes.
+        assert!(
+            capacity > 0 && capacity <= FOREIGN_CAPACITY as u64,
+            "capacity {capacity}"
+        );
+        if after_bottom == 0 || figure.objects > bound as u64 {
+            findings.push(format!("ship bound={bound}: {figures}"));
+        }
+    }
+    for depth in FOREIGN_DEPTHS {
+        let (objects, collections, exits) = dev_run(
+            "foreign",
+            &foreign_files(depth),
+            depth,
+            &[dev_marker(), fixture.archive_library()],
+        );
+        let figures =
+            format!("depth={depth} objects={objects} collections={collections} exits={exits}");
+        eprintln!("dev foreign bound={bound}: {figures}");
+        if objects > bound {
+            findings.push(format!("dev bound={bound}: {figures}"));
+        }
+    }
+    assert!(findings.is_empty(), "{findings:#?}");
 }
 
 /// The async shapes (`compiler.md` §351 rule 12): the return chain of an
@@ -844,6 +829,8 @@ fn async_ship(shape: &Shape) -> (Vec<ShipFigures>, u64, u64) {
                 depth,
                 objects: exit.objects - base.objects,
                 collections: exit.collections - kicked.collections,
+                after_bottom: None,
+                bottom_capacity: None,
             }
         })
         .collect();
@@ -894,7 +881,10 @@ fn async_dev(shape: &Shape, depth: i32) -> (usize, u64, u64) {
 fn an_async_return_chain_reaches_a_poll_in_the_ship_tier() {
     let mut findings = Vec::new();
     for shape in &ASYNC_SHAPES {
-        let bound = async_bound(per_frame_of(&async_source(shape, 0)));
+        let bound = async_bound(per_frame_of(&[SourceFile::new(
+            "return-path.ts",
+            async_source(shape, 0),
+        )]));
         let (figures, frame, object) = async_ship(shape);
         eprintln!("ship {} frame={frame} object={object}", shape.name);
         // The premise of the bound: the capacities that it assumes.
@@ -930,7 +920,10 @@ fn an_async_return_chain_reaches_a_poll_in_the_ship_tier() {
 fn an_async_return_chain_reaches_a_poll_in_the_dev_jit() {
     let mut findings = Vec::new();
     for shape in &ASYNC_SHAPES {
-        let bound = async_bound(per_frame_of(&async_source(shape, 0)));
+        let bound = async_bound(per_frame_of(&[SourceFile::new(
+            "return-path.ts",
+            async_source(shape, 0),
+        )]));
         for depth in DEPTHS {
             let (objects, collections, exits) = async_dev(shape, depth);
             let figures =

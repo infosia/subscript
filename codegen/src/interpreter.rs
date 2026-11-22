@@ -435,6 +435,8 @@ struct Interpreter<'m> {
     exception_positions: Vec<Pos>,
     // The facts that `compiler.md` §342 rule 10a verifies.
     allocation: crate::lir::allocation::AllocationFacts,
+    // The facts that `compiler.md` §352 rule 10 verifies.
+    script_entry: script_entry_check::ScriptEntryCheck,
 }
 
 impl<'m> Interpreter<'m> {
@@ -476,6 +478,7 @@ impl<'m> Interpreter<'m> {
             parked: Vec::new(),
             exception_positions: Vec::new(),
             allocation: crate::lir::allocation::AllocationFacts::of_module(module),
+            script_entry: script_entry_check::ScriptEntryCheck::of_module(module),
         };
         interpreter.compute_class_layouts()?;
         interpreter.globals = module
@@ -986,7 +989,7 @@ impl<'m> Interpreter<'m> {
                 {
                     child.borrow_mut().create_pos = pos.clone();
                 }
-                self.async_start(&child)?;
+                self.start_awaited_call(coroutine, &child)?;
                 if self.context.trapped() {
                     return Ok(());
                 }
@@ -1074,6 +1077,7 @@ impl<'m> Interpreter<'m> {
     }
 
     fn execute_frame(&mut self, frame: &mut Frame) -> Result<Flow, InterpretError> {
+        self.check_script_entry(frame.function)?;
         let frame = frame as *mut Frame;
         self.active_frames.push(frame);
         let result = self.execute_frame_effect(frame);
@@ -1863,6 +1867,7 @@ mod roots;
 
 mod allocation_check;
 mod automatic_collection;
+mod script_entry_check;
 pub use automatic_collection::{interpret_with_collection, CollectionRun};
 mod dispatch;
 
