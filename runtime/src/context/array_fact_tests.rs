@@ -108,6 +108,80 @@ fn the_mark_reads_no_word_of_the_storage_of_a_scalar_array() {
     }
 }
 
+/// compiler.md §347 rules 1 and 2: a received `i32[]` takes its fact from
+/// the read record. With the "no handle" flag (§344 rule 3), the words that
+/// one collection reads do not grow with the length, and each element reads
+/// the C buffer after the collection. The control without the flag reads a
+/// count that grows with the length.
+#[test]
+fn the_mark_reads_no_word_of_the_storage_of_a_received_scalar_array() {
+    use crate::ffi::subscript_rt_boundary_receive;
+    const MB: usize = 1 << 20;
+    // The `RECEIVED_NO_HANDLE` flag of `ffi/receive.rs`.
+    const NO_HANDLE_FLAG: u32 = 512;
+    let record = |flags: u32| -> Vec<u8> {
+        [flags, 4, 4, 0]
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .collect()
+    };
+    let buffer: Vec<i32> = (0..(8 * MB / 4) as i32).map(|i| i ^ 0x5a5a).collect();
+    let path = b"host.Out.items";
+    for mut ctx in tiers() {
+        let ship = ctx.uses_ship_arena();
+        let mut counts = Vec::new();
+        for (flags, megabytes) in [(NO_HANDLE_FLAG, 4), (NO_HANDLE_FLAG, 8), (0, 4), (0, 8)] {
+            let count = megabytes * MB / 4;
+            let schema = record(flags);
+            // SAFETY: `buffer` holds at least `count` elements, and `schema`
+            // is a complete record of a scalar element of 4 bytes.
+            let array = unsafe {
+                subscript_rt_boundary_receive(
+                    &mut *ctx,
+                    buffer.as_ptr().cast(),
+                    count as u64,
+                    schema.as_ptr(),
+                    path.as_ptr(),
+                    path.len() as u32,
+                    0,
+                    std::ptr::null(),
+                )
+            };
+            assert!(!array.is_null(), "ship={ship}: the receive fails");
+            counts.push(words_read_by_one_collection(&mut ctx, &[array]));
+            let expected = if flags == NO_HANDLE_FLAG {
+                ArrayElements::NoHandle
+            } else {
+                ArrayElements::CanHoldHandle
+            };
+            assert_eq!(fact(&ctx, array), expected, "ship={ship}: the fact");
+            // SAFETY: `array` is a live array of `count` 4-byte elements, and
+            // no allocation runs while the slice lives.
+            let received =
+                unsafe { std::slice::from_raw_parts(ctx.array_data(array).cast::<i32>(), count) };
+            assert!(
+                received == &buffer[..count],
+                "ship={ship}: the elements differ from the C buffer"
+            );
+            ctx.delete(array as usize, 0);
+            ctx.collect();
+        }
+        println!(
+            "ship={ship} received words read: no handle 4 MB={}, 8 MB={}; can hold 4 MB={}, 8 MB={}",
+            counts[0], counts[1], counts[2], counts[3]
+        );
+        assert_eq!(
+            counts[0], counts[1],
+            "ship={ship}: the count grows with the length"
+        );
+        assert!(counts[0] < 64, "ship={ship}: {} words", counts[0]);
+        assert!(
+            counts[3] >= counts[2] + 2 * MB / 8,
+            "ship={ship}: the control does not read the storage"
+        );
+    }
+}
+
 /// Acceptance 1, the firing control: an array of reference objects that
 /// states "no handle" loses its elements in a collection. The same array
 /// that can hold a handle keeps them.

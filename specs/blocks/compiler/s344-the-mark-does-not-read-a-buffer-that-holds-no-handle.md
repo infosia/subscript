@@ -176,8 +176,9 @@ failed, 5 ignored in each. No golden moved.
 
 ### 344.6 Open
 
-1. A received 4 MB array has no test of the words that a collection
-   reads: no fixture returns a large array. The mark is the same code
-   as for acceptance 2.
-2. `runtime/src/arrops.rs` is over the limit of §5.y.
+1. Closed by §347 rule 1. A received 4 MB array has no test of the
+   words that a collection reads: no fixture returns a large array.
+   The mark is the same code as for acceptance 2.
+2. Closed by §347 rule 5. `runtime/src/arrops.rs` is over the limit
+   of §5.y.
 
