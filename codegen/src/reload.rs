@@ -1167,6 +1167,33 @@ impl ReloadSession {
         self.ctx.live_count()
     }
 
+    /// Payload bytes in live Context allocations, the figure of
+    /// `subscript_rt_ctx_live_bytes`. It runs no script.
+    #[must_use]
+    pub fn live_bytes(&self) -> usize {
+        self.ctx.live_bytes()
+    }
+
+    /// The statistics of the collections of the session's Context: the
+    /// record of `subscript_rt_ctx_collection_stats` (`compiler.md` §353
+    /// rules 2 and 8). Each field is for the span from the start of the
+    /// Context or from the last [`ReloadSession::reset_collection_stats`].
+    /// A hot reload keeps the Context, so the record continues across the
+    /// reload. A reload after a failed initializer makes a new session with
+    /// a new Context, and its record starts at zero. A host reads it
+    /// between calls. It runs no script.
+    #[must_use]
+    pub fn collection_stats(&self) -> subscript_runtime::CollectionStats {
+        self.ctx.collection_stats()
+    }
+
+    /// Sets each field of the statistics of the collections to zero
+    /// (`compiler.md` §353 rules 3 and 8). The collection mode and the
+    /// trigger state do not change.
+    pub fn reset_collection_stats(&mut self) {
+        self.ctx.reset_collection_stats();
+    }
+
     /// Returns the live boundary scratch allocation count of this Context (compiler.md section 264).
     #[must_use]
     pub fn live_boundary_scratch_allocations(&self) -> usize {

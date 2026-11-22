@@ -67,7 +67,9 @@ pub unsafe extern "C" fn subscript_rt_outermost_exit_count(ctx: *const Context) 
 }
 
 /// The count of automatic collections of the Context: polls and the
-/// outermost-exit service (`compiler.md` §342 rule 8). A test host reads it
+/// outermost-exit service (`compiler.md` §342 rule 8). It does not count a
+/// detection collection (§342 rule 14); the record of §353 counts a
+/// detection collection as automatic. A test host reads it
 /// after the last script exit and before it releases the Context, in the
 /// same form as [`subscript_rt_outermost_exit_count`] (`compiler.md` §345
 /// rule 4). The host header does not declare this entry.

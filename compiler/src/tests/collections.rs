@@ -1022,6 +1022,30 @@ fn context_namespace_is_neither_a_value_nor_a_class() {
     assert_eq!(construct_err[0].message, "unknown class `Context`");
 }
 
+/// `compiler.md` §353 rule 6: no script form reads the statistics of the
+/// collections. Each spelling is outside the Context subset. The firing
+/// control is `Context.collect()` in the same shape.
+#[test]
+fn context_has_no_member_that_reads_the_collection_stats() {
+    check_one("export function main(): void {\n  Context.collect();\n}\n")
+        .expect("the control checks");
+    for member in [
+        "collectionStats",
+        "collection_stats",
+        "resetCollectionStats",
+    ] {
+        let err = check_one(&format!(
+            "export function main(): void {{\n  Context.{member}();\n}}\n"
+        ))
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S014, "{member}");
+        assert_eq!(
+            err[0].message,
+            format!("`Context.{member}` is outside the accepted Context subset (Q6/Q7/Q34)")
+        );
+    }
+}
+
 // ----- checker regression tests -----
 
 #[test]

@@ -72,24 +72,26 @@ impl Context {
     /// `compiler.md` §348 rule 2: the mark reached `frame`. If it is a
     /// completed task, the mark reads its completion value and its
     /// completion Error object. Both are Context-owned storage outside the
-    /// frame payload, so the payload scan does not read them.
+    /// frame payload, so the payload scan does not read them. Returns the
+    /// count of the words that it pushed (`compiler.md` §353 rule 5).
     pub(super) fn push_task_completion(
         &self,
         frame: usize,
         tasks: &CompletedTasks,
         work: &mut Vec<usize>,
         tracer: &mut Option<MarkTracer>,
-    ) {
+    ) -> usize {
         if !tasks.contains(frame) {
-            return;
+            return 0;
         }
         let Some(completion) = self
             .async_frames
             .get(&frame)
             .and_then(|meta| meta.completion.as_ref())
         else {
-            return;
+            return 0;
         };
+        let before = work.len();
         if let Some(bytes) = completion.value() {
             for (word, chunk) in bytes
                 .chunks_exact(core::mem::size_of::<usize>())
@@ -123,6 +125,7 @@ impl Context {
                 },
             );
         }
+        work.len() - before
     }
 
     /// `compiler.md` §348 rule 3, in one pass over the completed tasks that

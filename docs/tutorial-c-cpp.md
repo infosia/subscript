@@ -471,6 +471,35 @@ subscript_rt_ctx_exit_script(ctx);
 subscript_rt_ctx_set_collection(ctx, 1, 0);   /* automatic again */
 ```
 
+### The time of a collection
+
+`subscript_rt_ctx_collection_stats(ctx, &stats)` writes a
+`subscript_rt_collection_stats` record of `uint64_t` fields (§353): the
+counts of the automatic and the explicit collections, the times in
+nanoseconds (`total_ns`, `max_ns`, `last_ns`), the words that the mark
+read (`last_words_read`, `max_words_read`), and the live bytes after the
+last collection. `subscript_rt_ctx_reset_collection_stats(ctx)` sets each
+field to zero. Call both between script calls. `max_ns` is the longest
+single collection since the last reset. `max_ns` and `max_words_read` can
+come from different collections. The record is for one Context: the
+collections of a Worker are not in it. An automatic collection inside an
+export call is in the record. For one program, the word counts of the dev
+tier and the ship tier are not equal: the ship tier reads the payload of
+a size class. A debug build of the runtime is slower, so read times from
+a release build. This host reads the longest pause of one frame:
+
+```c
+subscript_rt_collection_stats stats;
+subscript_rt_ctx_reset_collection_stats(ctx);  /* at the start of the frame */
+subscript_rt_ctx_enter_script(ctx);
+subscript_export_update(ctx);
+subscript_rt_ctx_exit_script(ctx);
+subscript_rt_ctx_collection_stats(ctx, &stats);
+printf("collections=%llu longest pause=%llu ns\n",
+       (unsigned long long)stats.automatic_collections,
+       (unsigned long long)stats.max_ns);
+```
+
 ### The outermost exit
 
 Bracket each export call with `subscript_rt_ctx_enter_script` and

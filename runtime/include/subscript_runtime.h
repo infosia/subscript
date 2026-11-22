@@ -244,6 +244,53 @@ typedef struct subscript_rt_async_step_report {
     uint64_t budget_exhausted;
 } subscript_rt_async_step_report;
 
+/**
+ * The record of the collections of one subscript_rt_context (`compiler.md` §353 rule 2).
+ *
+ * The record starts with its subscript_rt_context. Each field is for the span from the
+ * start of the record or from the last reset. `max_ns` and
+ * `max_words_read` are each the largest of one collection in that span.
+ * Before the first collection each field is zero.
+ */
+typedef struct subscript_rt_collection_stats {
+    /**
+     * The automatic collections: at a poll, at an outermost exit, and the
+     * detection collection.
+     */
+    uint64_t automatic_collections;
+    /**
+     * The explicit collections: `Context.collect()` and
+     * `subscript_rt_ctx_collect`.
+     */
+    uint64_t explicit_collections;
+    /**
+     * The sum of the times of the collections, in nanoseconds.
+     */
+    uint64_t total_ns;
+    /**
+     * The largest time of one collection, in nanoseconds.
+     */
+    uint64_t max_ns;
+    /**
+     * The time of the last collection, in nanoseconds.
+     */
+    uint64_t last_ns;
+    /**
+     * The words that the mark of the last collection tested as a possible
+     * reference, in the roots and in the payloads.
+     */
+    uint64_t last_words_read;
+    /**
+     * The largest count of words that the mark of one collection read. It
+     * can come from a collection other than the one of `max_ns`.
+     */
+    uint64_t max_words_read;
+    /**
+     * The live bytes after the last collection.
+     */
+    uint64_t last_live_bytes_after;
+} subscript_rt_collection_stats;
+
 /* Registered task record (compiler.md §169). */
 typedef struct subscript_rt_async_task_info {
     uint64_t task_id;
@@ -431,6 +478,28 @@ int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
  */
 void subscript_rt_ctx_collect(subscript_rt_context* ctx);
 /**
+ * Writes the statistics of the collections of `ctx` to `out`
+ * (compiler.md §353 rules 2 and 3).
+ *
+ * The record holds the count of the automatic collections (at a poll, at
+ * an outermost exit, and the detection collection), the count of the
+ * explicit collections, the times in nanoseconds on a monotonic clock, the
+ * words that the mark read, and the live bytes after the last collection.
+ * Each field is for the span from the start of `ctx` or from the last
+ * `subscript_rt_ctx_reset_collection_stats`. `max_ns` and `max_words_read`
+ * are each the largest of one collection in that span, and they can come
+ * from different collections. The record is for `ctx` only: a Worker has a
+ * record of its own, and its collections are not in this record. A null
+ * `ctx` or a null `out` writes nothing.
+ *
+ * # Safety
+ *
+ * `ctx` is null or follows the shared subscript_rt_context contract. `out` is null or
+ * points to writable storage for one record. The host calls this between
+ * script calls, as it calls `subscript_rt_ctx_live_bytes`.
+ */
+void subscript_rt_ctx_collection_stats(const subscript_rt_context* ctx, subscript_rt_collection_stats* out);
+/**
  * Marks entry into an exported script function.
  *
  * The host calls this immediately before each `subscript_init` or
@@ -488,6 +557,17 @@ uint64_t subscript_rt_ctx_live_bytes(const subscript_rt_context* ctx);
 subscript_rt_context* subscript_rt_ctx_new(void);
 void subscript_rt_ctx_release(subscript_rt_context* ctx);
 uint64_t subscript_rt_ctx_reserved_bytes(const subscript_rt_context* ctx);
+/**
+ * Sets each field of the statistics of the collections of `ctx` to zero
+ * (compiler.md §353 rule 3). The collection mode, the headroom, and the
+ * trigger state do not change. A null `ctx` does nothing.
+ *
+ * # Safety
+ *
+ * `ctx` is null or follows the exclusive subscript_rt_context contract. The host calls
+ * this between script calls.
+ */
+void subscript_rt_ctx_reset_collection_stats(subscript_rt_context* ctx);
 void subscript_rt_ctx_seed_random(subscript_rt_context* ctx, uint64_t seed);
 /**
  * Sets the callback-binding count advisory threshold.

@@ -41,7 +41,7 @@ mod valeq;
 pub mod worker;
 
 pub use context::{
-    AsyncStepReport, AsyncTaskInfo, AsyncTaskVisitor, CallbackBinding, Context,
+    AsyncStepReport, AsyncTaskInfo, AsyncTaskVisitor, CallbackBinding, CollectionStats, Context,
     DiagnosticsObserver, ScriptMainEntry, TrapObserver, DIAGNOSTICS_ADVISORY_BINDING_COUNT,
     DIAGNOSTICS_ADVISORY_CALLBACK_USERDATA_FREE,
     FREED_HANDLE_DIAGNOSTICS_DEFAULT_MAX_RETAINED_BYTES,

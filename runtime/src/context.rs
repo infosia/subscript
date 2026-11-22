@@ -993,6 +993,14 @@ mod memory;
 #[path = "context/collection.rs"]
 mod collection;
 
+#[path = "context/collection_stats.rs"]
+mod collection_stats;
+pub use collection_stats::CollectionStats;
+
+#[cfg(test)]
+#[path = "context/collection_stats_tests.rs"]
+mod collection_stats_tests;
+
 #[path = "context/operation_root.rs"]
 mod operation_root;
 pub(crate) use collection::CollectionSettings;

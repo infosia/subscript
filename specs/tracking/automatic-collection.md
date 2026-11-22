@@ -581,3 +581,37 @@ that resumes a generator and then allocates. §352 states for each LIR
 instruction what script code it runs, builds the graph from that
 fact, and checks the fact in the interpreter. The evidence is in
 `compiler.md` §352.5.
+
+## G9 — the time of one collection against the live heap
+
+Measured 2026-11-22 with the record of §353 (`last_ns`,
+`last_words_read`), in the ship arena of the runtime, release build,
+arm64 macOS. Each row is the median of 5 explicit collections, second
+of two runs. An object has 32 bytes.
+
+| Shape | Live MiB | Words read | Time, ms | ns for each word | ms for each MiB |
+|---|---|---|---|---|---|
+| An array of references to objects | 1 | 131,075 | 1.698 | 12.96 | 1.698 |
+| | 4 | 524,293 | 9.160 | 17.47 | 2.290 |
+| | 16 | 2,097,158 | 41.49 | 19.79 | 2.593 |
+| | 64 | 8,388,611 | 189.3 | 22.57 | 2.958 |
+| A chain of objects | 1 | 131,071 | 0.972 | 7.42 | 0.972 |
+| | 4 | 524,287 | 4.491 | 8.57 | 1.123 |
+| | 16 | 2,097,151 | 22.77 | 10.86 | 1.423 |
+| | 64 | 8,388,607 | 110.7 | 13.20 | 1.730 |
+| An array of numbers | 1 to 64 | 7 | 0.0004 | | about 0 |
+
+- The time is not a function of the live bytes: a buffer that holds
+  no handle costs nothing (§344). At equal words the cost depends on
+  the shape: at 1 MiB the chain and the array of references read
+  about 131,000 words each, in 0.97 ms and 1.70 ms.
+- The cost of one word grows with the heap: 7 to 13 ns in the chain,
+  13 to 23 ns in the array of references. The cause is not measured;
+  the lookup of a candidate address and the cache are the candidates.
+- A frame of 16.7 ms holds one collection of about 6 MiB of small
+  objects that an array holds, or about 12 MiB of a chain.
+- The 1 MiB row of the array of references gave 4.6 ms in the first
+  run and 1.7 ms in the second.
+
+The measurement is an ignored test of the runtime
+(`the_collection_time_curve_of_the_ship_arena`), about 2 s.

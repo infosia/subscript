@@ -196,38 +196,13 @@ impl Context {
     /// task that it finds or that an automatic collection recorded
     /// (`compiler.md` §342 rule 13).
     pub fn collect(&mut self) {
-        Self::explicit_collection_with(self, |ctx| ctx, Context::collect_full);
+        self.collect_explicit_own();
     }
 
-    /// One full collection of the roots that the Context holds.
+    /// One full collection of the roots that the Context holds. The check
+    /// walks of a debug build run outside it (`compiler.md` §353 rule 4).
     pub(super) fn collect_full(&mut self) {
-        #[cfg(debug_assertions)]
-        {
-            let violations = self.array_tail_violations();
-            if !violations.is_empty() {
-                let details = violations
-                    .iter()
-                    .map(|violation| {
-                        format!(
-                            "handle={}, len={}, offset={}",
-                            violation.handle, violation.len, violation.offset
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("; ");
-                self.trap(
-                    TrapKind::Internal,
-                    format!("array tail violations: [{details}]"),
-                    0,
-                );
-                return;
-            }
-        }
         self.collect_with_trace(mark_trace_target());
-        // §113.2 rule 4: the maintained counter and the walk over the
-        // live set are two independent derivations of one quantity.
-        #[cfg(debug_assertions)]
-        debug_assert_eq!(self.live_bytes_by_walk(), self.live_bytes());
     }
 
     /// Reports every live dynamic array whose unused data tail contains a
@@ -427,6 +402,8 @@ impl Context {
         }
     }
 
+    /// Pushes each word of a payload to the work list, and returns the count
+    /// of the words that it pushed (`compiler.md` §353 rule 5).
     pub(super) fn scan_payload(
         &self,
         payload: *const u8,
@@ -434,11 +411,11 @@ impl Context {
         class_id: u32,
         work: &mut Vec<usize>,
         tracer: &mut Option<MarkTracer>,
-    ) {
+    ) -> usize {
         // compiler.md §344 rule 1: the storage of an array whose elements
         // hold no handle is marked as reached and is not read.
         if class_holds_no_handle(class_id) {
-            return;
+            return 0;
         }
         #[cfg(test)]
         self.stats
@@ -458,6 +435,7 @@ impl Context {
                 },
             );
         }
+        size / 8
     }
 
     fn prepare_collection(
@@ -673,16 +651,38 @@ impl Context {
     /// Marks each allocation that the work list reaches, in the mark of the
     /// active allocator tier. A completed task that the mark reaches gives
     /// its completion to the work list (`compiler.md` §348 rule 2).
+    ///
+    /// `compiler.md` §353 rule 5: each word in the work list is tested once
+    /// as a possible reference. So the words that the drain tests are the
+    /// words in the list at entry, plus the words that each marked
+    /// allocation pushes. The count is added once for each allocation, from
+    /// the payload size that the scan already has.
     pub(super) fn drain_mark(
         &mut self,
         work: &mut Vec<usize>,
         tracer: &mut Option<MarkTracer>,
         tasks: &CompletedTasks,
     ) {
-        if self.uses_ship_arena() {
-            self.arena_mark(work, tracer, tasks);
-            return;
-        }
+        let entry = work.len();
+        let pushed = if self.uses_ship_arena() {
+            self.arena_mark(work, tracer, tasks)
+        } else {
+            self.dev_mark(work, tracer, tasks)
+        };
+        self.collection
+            .stats
+            .add_mark_words(entry.saturating_add(pushed));
+    }
+
+    /// The mark of the dev kind. Returns the words that the marked
+    /// allocations pushed (`compiler.md` §353 rule 5).
+    fn dev_mark(
+        &mut self,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+        tasks: &CompletedTasks,
+    ) -> usize {
+        let mut pushed = 0usize;
         while let Some(addr) = work.pop() {
             let Some((class_id, words)) = self.allocations.get_mut(&addr).and_then(|allocation| {
                 if allocation.marked {
@@ -694,10 +694,11 @@ impl Context {
                 continue;
             };
             if class_id == CLASS_GENERATOR {
-                self.push_task_completion(addr, tasks, work, tracer);
+                pushed += self.push_task_completion(addr, tasks, work, tracer);
             }
-            self.scan_payload(addr as *const u8, words * 8, class_id, work, tracer);
+            pushed += self.scan_payload(addr as *const u8, words * 8, class_id, work, tracer);
         }
+        pushed
     }
 
     /// Exact-size allocator sweep: extract unreachable records from the
@@ -800,13 +801,15 @@ impl Context {
     /// membership test ([`Context::arena_lookup_block`] plus a live
     /// header, or an exact large-record match); a reached block's header
     /// is stamped `MARK_STATE`. The marker pushes payload words only when
-    /// the block's class can hold a handle.
+    /// the block's class can hold a handle. Returns the words that the
+    /// marked blocks pushed (`compiler.md` §353 rule 5).
     pub(super) fn arena_mark(
         &mut self,
         work: &mut Vec<usize>,
         tracer: &mut Option<MarkTracer>,
         tasks: &CompletedTasks,
-    ) {
+    ) -> usize {
+        let mut pushed = 0usize;
         while let Some(addr) = work.pop() {
             let (block, payload_size) = if let Some((block, class)) = self.arena_lookup_block(addr)
             {
@@ -841,10 +844,11 @@ impl Context {
                 (payload, class_id)
             };
             if class_id == CLASS_GENERATOR {
-                self.push_task_completion(addr, tasks, work, tracer);
+                pushed += self.push_task_completion(addr, tasks, work, tracer);
             }
-            self.scan_payload(payload, payload_size, class_id, work, tracer);
+            pushed += self.scan_payload(payload, payload_size, class_id, work, tracer);
         }
+        pushed
     }
 
     /// Ship-tier sweep (§8.1b): walk every chunk's grid up to its bump

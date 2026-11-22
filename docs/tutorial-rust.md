@@ -122,6 +122,33 @@ for _ in 0..3 {
 }
 ```
 
+The session gives the statistics of the collections of its Context
+(§353). `collection_stats()` returns a `CollectionStats` record: the
+counts of the automatic and the explicit collections, the times in
+nanoseconds, the words that the mark read, and the live bytes after the
+last collection. `reset_collection_stats()` sets each field to zero.
+`max_ns` is the longest single collection since the last reset. `max_ns`
+and `max_words_read` can come from different collections. The record is
+for the Context of the session: the collections of a Worker are not in
+it. An automatic collection inside an export call is in the record. A hot
+reload keeps the Context, so the record continues across the reload. For
+one program, the word counts of the dev tier and the ship tier are not
+equal: the ship tier reads the payload of a size class. A debug build of
+the runtime is slower, so read times from a release build. This loop
+reads the longest pause of each frame:
+
+```rust
+for _ in 0..3 {
+    session.reset_collection_stats();       // at the start of the frame
+    session.call_export("update")?;
+    let stats = session.collection_stats();
+    eprintln!(
+        "collections={} longest pause={} ns",
+        stats.automatic_collections, stats.max_ns
+    );
+}
+```
+
 **3. Hot-swap function bodies mid-run.** `reload` with sources whose
 declarations hash identically swaps the bodies and keeps the Context —
 the tick counter continues across the swap:

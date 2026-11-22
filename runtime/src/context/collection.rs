@@ -62,7 +62,8 @@ struct RecordedFailure {
     exception: crate::exception::PendingException,
 }
 
-/// The kind of a collection, for the counters that tests read.
+/// The kind of a collection, for the counters that tests read and for the
+/// class of `compiler.md` §353 rule 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CollectionKind {
     Explicit,
@@ -100,6 +101,8 @@ pub(crate) struct CollectionState {
     // them stores is observed. The list is pruned when it reaches the limit.
     observed_inputs: Vec<(usize, u64)>,
     observed_inputs_limit: usize,
+    // compiler.md §353 rule 1: the statistics of the collections.
+    pub(super) stats: super::collection_stats::StatsState,
 }
 
 impl CollectionState {
@@ -124,6 +127,7 @@ impl CollectionState {
             task_failure_possible: false,
             observed_inputs: Vec::new(),
             observed_inputs_limit: OBSERVED_INPUTS_MIN_LIMIT,
+            stats: super::collection_stats::StatsState::default(),
         }
     }
 
@@ -208,7 +212,9 @@ impl Context {
     }
 
     /// The number of automatic collections: polls and the outermost-exit
-    /// service of `compiler.md` §342 rule 8.
+    /// service of `compiler.md` §342 rule 8. It does not count a detection
+    /// collection (§342 rule 14); the record of §353 counts a detection
+    /// collection as automatic.
     #[must_use]
     pub fn automatic_collection_count(&self) -> u64 {
         self.collection.automatic_collections
@@ -346,6 +352,10 @@ impl Context {
             }
         }
         let outer = std::mem::replace(&mut context(owner).collection.recording, true);
+        // compiler.md §353 rule 4: the outermost collection is timed. A
+        // collection inside it is part of its work. A collection that
+        // unwinds does not end, so it is not recorded (rule 1).
+        let started = (!outer).then(|| context(owner).collection.stats.start());
         let guard = Restore {
             owner,
             context,
@@ -353,7 +363,13 @@ impl Context {
         };
         let result = collect(&mut *guard.owner);
         drop(guard);
-        context(owner).after_collection(kind);
+        let ctx = context(owner);
+        if let Some(started) = started {
+            let automatic = kind != CollectionKind::Explicit;
+            let live_bytes = ctx.live_bytes_counter;
+            ctx.collection.stats.finish(started, automatic, live_bytes);
+        }
+        ctx.after_collection(kind);
         (result, outer)
     }
 
@@ -388,7 +404,53 @@ impl Context {
     /// One automatic collection of the roots that the Context holds
     /// (`compiler.md` §342 rule 12).
     pub fn collect_automatic(&mut self) {
-        Self::automatic_collection_with(self, |ctx| ctx, Context::collect_full);
+        self.run_own_collection(CollectionKind::Automatic);
+    }
+
+    /// One explicit collection of the roots that the Context holds, with the
+    /// report of `compiler.md` §342 rule 13.
+    pub(super) fn collect_explicit_own(&mut self) {
+        if !self.run_own_collection(CollectionKind::Explicit) {
+            self.report_recorded_failure();
+        }
+    }
+
+    /// One collection of the class `kind` of the roots that the Context
+    /// holds. Returns true when it runs inside another collection.
+    ///
+    /// `compiler.md` §353 rule 4: a debug build checks the array tails
+    /// before the time starts, and the live bytes after the record is
+    /// finished. A violation of the tails traps, and the collection then
+    /// does no work.
+    fn run_own_collection(&mut self, kind: CollectionKind) -> bool {
+        #[cfg(debug_assertions)]
+        {
+            let violations = self.array_tail_violations();
+            if !violations.is_empty() {
+                let details = violations
+                    .iter()
+                    .map(|violation| {
+                        format!(
+                            "handle={}, len={}, offset={}",
+                            violation.handle, violation.len, violation.offset
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                self.trap(
+                    TrapKind::Internal,
+                    format!("array tail violations: [{details}]"),
+                    0,
+                );
+                return Self::run_collection(self, |ctx| ctx, kind, |_| ()).1;
+            }
+        }
+        let (_, outer) = Self::run_collection(self, |ctx| ctx, kind, Context::collect_full);
+        // §113.2 rule 4: the maintained counter and the walk over the live
+        // set are two independent derivations of one quantity.
+        #[cfg(debug_assertions)]
+        debug_assert_eq!(self.live_bytes_by_walk(), self.live_bytes());
+        outer
     }
 
     /// The cold path of a poll (`compiler.md` §342 rule 7): collects when
@@ -557,7 +619,14 @@ impl Context {
     /// the outermost exit (`compiler.md` §342 rules 8, 14, and 15).
     pub fn exit_script(&mut self) {
         let service = self.exit_script_deferred();
-        Self::finish_exit_service(self, |ctx| ctx, service, Context::collect_full);
+        Self::serve_exit(
+            self,
+            |ctx| ctx,
+            service,
+            |ctx, kind| {
+                ctx.run_own_collection(kind);
+            },
+        );
     }
 
     /// Marks return from script code, and returns the collection work that
@@ -620,11 +689,24 @@ impl Context {
         service: ExitService,
         mut collect: impl FnMut(&mut T),
     ) {
+        Self::serve_exit(owner, context, service, |owner, kind| {
+            Self::run_collection(owner, context, kind, &mut collect);
+        });
+    }
+
+    /// The work of [`Context::finish_exit_service`]. `run` performs one
+    /// collection of the class that it receives.
+    fn serve_exit<T>(
+        owner: &mut T,
+        context: fn(&mut T) -> &mut Context,
+        service: ExitService,
+        mut run: impl FnMut(&mut T, CollectionKind),
+    ) {
         if !service.serve {
             return;
         }
         if service.detection {
-            Self::run_collection(owner, context, CollectionKind::Detection, &mut collect);
+            run(owner, CollectionKind::Detection);
             let ctx = context(owner);
             if ctx.collection.recorded.is_empty() {
                 let interval = ctx
@@ -640,7 +722,7 @@ impl Context {
         }
         let ctx = context(owner);
         if !ctx.trapped() && ctx.collection_pending != 0 {
-            Self::run_collection(owner, context, CollectionKind::Automatic, &mut collect);
+            run(owner, CollectionKind::Automatic);
         }
     }
 }

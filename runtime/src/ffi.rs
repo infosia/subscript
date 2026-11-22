@@ -19,8 +19,8 @@
 
 use crate::context::completion_kind;
 use crate::context::{
-    AllocationVisitor, AsyncStepReport, AsyncTaskVisitor, Context, DiagnosticsObserver,
-    PrintObserver, TrapObserver,
+    AllocationVisitor, AsyncStepReport, AsyncTaskVisitor, CollectionStats, Context,
+    DiagnosticsObserver, PrintObserver, TrapObserver,
 };
 use crate::context::{CompletionEndpoint, CompletionStatus};
 use crate::trap::TrapKind;
@@ -1021,6 +1021,55 @@ pub unsafe extern "C" fn subscript_rt_ctx_reserved_bytes(ctx: *const Context) ->
 pub unsafe extern "C" fn subscript_rt_ctx_collect(ctx: *mut Context) {
     // SAFETY: exclusive Context contract.
     unsafe { &mut *ctx }.collect();
+}
+
+/// Writes the statistics of the collections of `ctx` to `out`
+/// (compiler.md §353 rules 2 and 3).
+///
+/// The record holds the count of the automatic collections (at a poll, at
+/// an outermost exit, and the detection collection), the count of the
+/// explicit collections, the times in nanoseconds on a monotonic clock, the
+/// words that the mark read, and the live bytes after the last collection.
+/// Each field is for the span from the start of `ctx` or from the last
+/// `subscript_rt_ctx_reset_collection_stats`. `max_ns` and `max_words_read`
+/// are each the largest of one collection in that span, and they can come
+/// from different collections. The record is for `ctx` only: a Worker has a
+/// record of its own, and its collections are not in this record. A null
+/// `ctx` or a null `out` writes nothing.
+///
+/// # Safety
+///
+/// `ctx` is null or follows the shared Context contract. `out` is null or
+/// points to writable storage for one record. The host calls this between
+/// script calls, as it calls `subscript_rt_ctx_live_bytes`.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_collection_stats(
+    ctx: *const Context,
+    out: *mut CollectionStats,
+) {
+    if ctx.is_null() || out.is_null() {
+        return;
+    }
+    // SAFETY: `ctx` is a live Context and `out` is writable storage for one
+    // record, by the contract above; an unaligned write accepts any address.
+    unsafe { out.write_unaligned((&*ctx).collection_stats()) };
+}
+
+/// Sets each field of the statistics of the collections of `ctx` to zero
+/// (compiler.md §353 rule 3). The collection mode, the headroom, and the
+/// trigger state do not change. A null `ctx` does nothing.
+///
+/// # Safety
+///
+/// `ctx` is null or follows the exclusive Context contract. The host calls
+/// this between script calls.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_reset_collection_stats(ctx: *mut Context) {
+    if ctx.is_null() {
+        return;
+    }
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.reset_collection_stats();
 }
 
 /// Visits each live Context-owned allocation and returns the number visited.

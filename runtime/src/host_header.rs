@@ -11,16 +11,33 @@ const FFI_SOURCE: &str = include_str!("ffi.rs");
 const TASK_SOURCE: &str = include_str!("context/async_inspection.rs");
 const CONTEXT_SOURCE: &str = include_str!("context.rs");
 const WORKER_SOURCE: &str = include_str!("worker.rs");
+const COLLECTION_STATS_SOURCE: &str = include_str!("context/collection_stats.rs");
+
+/// The fields of `subscript_rt_collection_stats`, in the sequence of
+/// `compiler.md` §353 rule 2. Each field is `uint64_t`.
+const COLLECTION_STATS_FIELDS: [&str; 8] = [
+    "automatic_collections",
+    "explicit_collections",
+    "total_ns",
+    "max_ns",
+    "last_ns",
+    "last_words_read",
+    "max_words_read",
+    "last_live_bytes_after",
+];
 
 /// Context functions whose `ffi.rs` documentation the header carries: the
-/// bracket of the outermost exit, the explicit collection, and the memory
-/// metrics (`compiler.md` §342 rules 8a, 13, and 20).
-const DOCUMENTED_CONTEXT_FUNCTIONS: [&str; 5] = [
+/// bracket of the outermost exit, the explicit collection, the memory
+/// metrics, and the statistics of the collections (`compiler.md` §342 rules
+/// 8a, 13, and 20, and §353 rule 3).
+const DOCUMENTED_CONTEXT_FUNCTIONS: [&str; 7] = [
     "subscript_rt_ctx_enter_script",
     "subscript_rt_ctx_exit_script",
     "subscript_rt_ctx_collect",
     "subscript_rt_ctx_live_allocations",
     "subscript_rt_ctx_live_bytes",
+    "subscript_rt_ctx_collection_stats",
+    "subscript_rt_ctx_reset_collection_stats",
 ];
 
 #[derive(Debug)]
@@ -306,6 +323,20 @@ pub fn render() -> Result<String, String> {
         out.push_str(&format!("    uint64_t {field};\n"));
     }
     out.push_str("} subscript_rt_async_step_report;\n\n");
+
+    push_comment(
+        &mut out,
+        &docs_for(COLLECTION_STATS_SOURCE, "pub struct CollectionStats")?,
+    );
+    out.push_str("typedef struct subscript_rt_collection_stats {\n");
+    for field in COLLECTION_STATS_FIELDS {
+        out.push_str("    /**\n");
+        for line in docs_for(COLLECTION_STATS_SOURCE, &format!("pub {field}:"))? {
+            out.push_str(&format!("     * {line}\n"));
+        }
+        out.push_str(&format!("     */\n    uint64_t {field};\n"));
+    }
+    out.push_str("} subscript_rt_collection_stats;\n\n");
 
     out.push_str("/* Registered task record (compiler.md §169). */\n");
     out.push_str("typedef struct subscript_rt_async_task_info {\n");
@@ -606,6 +637,7 @@ fn c_type(rust: &str) -> Result<&'static str, String> {
         "*const AsyncTaskInfo" => Ok("const subscript_rt_async_task_info*"),
         "Option<AsyncTaskVisitor>" => Ok("subscript_rt_async_task_visitor"),
         "AsyncStepReport" => Ok("subscript_rt_async_step_report"),
+        "*mut CollectionStats" => Ok("subscript_rt_collection_stats*"),
         "*mut Context" => Ok("subscript_rt_context*"),
         "*const Context" => Ok("const subscript_rt_context*"),
         "*mut Worker" => Ok("subscript_rt_worker*"),
@@ -849,6 +881,54 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
             16
         );
         assert_eq!(std::mem::size_of::<WorkerMessageDescriptor>(), 24);
+    }
+
+    /// `compiler.md` §353 acceptance 6: the header declares the record and
+    /// the two functions, and the layout of the record is the layout of the
+    /// Rust record (invariant 1).
+    #[test]
+    fn generated_collection_stats_match_the_rust_c_layout() {
+        use crate::context::CollectionStats;
+        let header = render().expect("render host header");
+        let start = header
+            .find("typedef struct subscript_rt_collection_stats {\n")
+            .expect("the record is declared");
+        let end = start
+            + header[start..]
+                .find("} subscript_rt_collection_stats;")
+                .expect("the record ends");
+        let body = &header[start..end];
+        let declared: Vec<&str> = body
+            .lines()
+            .filter_map(|line| line.trim().strip_suffix(';'))
+            .collect();
+        let expected: Vec<String> = COLLECTION_STATS_FIELDS
+            .iter()
+            .map(|field| format!("uint64_t {field}"))
+            .collect();
+        assert_eq!(declared, expected);
+        let offsets = [
+            core::mem::offset_of!(CollectionStats, automatic_collections),
+            core::mem::offset_of!(CollectionStats, explicit_collections),
+            core::mem::offset_of!(CollectionStats, total_ns),
+            core::mem::offset_of!(CollectionStats, max_ns),
+            core::mem::offset_of!(CollectionStats, last_ns),
+            core::mem::offset_of!(CollectionStats, last_words_read),
+            core::mem::offset_of!(CollectionStats, max_words_read),
+            core::mem::offset_of!(CollectionStats, last_live_bytes_after),
+        ];
+        // The C offset of field `index` of a struct of `uint64_t` fields
+        // with no padding is `8 * index`.
+        for (index, offset) in offsets.into_iter().enumerate() {
+            assert_eq!(offset, 8 * index, "{}", COLLECTION_STATS_FIELDS[index]);
+        }
+        assert_eq!(core::mem::size_of::<CollectionStats>(), 8 * declared.len());
+        assert!(header.contains(
+            "void subscript_rt_ctx_collection_stats(const subscript_rt_context* ctx, \
+             subscript_rt_collection_stats* out);"
+        ));
+        assert!(header
+            .contains("void subscript_rt_ctx_reset_collection_stats(subscript_rt_context* ctx);"));
     }
 
     #[test]

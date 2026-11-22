@@ -228,6 +228,8 @@ failed task is unobserved at an outermost exit, then one at exits 3, 7,
     the call keeps the requested count, and the limit is the larger of
     the live bytes after the last collection and the new minimum
     headroom.)*
+    *(Amended 2026-11-22, §353: the host reads the count and the
+    time of the collections with `subscript_rt_ctx_collection_stats`.)*
 18. **A worker Context takes the mode and the headroom of its parent
     at the spawn.**
 19. **A host that keeps a pointer after the borrow ends has a defect.**

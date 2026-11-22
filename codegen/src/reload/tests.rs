@@ -681,3 +681,44 @@ fn embedder_error_carries_details() {
     assert!(text.contains("= rule:"));
     assert!(text.contains("= subscript:"));
 }
+
+/// `compiler.md` §353 rule 8: the session gives the record of its Context.
+/// An explicit collection in a script raises the explicit count, the reset
+/// sets each field to zero, and `last_live_bytes_after` equals the live
+/// bytes that the session reads directly after the collection. A body-only
+/// reload does not change the record.
+#[test]
+fn the_session_reads_and_resets_the_collection_stats() {
+    let text = "class B { v: i32; constructor(v: i32) { this.v = v; } }\n\
+                const kept: B[] = [];\n\
+                export function main(): void {}\n\
+                export function fill(): void {\n\
+                  for (let i: i32 = 0; i < 100; i += 1) { kept.push(new B(i)); }\n\
+                  Context.collect();\n\
+                }\n";
+    let mut session = ReloadSession::new(&src(text)).expect("session");
+    session.reset_collection_stats();
+    assert_eq!(
+        session.collection_stats(),
+        subscript_runtime::CollectionStats::default()
+    );
+    session.call_export("fill").expect("fill");
+    let stats = session.collection_stats();
+    assert_eq!(stats.explicit_collections, 1);
+    assert!(stats.last_words_read > 100, "{stats:?}");
+    assert_eq!(stats.last_live_bytes_after, session.live_bytes() as u64);
+    assert!(session.live_bytes() > 0);
+    // A body-only reload keeps the Context, so the record continues.
+    let reloaded = text.replace(
+        "export function main(): void {}",
+        "export function main(): void { print(\"r\"); }",
+    );
+    assert_ne!(reloaded, text);
+    session.reload(&src(&reloaded)).expect("body-only reload");
+    assert_eq!(session.collection_stats(), stats);
+    session.reset_collection_stats();
+    assert_eq!(
+        session.collection_stats(),
+        subscript_runtime::CollectionStats::default()
+    );
+}
