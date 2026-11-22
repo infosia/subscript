@@ -251,3 +251,64 @@ export async function other(): Promise<void> {
     );
     assert_eq!(interpreter.context.take_stdout(), b"peer\n");
 }
+
+/// The interpreter's drain serves the collection flag between two jobs
+/// only (`compiler.md` §351 rule 12). Mode 2 makes each poll collect, so
+/// the count shows each poll: a budget of zero runs no job and no poll, a
+/// budget of one runs one job and the exit collection, and a budget of
+/// three runs two polls and the exit collection. The poll is not an exit.
+#[test]
+fn a_drain_polls_between_two_jobs_only() {
+    let source = r#"
+class G { a: i64 = 0; }
+export async function job(): Promise<void> {
+    await Context.suspend();
+    const g: G = new G();
+    g.a = 1;
+}
+"#;
+    let files = [SourceFile::new("drain-poll.ts", source)];
+    let hir = check_program(&files).unwrap();
+    let module = crate::lir::lower_module(&hir).unwrap();
+    let mut interpreter = Interpreter::new(&module).unwrap();
+    if let Some(init) = module.initializer {
+        interpreter.call_function(init, vec![]).unwrap();
+    }
+    let job = module
+        .functions
+        .iter()
+        .find(|f| f.exported && f.source_name == "job")
+        .unwrap()
+        .id;
+    for _ in 0..5 {
+        let Value::Coroutine(frame) = interpreter.call_function(job, vec![]).unwrap() else {
+            panic!("async root");
+        };
+        interpreter.async_kick(&frame).unwrap();
+    }
+    assert!(interpreter
+        .context
+        .set_collection(subscript_runtime::context::CollectionMode::EachPoll, 64));
+    let collections = interpreter.context.automatic_collection_count();
+    let exits = interpreter.context.outermost_exit_count();
+    assert_eq!(interpreter.async_step_budget(0).unwrap().dispatched, 0);
+    assert_eq!(
+        interpreter.context.automatic_collection_count(),
+        collections
+    );
+    assert_eq!(interpreter.async_step_budget(1).unwrap().dispatched, 1);
+    // One collection: the outermost exit of the step (§342 rule 8).
+    assert_eq!(
+        interpreter.context.automatic_collection_count(),
+        collections + 1
+    );
+    assert_eq!(interpreter.async_step_budget(3).unwrap().dispatched, 3);
+    // Two polls between three jobs, and the outermost exit.
+    assert_eq!(
+        interpreter.context.automatic_collection_count(),
+        collections + 4
+    );
+    // The two steps that ran jobs are the exits.
+    assert_eq!(interpreter.context.outermost_exit_count(), exits + 2);
+    assert_eq!(interpreter.async_pending(), 1);
+}

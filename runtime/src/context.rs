@@ -972,6 +972,9 @@ mod host_operation;
 mod task_group;
 pub use host_operation::{completion_kind, CompletionEndpoint, CompletionStatus};
 #[cfg(test)]
+#[path = "context/async_drain_poll_tests.rs"]
+mod async_drain_poll_tests;
+#[cfg(test)]
 #[path = "context/task_group_tests.rs"]
 mod task_group_tests;
 pub(crate) use async_scheduler::AsyncFrameMeta;

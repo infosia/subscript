@@ -570,3 +570,8 @@ finished LIR, not the poll positions.
 Cases that the placement does not cover: a recursion through the host
 (a foreign call, then an export call); a value that passes up through
 nested generators.
+
+§351 lands the placement of the last column. Its Phase Review found
+one more chain, the resumes of an async recursion in one drain, and
+§351 rule 12 gives the drain a poll between two jobs. The evidence is
+in `compiler.md` §351.5.

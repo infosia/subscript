@@ -142,6 +142,18 @@ Problem, measured at `ca3fc9ed`:
        code is its size. *(Amended 2026-11-21, §345 rule 3.)* The
        bound counts LIR instructions that can allocate. One runtime
        operation can allocate in proportion to its input.
+       *(Amended 2026-11-22, §351 rule 6: the bound holds on a chain
+       of returns also, with the polls of rules 11e to 11g.)*
+    e. *(Added 2026-11-22, §351 rule 1.)* A call into the call-graph
+       cycle of its caller has a poll directly after it, if its
+       continuation can allocate or suspend before a poll. The call
+       graph has an edge for each indirect call and each callback
+       operation to each function whose address is taken; rule 11b
+       uses the same graph (§351 rule 5).
+    f. *(Added 2026-11-22, §351 rule 2.)* A handler of a function of a
+       cycle has a poll, if its path can allocate before a poll.
+    g. *(Added 2026-11-22, §351 rule 12.)* The drain of the scheduler
+       serves the flag between two jobs.
 
 **Failure of an unobserved task**
 

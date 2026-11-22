@@ -648,6 +648,8 @@ impl Context {
     /// already ready, then drains the ready queue in FIFO order. Jobs added
     /// during the drain join the same checkpoint; a frame parked during it
     /// waits for the next one. The drain has no job budget. §168 supplies the bounded form.
+    /// Between two jobs the drain serves the collection flag as a poll
+    /// (`compiler.md` §351 rule 12).
     ///
     /// A trap preserves the ready head until clearance (§94.2).
     /// Clearance stops that frame permanently, except for reload staleness.
@@ -698,6 +700,19 @@ impl Context {
             self.worker_receive_deliver();
         }
         while limit != Some(dispatched) && !self.trapped() {
+            // compiler.md §351 rule 12: the drain serves the collection flag
+            // between two jobs, as a poll. Each script activation is in a
+            // root here: a ready job, a parked, blocked, or active frame, or
+            // the shadow slots of a script frame under a nested step. This
+            // loop holds no reference in a local: the previous job ended,
+            // and the next one is still in the queue. The poll is not an
+            // outermost exit.
+            if dispatched != 0 && !self.async_ready.is_empty() {
+                self.collect_poll();
+                if self.trapped() {
+                    break;
+                }
+            }
             let Some(job) = self.async_ready.pop_front() else {
                 break;
             };

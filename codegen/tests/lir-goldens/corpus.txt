@@ -27719,6 +27719,7 @@ fn f19 "rec" kind=Free exported=false generator=false async=false -> I32 entry=b
   value %1: Data(Func(FuncType { params: [I32], ret: I32 })) name=Some("k")
   value %2: Data(I32) name=None
   b0 Some("entry"):
+    CollectionPoll() @ main.ts:80:10
     %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: I32 })), Data(I32)], return_type: Some(Data(I32)) })(%1, %0) traps=[Trap { kind: Call, pos: Pos { file: "main.ts", line: 80, col: 83 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "main.ts", line: 80, col: 83 } }] @ main.ts:80:83
     -> Return { value: Some(Value(ValueId(2))), pos: Pos { file: "main.ts", line: 80, col: 76 } }
 fn f20 "shadow" kind=Free exported=false generator=false async=false -> I32 entry=b0 @ main.ts:81:10
@@ -63205,6 +63206,7 @@ fn f18 "<lambda a425-lambda-with-no-value-result-is-void.ts:64:17>" kind=Lambda 
     %0: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(19))() @ a425-lambda-with-no-value-result-is-void.ts:65:19
     %1: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a425-lambda-with-no-value-result-is-void.ts:68:5
     %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) invalidates=[ValueId(1)] traps=[Trap { kind: Call, pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 23 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 23 } }] @ a425-lambda-with-no-value-result-is-void.ts:68:23
+    CollectionPoll() @ a425-lambda-with-no-value-result-is-void.ts:68:14
     %3: Data(Str) = Template([Text("inner="), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 14 } }, Trap { kind: Allocation, pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 23 } }, Trap { kind: Allocation, pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 14 } }] @ a425-lambda-with-no-value-result-is-void.ts:68:14
     %4: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%1, %3) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 68, col: 5 } }] @ a425-lambda-with-no-value-result-is-void.ts:68:5
     -> Return { value: None, pos: Pos { file: "a425-lambda-with-no-value-result-is-void.ts", line: 64, col: 17 } }
@@ -63679,6 +63681,7 @@ fn f7 "<lambda a426-recursive-void-lambda.ts:27:14>" kind=Lambda exported=false 
     %3: Data(Func(FuncType { params: [I32], ret: AsyncHandle(Void) })) = LoadGlobal(GlobalId(4))() @ a426-recursive-void-lambda.ts:30:11
     %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ a426-recursive-void-lambda.ts:30:16
     %5: Data(AsyncHandle(Void)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(Void) })), Data(I32)], return_type: Some(Data(AsyncHandle(Void))) })(%3, %4) traps=[Trap { kind: Call, pos: Pos { file: "a426-recursive-void-lambda.ts", line: 30, col: 11 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a426-recursive-void-lambda.ts", line: 30, col: 11 } }] @ a426-recursive-void-lambda.ts:30:11
+    CollectionPoll() @ a426-recursive-void-lambda.ts:30:5
     -> Suspend { kind: AsyncHandle { handle: ValueId(5), owned: true }, pos: Pos { file: "a426-recursive-void-lambda.ts", line: 30, col: 5 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a426-recursive-void-lambda.ts", line: 30, col: 5 } }, Trap { kind: Call, pos: Pos { file: "a426-recursive-void-lambda.ts", line: 30, col: 5 } }] }
   b2 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0))], ownership: [false] })
@@ -64931,15 +64934,18 @@ fn f4 "[[Promise.then (v) => value]]<i32, Mode>" kind=Free exported=false genera
   b1(%2: Data(I32), %4: Data(AsyncHandle(I32)), %5: Data(Func(FuncType { params: [I32], ret: StringAlias(StringAliasId(0)) }))) Some("async-handle.resume"):
     AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 32 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:32
     %3: Data(StringAlias(StringAliasId(0))) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: StringAlias(StringAliasId(0)) })), Data(I32)], return_type: Some(Data(StringAlias(StringAliasId(0)))) })(%5, %2) traps=[Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 42 } }, Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 42 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:42
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:37
     AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 37 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 37 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:37
     -> Return { value: Some(Value(ValueId(3))), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 37 } }
   b2 Some("release.landing"):
     ExceptionPark() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:32
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:32
     AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 32 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 32 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:32
     ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 32 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:32
     -> Unreachable { pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 32 } }
   b3 Some("release.landing"):
     ExceptionPark() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:42
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:42
     AsyncHandleRelease(%4) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 42 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 42 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:42
     ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 42 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:42
     -> Unreachable { pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 42 } }
@@ -64969,14 +64975,17 @@ fn f6 "[[Promise.then (v) => handle]]<i32, Mode>" kind=Free exported=false gener
   b1(%2: Data(I32), %5: Data(AsyncHandle(I32)), %6: Data(Func(FuncType { params: [I32], ret: AsyncHandle(StringAlias(StringAliasId(0))) }))) Some("async-handle.resume"):
     AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Handler(BlockId(2))), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 10 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:10
     %3: Data(AsyncHandle(StringAlias(StringAliasId(0)))) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(StringAlias(StringAliasId(0))) })), Data(I32)], return_type: Some(Data(AsyncHandle(StringAlias(StringAliasId(0))))) })(%6, %2) traps=[Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }, Trap { kind: Raise(Handler(BlockId(3))), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     -> Suspend { kind: AsyncCall { target: CallTarget { kind: Function(FunctionId(5)), parameter_types: [], return_type: None }, operands: [] }, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 }, successor: BlockId(4), resume_value: None, arguments: [Value(ValueId(5)), Value(ValueId(3))], ownership: [false, false], invalidates: [], traps: [Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] }
   b2 Some("release.landing"):
     ExceptionPark() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:10
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:10
     AsyncHandleRelease(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 10 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 10 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:10
     ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 10 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:10
     -> Unreachable { pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 10 } }
   b3 Some("release.landing"):
     ExceptionPark() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     AsyncHandleRelease(%5) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     -> Unreachable { pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }
@@ -64990,6 +64999,7 @@ fn f6 "[[Promise.then (v) => handle]]<i32, Mode>" kind=Free exported=false gener
     -> Return { value: Some(Value(ValueId(4))), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 15 } }
   b6 Some("release.landing"):
     ExceptionPark() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
+    CollectionPoll() @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     AsyncHandleRelease(%10) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     AsyncHandleRelease(%9) traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }, Trap { kind: Call, pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
     ExceptionResume() traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a431-nested-then-takes-the-context-of-its-adoption.ts", line: 25, col: 20 } }] @ a431-nested-then-takes-the-context-of-its-adoption.ts:25:20
@@ -72003,6 +72013,7 @@ fn f7 "<lambda a449-a-local-lambda-calls-itself.ts:26:24>" kind=Lambda exported=
   b1 Some("if.then"):
     %3: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ a449-a-local-lambda-calls-itself.ts:26:94
     %4: Data(AsyncHandle(Void)) = Call(CallTarget { kind: LambdaSelf(FunctionId(7)), parameter_types: [Data(I32)], return_type: Some(Data(AsyncHandle(Void))) })(%3) traps=[Trap { kind: Call, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 26, col: 81 } }] @ a449-a-local-lambda-calls-itself.ts:26:81
+    CollectionPoll() @ a449-a-local-lambda-calls-itself.ts:26:75
     -> Suspend { kind: AsyncHandle { handle: ValueId(4), owned: true }, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 26, col: 75 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 26, col: 75 } }, Trap { kind: Call, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 26, col: 75 } }] }
   b2 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0))], ownership: [false] })
@@ -72161,6 +72172,7 @@ fn f13 "<lambda a449-a-local-lambda-calls-itself.ts:11:21>" kind=Lambda exported
     %3: Data(Func(FuncType { params: [I32], ret: AsyncHandle(Void) })) = LoadGlobal(GlobalId(4))() @ a449-a-local-lambda-calls-itself.ts:11:78
     %4: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ a449-a-local-lambda-calls-itself.ts:11:90
     %5: Data(AsyncHandle(Void)) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [I32], ret: AsyncHandle(Void) })), Data(I32)], return_type: Some(Data(AsyncHandle(Void))) })(%3, %4) traps=[Trap { kind: Call, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 11, col: 78 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 11, col: 78 } }] @ a449-a-local-lambda-calls-itself.ts:11:78
+    CollectionPoll() @ a449-a-local-lambda-calls-itself.ts:11:72
     -> Suspend { kind: AsyncHandle { handle: ValueId(5), owned: true }, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 11, col: 72 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(0))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 11, col: 72 } }, Trap { kind: Call, pos: Pos { file: "a449-a-local-lambda-calls-itself.ts", line: 11, col: 72 } }] }
   b2 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0))], ownership: [false] })
@@ -72572,6 +72584,7 @@ fn f4 "<lambda a450-a-local-lambda-takes-its-self-call-type-from-the-const-annot
   b3(%2: Data(I32)) Some("if.join"):
     %3: Data(I32) = Binary(Sub)(%2, Integer(1):I32) @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:16:35
     %4: Data(AsyncHandle(I32)) = Call(CallTarget { kind: LambdaSelf(FunctionId(4)), parameter_types: [Data(I32)], return_type: Some(Data(AsyncHandle(I32))) })(%3) traps=[Trap { kind: Call, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 16, col: 22 } }] @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:16:22
+    CollectionPoll() @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:16:16
     -> Suspend { kind: AsyncHandle { handle: ValueId(4), owned: true }, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 16, col: 16 }, successor: BlockId(4), resume_value: Some(ValueId(5)), arguments: [Value(ValueId(2))], ownership: [false], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 16, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 16, col: 16 } }] }
   b4(%5: Data(I32), %7: Data(I32)) Some("async-handle.resume"):
     AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 16, col: 16 } }] @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:16:16
@@ -72598,6 +72611,7 @@ fn f5 "<lambda a450-a-local-lambda-takes-its-self-call-type-from-the-const-annot
   b2 Some("cond.else"):
     %5: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:18:73
     %6: Data(Str) = Call(CallTarget { kind: LambdaSelf(FunctionId(5)), parameter_types: [Data(I32)], return_type: Some(Data(Str)) })(%5) traps=[Trap { kind: Call, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 18, col: 68 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 18, col: 68 } }] @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:18:68
+    CollectionPoll() @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:18:60
     %7: Data(Str) = Template([Text("step:"), Operand { index: 0, format: Str }])(%6) traps=[Trap { kind: Allocation, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 18, col: 60 } }, Trap { kind: Allocation, pos: Pos { file: "a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts", line: 18, col: 60 } }] @ a450-a-local-lambda-takes-its-self-call-type-from-the-const-annotation.ts:18:60
     -> Branch(BlockTarget { block: BlockId(3), arguments: [Value(ValueId(7)), Value(ValueId(0))], ownership: [false, false] })
   b3(%2: Data(Str), %3: Data(I32)) Some("cond.merge"):
@@ -73004,6 +73018,7 @@ fn f8 "<lambda a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:18>" ki
     %0: Data(Func(FuncType { params: [], ret: I32 })) = MakeClosure(FunctionId(9))() @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:40
     %1: Data(Array(Str)) = LoadGlobal(GlobalId(0))() @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:66
     %2: Data(I32) = Call(CallTarget { kind: Indirect, parameter_types: [Data(Func(FuncType { params: [], ret: I32 }))], return_type: Some(Data(I32)) })(%0) invalidates=[ValueId(1)] traps=[Trap { kind: Call, pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 84 } }, Trap { kind: Raise(Propagate), pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 84 } }] @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:84
+    CollectionPoll() @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:75
     %3: Data(Str) = Template([Text("inner="), Operand { index: 0, format: I32 }])(%2) traps=[Trap { kind: Allocation, pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 75 } }, Trap { kind: Allocation, pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 84 } }, Trap { kind: Allocation, pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 75 } }] @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:75
     %4: Data(I32) = Call(CallTarget { kind: BuiltinMethod(ArrayPush), parameter_types: [Data(Array(Str)), Data(Str)], return_type: Some(Data(I32)) })(%1, %3) invalidates=[ValueId(1)] traps=[Trap { kind: DevOnlyLifetime(0), pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 66 } }, Trap { kind: Call, pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 66 } }] @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:66
     Call(CallTarget { kind: Function(FunctionId(1)), parameter_types: [], return_type: None })() invalidates=[ValueId(1)] traps=[Trap { kind: Call, pos: Pos { file: "a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts", line: 15, col: 103 } }] @ a451-a-return-of-a-void-operand-keeps-a-lambda-void.ts:15:103
@@ -73889,6 +73904,7 @@ fn f11 "<lambda a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts:
     %6: Data(I32) = Binary(Sub)(%0, Integer(1):I32) @ a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts:28:28
     %7: Data(Str) = Call(CallTarget { kind: Function(FunctionId(12)), parameter_types: [Data(I32)], return_type: Some(Data(Str)) })(%6) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts", line: 26, col: 44 } }] @ a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts:26:44
     %8: Data(AsyncHandle(Void)) = Call(CallTarget { kind: LambdaSelf(FunctionId(11)), parameter_types: [Data(I32), Data(Str)], return_type: Some(Data(AsyncHandle(Void))) })(%6, %7) invalidates=[ValueId(2)] traps=[Trap { kind: Call, pos: Pos { file: "a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts", line: 28, col: 22 } }] @ a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts:28:22
+    CollectionPoll() @ a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts:28:16
     -> Suspend { kind: AsyncHandle { handle: ValueId(8), owned: true }, pos: Pos { file: "a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts", line: 28, col: 16 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false], invalidates: [ValueId(2)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts", line: 28, col: 16 } }, Trap { kind: Call, pos: Pos { file: "a453-a-call-of-a-const-lambda-by-its-name-takes-its-defaults.ts", line: 28, col: 16 } }] }
   b2 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0)), Value(ValueId(1))], ownership: [false, false] })
@@ -77092,6 +77108,7 @@ fn f20 "<lambda a457-local-lambdas-in-a-group-share-one-environment.ts:49:17>" k
   b1 Some("if.then"):
     %8: Data(I32) = Binary(Sub)(%3, Integer(1):I32) @ a457-local-lambdas-in-a-group-share-one-environment.ts:49:103
     %9: Data(AsyncHandle(Void)) = Call(CallTarget { kind: LambdaSelf(FunctionId(21)), parameter_types: [Data(Class(ClassId(4))), Data(I32)], return_type: Some(Data(AsyncHandle(Void))) })(%0, %8) invalidates=[ValueId(4)] traps=[Trap { kind: Call, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 49, col: 96 } }] @ a457-local-lambdas-in-a-group-share-one-environment.ts:49:96
+    CollectionPoll() @ a457-local-lambdas-in-a-group-share-one-environment.ts:49:90
     -> Suspend { kind: AsyncHandle { handle: ValueId(9), owned: true }, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 49, col: 90 }, successor: BlockId(3), resume_value: None, arguments: [Value(ValueId(0)), Value(ValueId(3))], ownership: [false, false], invalidates: [ValueId(4)], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 49, col: 90 } }, Trap { kind: Call, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 49, col: 90 } }] }
   b2 Some("if.else"):
     -> Branch(BlockTarget { block: BlockId(4), arguments: [Value(ValueId(0)), Value(ValueId(3))], ownership: [false, false] })
@@ -77115,6 +77132,7 @@ fn f21 "<lambda a457-local-lambdas-in-a-group-share-one-environment.ts:50:18>" k
     %1: Address(AddressType { pointee: Str, array_base: None }) = AddressOfField(Class(FieldId(8)))(%0) @ a457-local-lambdas-in-a-group-share-one-environment.ts:50:18
     %2: Data(Str) = LoadAddress(%1) @ a457-local-lambdas-in-a-group-share-one-environment.ts:50:18
     %4: Data(AsyncHandle(Void)) = Call(CallTarget { kind: LambdaSelf(FunctionId(20)), parameter_types: [Data(Class(ClassId(4))), Data(I32)], return_type: Some(Data(AsyncHandle(Void))) })(%0, %3) traps=[Trap { kind: Call, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 50, col: 59 } }] @ a457-local-lambdas-in-a-group-share-one-environment.ts:50:59
+    CollectionPoll() @ a457-local-lambdas-in-a-group-share-one-environment.ts:50:53
     -> Suspend { kind: AsyncHandle { handle: ValueId(4), owned: true }, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 50, col: 53 }, successor: BlockId(1), resume_value: None, arguments: [], ownership: [], invalidates: [], traps: [Trap { kind: DevReloadOnlyStaleCoroutine, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 50, col: 53 } }, Trap { kind: Call, pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 50, col: 53 } }] }
   b1 Some("async-handle.resume"):
     AwaitRaise() count=Uncounted traps=[Trap { kind: Raise(Propagate), pos: Pos { file: "a457-local-lambdas-in-a-group-share-one-environment.ts", line: 50, col: 53 } }] @ a457-local-lambdas-in-a-group-share-one-environment.ts:50:53

@@ -50,7 +50,9 @@ recorded only.
    its input; the flag that it sets is served at the first poll after
    it returns, or at the outermost exit. No poll is in a runtime loop:
    a poll there needs a root for each input, partial result, and
-   temporary of the operation.
+   temporary of the operation. *(Amended 2026-11-22, §351 rule 6:
+   the bound holds on a chain of returns and on a chain of resumes in
+   one drain.)*
 4. **The ship tier gives its exit count to a test host.** A runtime
    entry outside the `subscript_rt_ctx_` family returns
    `outermost_exit_count()`. The host header does not declare it. The

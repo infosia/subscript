@@ -48,6 +48,15 @@ impl Interpreter<'_> {
         dispatched: &mut u64,
     ) -> Result<(), InterpretError> {
         while limit != Some(*dispatched) {
+            // compiler.md §351 rule 12: the drain serves the collection flag
+            // between two jobs, as a poll, at the same points as the native
+            // scheduler.
+            if *dispatched != 0 && !self.async_ready.is_empty() {
+                self.collection_poll(&no_script_site())?;
+                if self.context.trapped() {
+                    break;
+                }
+            }
             let Some(frame) = self.async_ready.pop_front() else {
                 break;
             };
