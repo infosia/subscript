@@ -390,3 +390,4 @@ Every section, with its status:
 | §347 | A received array has a test of the mark, and `arrops.rs` is under the file limit | active | [`s347-a-received-array-has-a-test-of-the-mark.md`](compiler/s347-a-received-array-has-a-test-of-the-mark.md) |
 | §348 | A collection reclaims a completed task that only unreachable objects hold | active | [`s348-a-collection-reclaims-a-completed-task-that-only-unreachable-objects-hold.md`](compiler/s348-a-collection-reclaims-a-completed-task-that-only-unreachable-objects-hold.md) |
 | §349 | A Worker has an awaitable receive | active | [`s349-a-worker-has-an-awaitable-receive.md`](compiler/s349-a-worker-has-an-awaitable-receive.md) |
+| §350 | `Promise.race` | active | [`s350-promise-race.md`](compiler/s350-promise-race.md) |
