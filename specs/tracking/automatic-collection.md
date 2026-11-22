@@ -505,3 +505,68 @@ object is dropped (the harness did not link the native fixture). The
 ship run of the second row in bold at N = 100,000 took several
 minutes; the cause is not measured.
 
+
+## G8 — polls on the return path of a recursion
+
+Measured 2026-11-22 at `9a8fa86a`, in a copy of the tree; the tree did
+not change. Origin: a review of the placement by another agent.
+
+The rule that the placement contradicts: §342 rule 11d and §345 rule
+3 state that each path reaches a poll after a count of allocating
+instructions that only the module bounds. The argument counted the
+depth of the call tree. It did not count the chain of returns: after
+the deepest call returns, each frame that waits runs its continuation,
+and each continuation can allocate before the frame returns.
+
+Fixture: `build(depth)` calls `build(depth - 1)` and then returns a
+new object. Automatic mode, minimum headroom 64 bytes, one explicit
+collection first. Objects over the base before the outermost exit, and
+automatic collections in the call:
+
+| Depth | Objects | Collections in the call |
+|---|---|---|
+| 32 | 33 | 0 |
+| 256 | 257 | 0 |
+| 1,024 | 1,025 | 0 |
+
+The figures are equal in the ship tier and the dev JIT. A control
+whose continuation does not allocate keeps 1 object. A tree-shaped
+recursion is served by the entry poll of each second call.
+
+Prototype placements, objects before the exit at depths 256 and 1,024:
+
+| Fixture | Present | Direct cycle | Plus each indirect call | Plus each handler | Cycle of the graph with indirect edges, and its handlers |
+|---|---|---|---|---|---|
+| The fixture; two functions that call each other | 257, 1,025 | 2, 5 | 2, 5 | 2, 5 | 2, 5 |
+| A recursion through a function value | 257, 1,025 | 257, 1,025 | 2, 5 | 2, 5 | 2, 5 |
+| A handler that allocates, with a throw from the bottom | 259, 1,027 | 259, 1,027 | 259, 1,027 | 24, 15 | 24, 15 |
+| `f` calls `g` through a function value, `g` calls `f` directly, and only the continuation in `g` allocates | 129, 513 | 129, 513 | 129, 513 | 129, 513 | 10, 3 |
+
+The last column is the placement that closes each row: a call graph
+with an edge from each indirect call and each callback operation to
+each function whose address is taken; a poll after a call into the
+cycle of the caller if the continuation can allocate before a poll;
+a poll in each handler of a function of a cycle. A direct call to a
+function with an entry poll counts as a poll in the scan of the
+continuation.
+
+Cost of that placement:
+
+| Item | Result |
+|---|---|
+| Poll sites, 497 accept entries | 1,535 to 1,564 |
+| Poll sites with a poll after each indirect call and in each handler | 2,764 |
+| Emitted C of `tree`, `callbacks`, `sort`, `particles`, `queen`, `fib-recursive`, `collect` | identical to the present placement, with the fact correction of the next row |
+| `Coerce` of a class to its nullable type has the fact "can allocate" | with that fact `tree` gets 2 more polls for each inner node; the operation does not allocate |
+| A recursion of depth 1,000, 100,000 calls, one more poll for each frame | ship tier 1,974 and 1,978 ms to 2,025 and 1,993 ms; dev JIT 7,027 and 6,914 ms to 6,942 and 6,948 ms |
+| `tree` with one more poll for each node (3.9 million) | ship tier 103.2 and 104.8 ms to 102.7 and 102.5 ms |
+| Stress sweep with each placement | dev JIT 611 of 611, ship tier 609 of 609, interpreter 499 of 499 |
+| LIR snapshot | 17 lines added |
+
+A result of a call that the continuation reads is rooted at the new
+poll in the three tiers: the root storage follows the liveness of the
+finished LIR, not the poll positions.
+
+Cases that the placement does not cover: a recursion through the host
+(a foreign call, then an export call); a value that passes up through
+nested generators.
