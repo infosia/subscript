@@ -1773,3 +1773,20 @@ The two debug skips are the `perf_gate` line and the
 only, with `SUBSCRIPT_FULL_INTERPRETER_SWEEP=1`. There it passed in
 20.82 s. The `native fixture unavailable` lines (foreign callback
 control, host initializer) do not count as skips, as at `9db9f08e`.
+
+## Gate state at `bd817069`, 2026-11-22
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §347 to §350: the test of the mark for a received array, the
+completed tasks, `Worker.receive`, and `Promise.race`.
+
+```text
+gate full bd817069fdab93b07de63429a3dc2bc626b81149 clean debug 3934/0/5 release 3916/0/5 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 10, build 129, debug 429, release 333, clippy
+20, tsc 1, hygiene 2.
+
+The two debug skips are the `perf_gate` line and the
+`collection_stress_sweep` line, as at `6169b0e5`. In the release step
+the test binary of the sweep passed its three tests in 19.98 s.
