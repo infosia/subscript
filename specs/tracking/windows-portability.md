@@ -1836,3 +1836,21 @@ seconds: fmt 3, build 57, debug 432, release 275, clippy 9, tsc 1,
 hygiene 2. The two debug skips are those of `6169b0e5`. In the release
 step the test binary of the stress sweep passed its three tests in
 19.10 s.
+
+## Gate state at `31e14f1c`, 2026-11-22
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §352 and §353.
+
+```text
+gate full 31e14f1cab8247f7b55867a5c0588bd1508dd54f clean debug 4013/0/6 release 3995/0/6 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 9, build 90, debug 433, release 320, clippy
+18, tsc 2, hygiene 2.
+
+The two debug skips are those of `6169b0e5`. In the release step the
+test binary of the stress sweep passed its three tests in 21.10 s.
+The sixth ignored test is
+`the_collection_time_curve_of_the_ship_arena`, a measurement of §353
+that a person runs in a release build.
