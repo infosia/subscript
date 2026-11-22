@@ -110,11 +110,26 @@ impl Interpreter<'_> {
         for snapshot in &self.active_roots {
             root_snapshot(snapshot, &mut words, &mut coroutines);
         }
-        coroutines.extend(self.async_handles.borrow().values().cloned());
+        // compiler.md §348 rules 1 and 5: each async handle is a root, except
+        // a completed task. The walk reads a completed task when it reaches
+        // it (rule 2).
+        let tasks = self.completed_tasks();
+        coroutines.extend(
+            self.async_handles
+                .borrow()
+                .iter()
+                .filter(|(key, _)| !tasks.contains(*key))
+                .map(|(_, coroutine)| Rc::clone(coroutine)),
+        );
         // compiler.md §342 rule 12: the Error object of each exception
         // completion is a root, as in the native root set, so a failure that
-        // this collection records keeps its Error object.
-        for coroutine in self.async_handles.borrow().values() {
+        // this collection records keeps its Error object. A completed task
+        // gives its Error object when the walk reaches it (§348 rule 2), or
+        // after the release plan if it ends (§348 rule 4).
+        for (key, coroutine) in self.async_handles.borrow().iter() {
+            if tasks.contains(key) {
+                continue;
+            }
             if let Ok(state) = coroutine.try_borrow() {
                 if let Some(Completion::Exception(payload)) = &state.completion {
                     words.push(payload.exception.0);
@@ -137,54 +152,29 @@ impl Interpreter<'_> {
             words.push(*object);
         }
         words.extend(self.parked.iter().map(|(object, _, _)| *object));
-        let mut seen = std::collections::HashSet::new();
-        let mut scanned = std::collections::HashSet::new();
-        loop {
-            while let Some(coroutine) = coroutines.pop() {
-                if !seen.insert(Rc::as_ptr(&coroutine) as usize) {
-                    continue;
-                }
+        let mut walk = Walk {
+            words,
+            coroutines,
+            seen: std::collections::HashSet::new(),
+            scanned: std::collections::HashSet::new(),
+            reached: std::collections::HashSet::new(),
+        };
+        self.walk(&mut walk, &tasks)?;
+        let ending = self.root_tasks_with_outside_holders(&mut walk, &tasks)?;
+        let failures: Vec<usize> = ending
+            .iter()
+            .filter_map(|key| {
+                let coroutine = self.async_handles.borrow().get(key).cloned()?;
                 let state = coroutine.borrow();
-                if let Some(completion) = &state.completion {
-                    match completion {
-                        Completion::Value(value) => root_value(value, &mut words, &mut coroutines),
-                        Completion::Exception(payload) => words.push(payload.exception.0),
+                match &state.completion {
+                    Some(Completion::Exception(payload)) if !payload.observed => {
+                        Some(payload.exception.0)
                     }
+                    _ => None,
                 }
-                if let Some(awaited) = &state.awaiting {
-                    coroutines.push(Rc::clone(&awaited.handle));
-                }
-                coroutines.extend(state.waiters.iter().filter_map(AsyncJob::handle));
-                match &state.kind {
-                    CoroutineKind::Invocation(frame) => {
-                        // Active frames hold a mutable RefCell borrow and appear in active_frames.
-                        if let Ok(frame) = frame.try_borrow() {
-                            self.root_frame(&frame, state.completed, &mut words, &mut coroutines)?;
-                        }
-                    }
-                    CoroutineKind::Aggregate(aggregate) => {
-                        aggregate.root_values(&mut words, &mut coroutines)
-                    }
-                    CoroutineKind::GroupJoin(group) => {
-                        group.borrow().root_values(&mut words, &mut coroutines)
-                    }
-                }
-            }
-            if self.generator_handles.borrow().is_empty() {
-                break;
-            }
-            let reachable = self.context.reachable_words(&words);
-            for key in reachable {
-                if scanned.insert(key) && !seen.contains(&key) {
-                    if let Some(generator) = self.generator_handles.borrow().get(&key) {
-                        coroutines.push(Rc::clone(generator));
-                    }
-                }
-            }
-            if coroutines.is_empty() {
-                break;
-            }
-        }
+            })
+            .collect();
+        let Walk { words, seen, .. } = walk;
         let unreachable_generators = self
             .generator_handles
             .borrow()
@@ -197,9 +187,10 @@ impl Interpreter<'_> {
             self.context
                 .shadow_push(words.as_ptr() as usize, words.len())
         };
-        let first = Context::with_collection(
+        let first = Context::with_collection_after_task_failures(
             self,
             |owner| &mut owner.context,
+            &failures,
             |owner, handles| {
                 owner.context.shadow_pop();
                 let mut handles = handles.to_vec();
@@ -251,6 +242,19 @@ impl Interpreter<'_> {
                         owner.context.delete(address, 0);
                     }
                 }
+                // compiler.md §348 rule 4: the release ended each task that
+                // the walk did not reach. A task that is still registered
+                // lost fewer counts than its holders in unreachable objects,
+                // which is an internal defect.
+                let unended = ending
+                    .iter()
+                    .any(|key| owner.async_handles.borrow().contains_key(key));
+                if unended && first.is_none() {
+                    first = Some(owner.invalid(
+                        Some(pos.clone()),
+                        "a completed task outlived the release of its unreachable holders",
+                    ));
+                }
                 first
             },
         );
@@ -263,6 +267,169 @@ impl Interpreter<'_> {
             self.context.trap(*kind, message.clone(), 0);
         }
         first.map_or_else(|| self.check_runtime(pos), Err)
+    }
+
+    /// The completed tasks of the handle table (`compiler.md` §348 terms):
+    /// a call of an async function with a completion, no waiter, no
+    /// scheduler state, and at least one owner. A host-kicked root has the
+    /// host as an outside holder, so it stays a root.
+    fn completed_tasks(&self) -> std::collections::HashSet<usize> {
+        let mut tasks: std::collections::HashSet<usize> = self
+            .async_handles
+            .borrow()
+            .iter()
+            .filter(|(_, coroutine)| {
+                let Ok(state) = coroutine.try_borrow() else {
+                    return false;
+                };
+                let CoroutineKind::Invocation(frame) = &state.kind else {
+                    return false;
+                };
+                // An active frame holds a mutable borrow of its frame.
+                let Ok(frame) = frame.try_borrow() else {
+                    return false;
+                };
+                !self.module.functions[frame.function.0 as usize].is_generator
+                    && state.completed
+                    && state.completion.is_some()
+                    && state.waiters.is_empty()
+                    && state.awaiting.is_none()
+                    && state.owners != 0
+                    && !state.host_root
+            })
+            .map(|(key, _)| *key)
+            .collect();
+        if tasks.is_empty() {
+            return tasks;
+        }
+        // §348 terms: a frame in a scheduler state is not a completed task.
+        let key = |coroutine: &Rc<RefCell<Coroutine>>| Rc::as_ptr(coroutine) as usize;
+        for coroutine in self.async_ready.iter().filter_map(AsyncJob::handle) {
+            tasks.remove(&key(&coroutine));
+        }
+        for coroutine in self.async_parked.iter().chain(&self.async_stopped) {
+            tasks.remove(&key(coroutine));
+        }
+        for coroutine in self.async_handles.borrow().values() {
+            if let Ok(state) = coroutine.try_borrow() {
+                for waiter in state.waiters.iter().filter_map(AsyncJob::handle) {
+                    tasks.remove(&key(&waiter));
+                }
+            }
+        }
+        tasks
+    }
+
+    /// Walks the coroutines and the heap words of `walk` until no new
+    /// coroutine is reached. A generator or a completed task that a heap
+    /// word reaches joins the walk (§106.3 rule 5, `compiler.md` §348 rule
+    /// 2), and the walk reads the completion of each completed task that
+    /// it reaches.
+    fn walk(
+        &self,
+        walk: &mut Walk,
+        tasks: &std::collections::HashSet<usize>,
+    ) -> Result<(), InterpretError> {
+        loop {
+            while let Some(coroutine) = walk.coroutines.pop() {
+                if !walk.seen.insert(Rc::as_ptr(&coroutine) as usize) {
+                    continue;
+                }
+                let state = coroutine.borrow();
+                let (words, coroutines) = (&mut walk.words, &mut walk.coroutines);
+                if let Some(completion) = &state.completion {
+                    match completion {
+                        Completion::Value(value) => root_value(value, words, coroutines),
+                        Completion::Exception(payload) => words.push(payload.exception.0),
+                    }
+                }
+                if let Some(awaited) = &state.awaiting {
+                    coroutines.push(Rc::clone(&awaited.handle));
+                }
+                coroutines.extend(state.waiters.iter().filter_map(AsyncJob::handle));
+                match &state.kind {
+                    CoroutineKind::Invocation(frame) => {
+                        // Active frames hold a mutable RefCell borrow and appear in active_frames.
+                        if let Ok(frame) = frame.try_borrow() {
+                            self.root_frame(&frame, state.completed, words, coroutines)?;
+                        }
+                    }
+                    CoroutineKind::Aggregate(aggregate) => aggregate.root_values(words, coroutines),
+                    CoroutineKind::GroupJoin(group) => {
+                        group.borrow().root_values(words, coroutines)
+                    }
+                }
+            }
+            if self.generator_handles.borrow().is_empty()
+                && tasks.iter().all(|key| walk.seen.contains(key))
+            {
+                break;
+            }
+            let reachable = self.context.reachable_words(&walk.words);
+            for &key in &reachable {
+                if walk.scanned.insert(key) && !walk.seen.contains(&key) {
+                    if let Some(generator) = self.generator_handles.borrow().get(&key) {
+                        walk.coroutines.push(Rc::clone(generator));
+                    } else if tasks.contains(&key) {
+                        if let Some(task) = self.async_handles.borrow().get(&key) {
+                            walk.coroutines.push(Rc::clone(task));
+                        }
+                    }
+                }
+            }
+            walk.reached = reachable.into_iter().collect();
+            if walk.coroutines.is_empty() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// `compiler.md` §348 rule 3, in one pass over the completed tasks that
+    /// the walk did not reach, in the order of their task ids. A task whose
+    /// owners are more than its heap holders in unreachable objects joins
+    /// the walk, and the walk continues from it before the pass reads the
+    /// next task. The holders are counted once, before the pass: a holder
+    /// that the continued walk reaches is read by the walk, so the walk
+    /// reaches its task also, and the pass skips each task that the walk
+    /// reached. Returns the tasks that the walk did not reach, which end in
+    /// this collection (rule 4).
+    fn root_tasks_with_outside_holders(
+        &self,
+        walk: &mut Walk,
+        tasks: &std::collections::HashSet<usize>,
+    ) -> Result<Vec<usize>, InterpretError> {
+        let unreached = |walk: &Walk| -> Vec<(u64, usize)> {
+            let handles = self.async_handles.borrow();
+            let mut unreached: Vec<(u64, usize)> = tasks
+                .iter()
+                .filter(|key| !walk.seen.contains(*key))
+                .filter_map(|key| Some((handles.get(key)?.borrow().task_id, *key)))
+                .collect();
+            unreached.sort_unstable();
+            unreached
+        };
+        let pass = unreached(walk);
+        if pass.is_empty() {
+            return Ok(Vec::new());
+        }
+        let candidates = pass.iter().map(|(_, key)| *key).collect();
+        let holders = self
+            .context
+            .completed_task_holders(&walk.reached, &candidates);
+        for (_, key) in pass {
+            if walk.seen.contains(&key) {
+                continue;
+            }
+            let Some(task) = self.async_handles.borrow().get(&key).cloned() else {
+                continue;
+            };
+            if holders.get(&key).copied().unwrap_or(0) < task.borrow().owners {
+                walk.coroutines.push(task);
+                self.walk(walk, tasks)?;
+            }
+        }
+        Ok(unreached(walk).into_iter().map(|(_, key)| key).collect())
     }
 
     pub(super) fn describe_interpreter_map(
@@ -281,6 +448,20 @@ impl Interpreter<'_> {
         unsafe { self.context.describe_map(map as usize, &description) };
         Ok(())
     }
+}
+
+/// The state of one collection walk of the interpreter's roots.
+struct Walk {
+    /// The heap words that the roots and the reached coroutines give.
+    words: Vec<usize>,
+    /// The coroutines that wait for the walk.
+    coroutines: Vec<Rc<RefCell<Coroutine>>>,
+    /// The coroutines that the walk read.
+    seen: std::collections::HashSet<usize>,
+    /// The heap words that the walk compared with the handle tables.
+    scanned: std::collections::HashSet<usize>,
+    /// The words that the last heap walk reached.
+    reached: std::collections::HashSet<usize>,
 }
 
 fn root_snapshot(

@@ -87,3 +87,36 @@ pub(crate) unsafe fn release_leaves(
         }
     }
 }
+
+/// Calls `visit` with each active value of a counted Map and its value
+/// description, in the order of [`release_leaves`], and changes nothing.
+/// The count of heap holders of a completed task reads the Map values by
+/// this walk (`compiler.md` §348 rule 3). A null `description` selects the
+/// description in the Map header, as the release does.
+///
+/// # Safety
+///
+/// `handle` is a live `AssocHeader` whose entry storage is live.
+pub(crate) unsafe fn counted_values(
+    handle: *const u8,
+    description: *const u8,
+    mut visit: impl FnMut(*const u8, *const u8),
+) {
+    // SAFETY: the caller states that `handle` is a live Map header.
+    let h = unsafe { &*handle.cast::<AssocHeader>() };
+    let description = if description.is_null() {
+        h.value_description
+    } else {
+        description
+    };
+    if description.is_null() {
+        return;
+    }
+    for index in 0..h.order_len as usize {
+        // SAFETY: each index below `order_len` lies in the live entry storage.
+        if unsafe { entry_active(h, index) } {
+            // SAFETY: as above; the value follows the key in the entry.
+            visit(unsafe { entry_value(h, index) }, description);
+        }
+    }
+}

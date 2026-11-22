@@ -68,7 +68,7 @@ pub(crate) use copy::copy_map;
 mod counted;
 #[path = "assocops/group_by.rs"]
 mod group_by;
-pub(crate) use counted::{clear, describe, release_leaves};
+pub(crate) use counted::{clear, counted_values, describe, release_leaves};
 pub(crate) use group_by::group_by;
 
 fn header_kind(header: &AssocHeader) -> KeyKind {

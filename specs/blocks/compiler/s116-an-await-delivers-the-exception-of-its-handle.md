@@ -104,7 +104,9 @@ the completion, not the ownership.
    async export has no script holder: an exception that leaves it
    becomes trap 29 at its completion, as under §115.4 item 2.
 6. **The Error object stays an ordinary Context allocation.** The
-   handle holds it as a collection root. The release of the handle
+   handle holds it as a collection root. *(Amended 2026-11-22 by §348
+   rules 1 and 2: a completed task gives its Error object when the
+   mark reaches the task.)* The release of the handle
    does not free it, because a catch binding can hold it after the
    handle is gone.
 7. **A `try` block can hold `await` and `yield`.** §115.3 rule 3

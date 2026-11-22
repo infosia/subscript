@@ -1076,3 +1076,430 @@ export function main(): void {
         );
     }
 }
+
+/// `compiler.md` §348 acceptance 1: a method returns `this`, and the object
+/// stores the handle of the call; the loop awaits the handle.
+const RETURNS_THIS_AWAITED: &str = r#"
+async function none(): Promise<Worker | null> { return null; }
+class Worker {
+  values: i32[];
+  task: Promise<Worker | null>;
+  constructor(n: i32) {
+    this.values = [n, n + 1, n + 2, n + 3];
+    this.task = none();
+  }
+  start(): void { this.task = this.load(); }
+  async load(): Promise<Worker | null> {
+    await Context.suspend();
+    this.values[0] += 1;
+    return this;
+  }
+}
+export async function main(): Promise<void> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < __N__; i += 1) {
+    const w: Worker = new Worker(i);
+    w.start();
+    const loaded: Worker | null = await w.task;
+    if (loaded !== null) { sum += loaded.values[0]; }
+  }
+  Context.collect();
+  print(`i1 ${sum}`);
+}
+"#;
+
+/// §348 acceptance 1: the shape of [`RETURNS_THIS_AWAITED`] with no await.
+/// Three suspensions let each task complete before the collection.
+const RETURNS_THIS_NOT_AWAITED: &str = r#"
+async function none(): Promise<Worker | null> { return null; }
+class Worker {
+  values: i32[];
+  task: Promise<Worker | null>;
+  constructor(n: i32) {
+    this.values = [n, n + 1, n + 2, n + 3];
+    this.task = none();
+  }
+  start(): void { this.task = this.load(); }
+  async load(): Promise<Worker | null> {
+    await Context.suspend();
+    this.values[0] += 1;
+    return this;
+  }
+}
+export async function main(): Promise<void> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < __N__; i += 1) {
+    const w: Worker = new Worker(i);
+    w.start();
+  }
+  for (let k: i32 = 0; k < 3; k += 1) { await Context.suspend(); }
+  Context.collect();
+  print(`i2 ${sum}`);
+}
+"#;
+
+/// §348 acceptance 1: an async function returns its parameter, and an array
+/// of the parameter holds the handle.
+const RETURNS_PARAMETER: &str = r#"
+class Holder {
+  values: i32[];
+  tasks: Promise<Holder>[];
+  constructor(n: i32) { this.values = [n, n + 1, n + 2, n + 3]; this.tasks = []; }
+}
+async function load(h: Holder): Promise<Holder> {
+  await Context.suspend();
+  h.values[0] += 1;
+  return h;
+}
+export async function main(): Promise<void> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < __N__; i += 1) {
+    const h: Holder = new Holder(i);
+    h.tasks.push(load(h));
+    const done: Holder = await h.tasks[0];
+    sum += done.values[0];
+  }
+  Context.collect();
+  print(`i3 ${sum}`);
+}
+"#;
+
+/// §348 acceptance 1 and rule 3: an async function returns its parameter,
+/// and a counted Map of the parameter holds the handle as a value.
+const RETURNS_MAP_HOLDER: &str = r#"
+class Holder {
+  values: i32[];
+  tasks: Map<i32, Promise<Holder>>;
+  constructor(n: i32) {
+    this.values = [n, n + 1, n + 2, n + 3];
+    this.tasks = new Map<i32, Promise<Holder>>();
+  }
+}
+async function load(h: Holder): Promise<Holder> {
+  await Context.suspend();
+  h.values[0] += 1;
+  return h;
+}
+export async function main(): Promise<void> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < __N__; i += 1) {
+    const h: Holder = new Holder(i);
+    const task: Promise<Holder> = load(h);
+    h.tasks.set(0, task);
+    const done: Holder = await task;
+    sum += done.values[0];
+  }
+  Context.collect();
+  print(`i4 ${sum}`);
+}
+"#;
+
+/// §348 acceptance 2: the shapes that stay bounded, one function for each: the handle of the own method call with an `i32` result, two
+/// objects with the task of each other, handles in an array and in a Map
+/// that the frames hold, and a `TaskGroup`.
+const BOUNDED_SHAPES: &str = r#"
+async function idle(): Promise<i32> { return 0; }
+class Worker {
+  values: i32[];
+  task: Promise<i32>;
+  constructor(n: i32) {
+    this.values = [n, n + 1, n + 2, n + 3];
+    this.task = idle();
+  }
+  start(): void { this.task = this.run(); }
+  async run(): Promise<i32> { return this.values[0] + this.values[3]; }
+}
+async function ownCall(n: i32): Promise<i32> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < n; i += 1) {
+    const w: Worker = new Worker(i);
+    w.start();
+    sum += await w.task;
+  }
+  return sum;
+}
+class Peer {
+  values: i32[];
+  task: Promise<i32>;
+  constructor(n: i32) { this.values = [n, n + 1, n + 2, n + 3]; this.task = idle(); }
+}
+async function work(other: Peer): Promise<i32> {
+  await Context.suspend();
+  return other.values[2];
+}
+async function peers(n: i32): Promise<i32> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < n; i += 1) {
+    const a: Peer = new Peer(i);
+    const b: Peer = new Peer(i + 1);
+    a.task = work(b);
+    b.task = work(a);
+    sum += await a.task;
+    sum += await b.task;
+  }
+  return sum;
+}
+class Holder {
+  values: i32[];
+  tasks: Promise<i32>[];
+  constructor(n: i32) { this.values = [n, n + 1, n + 2, n + 3]; this.tasks = []; }
+}
+async function job(h: Holder, n: i32): Promise<i32> {
+  await Context.suspend();
+  return h.tasks.length + h.values[0] + n;
+}
+async function arrays(n: i32): Promise<i32> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < n; i += 1) {
+    const h: Holder = new Holder(i);
+    h.tasks.push(job(h, 1));
+    h.tasks.push(job(h, 2));
+    for (const t of h.tasks) { sum += await t; }
+  }
+  return sum;
+}
+async function mapJob(m: Map<i32, Promise<i32>>, n: i32): Promise<i32> {
+  await Context.suspend();
+  return m.size + n;
+}
+async function maps(n: i32): Promise<i32> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < n; i += 1) {
+    const m: Map<i32, Promise<i32>> = new Map<i32, Promise<i32>>();
+    m.set(1, mapJob(m, 1));
+    m.set(2, mapJob(m, 2));
+    for (const t of m.values()) { sum += await t; }
+  }
+  return sum;
+}
+class Scene {
+  values: i32[];
+  constructor(n: i32) { this.values = [n, n + 1, n + 2, n + 3]; }
+  async load(step: i32): Promise<void> {
+    await Context.suspend();
+    this.values[0] += step;
+  }
+}
+async function groups(n: i32): Promise<i32> {
+  let sum: i32 = 0;
+  for (let i: i32 = 0; i < n; i += 1) {
+    const s: Scene = new Scene(i);
+    const group: TaskGroup = new TaskGroup();
+    group.add(s.load(1));
+    group.add(s.load(2));
+    await group.join();
+    sum += s.values[0];
+  }
+  return sum;
+}
+export async function main(): Promise<void> {
+  const c: i32 = await ownCall(__N__);
+  const f: i32 = await peers(__N__);
+  const g: i32 = await arrays(__N__);
+  const g2: i32 = await maps(__N__);
+  const h1: i32 = await groups(__N__);
+  Context.collect();
+  print(`c ${c} f ${f} g ${g} g2 ${g2} h1 ${h1}`);
+}
+"#;
+
+/// §348 acceptance 3: two methods of one object, each awaits the handle of
+/// the other. The wait never ends, so the tasks are unfinished work.
+const ENDLESS_WAIT: &str = r#"
+async function idle(): Promise<i32> { return 0; }
+class Pair {
+  values: i32[];
+  first: Promise<i32>;
+  second: Promise<i32>;
+  constructor(n: i32) {
+    this.values = [n, n + 1, n + 2, n + 3];
+    this.first = idle();
+    this.second = idle();
+  }
+  start(): void {
+    this.first = this.waitSecond();
+    this.second = this.waitFirst();
+  }
+  async waitSecond(): Promise<i32> {
+    await Context.suspend();
+    return (await this.second) + this.values[0];
+  }
+  async waitFirst(): Promise<i32> {
+    await Context.suspend();
+    return (await this.first) + this.values[1];
+  }
+}
+export async function main(): Promise<void> {
+  for (let i: i32 = 0; i < __N__; i += 1) {
+    const p: Pair = new Pair(i);
+    p.start();
+  }
+  for (let k: i32 = 0; k < 3; k += 1) { await Context.suspend(); }
+  Context.collect();
+  print("e done");
+}
+"#;
+
+/// The two repeat counts of the §348 tests. Each printed sum has the same
+/// count of digits at the two counts, so a bounded shape gives equal live
+/// bytes in the dev JIT, which counts the bytes of the printed text.
+const REPEATS: [u32; 2] = [1000, 1400];
+
+/// Live bytes after one run in the dev JIT with no automatic collection:
+/// the program text, and the live bytes after its last statement.
+fn dev_live(template: &str, repeats: u32) -> (String, u64) {
+    let source = template.replace("__N__", &repeats.to_string());
+    let (output, _, live) = dev(&source, CollectionMode::Off);
+    (output, live)
+}
+
+/// Live bytes after one run in the ship tier with no automatic collection.
+/// A post-run hook collects one more time, then reads live bytes.
+fn ship_live(template: &str, repeats: u32) -> (String, u64) {
+    let source = template.replace("__N__", &repeats.to_string());
+    let scratch = tempfile_dir();
+    let hooks = scratch.join("completed_task_hooks.c");
+    std::fs::write(
+        &hooks,
+        "#include <stdio.h>\n\
+         #include \"subscript_runtime.h\"\n\
+         void subscript_test_task_setup(subscript_rt_context* ctx) {\n\
+           if (subscript_rt_ctx_set_collection(ctx, 0, 0u) != 0) { printf(\"setup-refused\\n\"); }\n\
+         }\n\
+         void subscript_test_task_report(subscript_rt_context* ctx) {\n\
+           subscript_rt_ctx_collect(ctx);\n\
+           printf(\"live-bytes=%llu\\n\", (unsigned long long)subscript_rt_ctx_live_bytes(ctx));\n\
+           fflush(stdout);\n\
+         }\n",
+    )
+    .expect("write hook source");
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+    // SAFETY: the library defines only the two host hooks; no script calls it.
+    let library = [unsafe {
+        NativeLibrary::new(vec![repo.join("runtime/include")], vec![hooks], Vec::new())
+    }];
+    let mut config = RunConfig::default().with_native_libraries(&library);
+    config.pre_init_hook = Some("subscript_test_task_setup");
+    config.post_run_hook = Some("subscript_test_task_report");
+    let files = [SourceFile::new("collection.ts", source.as_str())];
+    let output = run_c_aot_configured(&files, config).expect("ship run");
+    let _ = std::fs::remove_dir_all(&scratch);
+    let text = String::from_utf8(output.stdout).expect("utf-8 output");
+    let mut live = None;
+    let mut program = String::new();
+    for line in text.lines() {
+        match line.strip_prefix("live-bytes=") {
+            Some(value) => live = Some(value.parse::<u64>().expect("live bytes")),
+            None => {
+                program.push_str(line);
+                program.push('\n');
+            }
+        }
+    }
+    (program, live.expect("the post-run hook printed live bytes"))
+}
+
+/// Live bytes after one interpreter run with no automatic collection.
+fn interpreted_live(template: &str, repeats: u32) -> (String, u64) {
+    let source = template.replace("__N__", &repeats.to_string());
+    let (output, _, live) = interpreted(&source, CollectionMode::Off);
+    (output, live as u64)
+}
+
+/// The live bytes of `template` at the two counts of [`REPEATS`], in the dev
+/// JIT, the ship tier, and the interpreter. Each tier gives the same
+/// output. Each tier compares live bytes with itself only
+/// (`compiler.md` §18.2d): the interpreter keeps its frames outside the
+/// Context, and the base figures of the tiers differ.
+fn live_at_two_counts(template: &str) -> [[u64; 2]; 3] {
+    let mut figures = [[0; 2]; 3];
+    for (index, repeats) in REPEATS.into_iter().enumerate() {
+        let (dev_output, dev_bytes) = dev_live(template, repeats);
+        let (ship_output, ship_bytes) = ship_live(template, repeats);
+        let (interpreter_output, interpreter_bytes) = interpreted_live(template, repeats);
+        assert_eq!(dev_output, ship_output, "{repeats} repeats");
+        assert_eq!(dev_output, interpreter_output, "{repeats} repeats");
+        figures[0][index] = dev_bytes;
+        figures[1][index] = ship_bytes;
+        figures[2][index] = interpreter_bytes;
+    }
+    println!(
+        "dev JIT {:?}, ship tier {:?}, interpreter {:?}",
+        figures[0], figures[1], figures[2]
+    );
+    figures
+}
+
+/// `compiler.md` §348 acceptance 1, the method that returns `this`, awaited:
+/// live bytes do not grow with the repeat count in the three tiers. Cost:
+/// two ship-tier C builds, two dev JIT compiles, and two interpreter runs.
+/// Measured: 0.4 s in a release build and 1.2 s in a debug build, after the
+/// first C build of the binary.
+#[test]
+fn a_completed_task_that_returns_its_receiver_is_reclaimed_when_awaited() {
+    let [dev, ship, interpreter] = live_at_two_counts(RETURNS_THIS_AWAITED);
+    assert_eq!(dev[0], dev[1], "dev JIT");
+    assert_eq!(ship[0], ship[1], "ship tier");
+    assert_eq!(interpreter[0], interpreter[1], "interpreter");
+}
+
+/// §348 acceptance 1, the method that returns `this`, not awaited. Cost: two
+/// ship-tier C builds, two dev JIT compiles, and two interpreter runs;
+/// measured 0.4 s (release) and 1.2 s (debug).
+#[test]
+fn a_completed_task_that_returns_its_receiver_is_reclaimed_when_not_awaited() {
+    let [dev, ship, interpreter] = live_at_two_counts(RETURNS_THIS_NOT_AWAITED);
+    assert_eq!(dev[0], dev[1], "dev JIT");
+    assert_eq!(ship[0], ship[1], "ship tier");
+    assert_eq!(interpreter[0], interpreter[1], "interpreter");
+}
+
+/// §348 acceptance 1, the function that returns its parameter. Cost: two
+/// ship-tier C builds, two dev JIT compiles, and two interpreter runs;
+/// measured 0.5 s (release) and 1.4 s (debug).
+#[test]
+fn a_completed_task_that_returns_its_parameter_is_reclaimed() {
+    let [dev, ship, interpreter] = live_at_two_counts(RETURNS_PARAMETER);
+    assert_eq!(dev[0], dev[1], "dev JIT");
+    assert_eq!(ship[0], ship[1], "ship tier");
+    assert_eq!(interpreter[0], interpreter[1], "interpreter");
+}
+
+/// §348 acceptance 1 and rule 3, the function that returns its parameter,
+/// with the handle in a Map of the parameter. Cost: two ship-tier C
+/// builds, two dev JIT compiles, and two interpreter runs; measured 0.5 s
+/// (release) and 1.3 s (debug).
+#[test]
+fn a_completed_task_that_a_map_value_holds_is_reclaimed() {
+    let [dev, ship, interpreter] = live_at_two_counts(RETURNS_MAP_HOLDER);
+    assert_eq!(dev[0], dev[1], "dev JIT");
+    assert_eq!(ship[0], ship[1], "ship tier");
+    assert_eq!(interpreter[0], interpreter[1], "interpreter");
+}
+
+/// §348 acceptance 2: the shapes that were bounded stay bounded. One
+/// program runs the five shapes, so the test needs two ship-tier C builds,
+/// two dev JIT compiles, and two interpreter runs, not ten of each.
+/// Measured: 0.8 s in a release build and 7.4 s in a debug build, most of
+/// it the dev JIT runs.
+#[test]
+fn the_bounded_async_shapes_stay_bounded() {
+    let [dev, ship, interpreter] = live_at_two_counts(BOUNDED_SHAPES);
+    assert_eq!(dev[0], dev[1], "dev JIT");
+    assert_eq!(ship[0], ship[1], "ship tier");
+    assert_eq!(interpreter[0], interpreter[1], "interpreter");
+}
+
+/// §348 acceptance 3 (rule 5): the wait that never ends keeps its frames:
+/// 176 bytes for each repeat in the dev JIT and 208 in the ship tier. The
+/// interpreter keeps 80 Context bytes for each repeat: its frames are
+/// outside the Context. Cost: two ship-tier C builds, two dev JIT compiles,
+/// and two interpreter runs; measured 0.5 s (release) and 1.3 s (debug).
+#[test]
+fn a_wait_that_never_ends_keeps_its_frames() {
+    let [dev, ship, interpreter] = live_at_two_counts(ENDLESS_WAIT);
+    let repeats = u64::from(REPEATS[1] - REPEATS[0]);
+    assert_eq!(dev[1] - dev[0], 176 * repeats, "dev JIT");
+    assert_eq!(ship[1] - ship[0], 208 * repeats, "ship tier");
+    assert_eq!(interpreter[1] - interpreter[0], 80 * repeats, "interpreter");
+}

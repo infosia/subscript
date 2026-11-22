@@ -731,3 +731,74 @@ export async function main(): Promise<void> {
     assert!(facts.contains(&(6, CanHoldHandle)), "{facts:?}");
     assert!(!facts.contains(&(5, CanHoldHandle)), "{facts:?}");
 }
+
+/// `compiler.md` §348 rule 3: a completed task whose owners are more than
+/// its heap holders in unreachable objects is a root, so the task and its
+/// completion value stay. With owners equal to the holders, the task ends.
+#[test]
+fn collection_roots_a_completed_task_with_an_outside_holder() {
+    let source = r#"
+class Cell { v: i32; constructor(v: i32) { this.v = v; } }
+class Box { h: Promise<Cell>; constructor(h: Promise<Cell>) { this.h = h; } }
+async function make(): Promise<Cell> { return new Cell(7); }
+function hold(): void { const box: Box = new Box(make()); }
+export function main(): void { hold(); }
+"#;
+    let files = [SourceFile::new("s348-outside-holder.ts", source)];
+    let module = crate::lir::lower_module(&check_program(&files).expect("checked source"))
+        .expect("verified LIR");
+    for owners in [1, 2] {
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        if let Some(initializer) = module.initializer {
+            interpreter
+                .call_function(initializer, Vec::new())
+                .expect("initializer");
+        }
+        interpreter
+            .call_function(module.entry.expect("entry"), Vec::new())
+            .expect("entry");
+        let task = {
+            let handles = interpreter.async_handles.borrow();
+            assert_eq!(handles.len(), 1, "one task handle");
+            Rc::clone(handles.values().next().expect("task"))
+        };
+        {
+            let mut state = task.borrow_mut();
+            assert!(
+                state.completed && state.completion.is_some(),
+                "a completed task"
+            );
+            // The Box field is the one heap holder; a second owner is
+            // outside the heap.
+            assert_eq!(state.owners, 1, "the Box field owns the task");
+            state.owners = owners;
+        }
+        // The Box and the Cell.
+        assert_eq!(interpreter.context.live_count(), 2);
+        interpreter
+            .collect_interpreter(&Pos::new("<host>", 1, 1))
+            .expect("host collection");
+        let key = Rc::as_ptr(&task) as usize;
+        let kept = interpreter.async_handles.borrow().contains_key(&key);
+        if owners == 2 {
+            assert!(kept, "the outside holder keeps the task");
+            assert_eq!(
+                task.borrow().owners,
+                1,
+                "the release of the Box drops one owner"
+            );
+            let cell = match &task.borrow().completion {
+                Some(Completion::Value(Value::Handle(cell))) => *cell as usize,
+                _ => panic!("an object completion"),
+            };
+            assert!(
+                interpreter.context.is_live(cell),
+                "the completion value stays"
+            );
+            assert_eq!(interpreter.context.live_count(), 1, "only the Cell stays");
+        } else {
+            assert!(!kept, "the task ends with its last holder");
+            assert_eq!(interpreter.context.live_count(), 0);
+        }
+    }
+}

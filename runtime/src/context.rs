@@ -486,6 +486,9 @@ pub(crate) struct ArenaStats {
     membership_lookups: std::sync::atomic::AtomicUsize,
     // compiler.md §344 acceptance 2: payload words that the mark reads.
     words_read: std::sync::atomic::AtomicUsize,
+    // compiler.md §348 acceptance 6: unreachable objects that the step of
+    // rule 3 reads.
+    completed_task_objects_read: std::sync::atomic::AtomicUsize,
     container_delete_entries: std::sync::atomic::AtomicUsize,
 }
 
@@ -1009,3 +1012,10 @@ mod async_all_tests;
 mod array_fact_tests;
 
 mod counted;
+
+mod completed_tasks;
+use completed_tasks::CompletedTasks;
+
+#[cfg(test)]
+#[path = "context/completed_task_tests.rs"]
+mod completed_task_tests;

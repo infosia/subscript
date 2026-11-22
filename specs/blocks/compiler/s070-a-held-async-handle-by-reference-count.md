@@ -171,7 +171,10 @@ each element. A completion owns its counted value.)*
    object.)*
 5. **A handle is not a `Promise`.** It has no `then`, no combinator,
    and no constructor. C8's rejections stand.
-6. **A cycle leaks**, and a program that leaks is correct, merely
+6. *(Amended 2026-11-22 by §348: a collection ends a cycle of
+   completed tasks that only unreachable objects hold. A cycle of
+   unfinished tasks leaks as before.)*
+   **A cycle leaks**, and a program that leaks is correct, merely
    larger — invariant 2's own words. *(Corrected 2026-09-08, the
    shape appeared, and rule 6 asked for it to be recorded.)* A frame
    can hold a handle to itself, through a module global: a handle

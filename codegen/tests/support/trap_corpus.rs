@@ -215,6 +215,7 @@ pub fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         | "t107-collected-task-order"
         | "t116-detected-task-failure"
         | "t117-detected-task-order" => (TrapKind::UncaughtException, 11, 55),
+        "t118-unreachable-completed-task-failure" => (TrapKind::UncaughtException, 18, 65),
         "t108-host-operation-dropped-error" => (TrapKind::UncaughtException, 12, 15),
         "t101-unused-coroutine-parameter" => (TrapKind::UncaughtException, 19, 79),
         "t102-generator-parameter" => (TrapKind::UncaughtException, 24, 5),
@@ -339,6 +340,7 @@ pub fn trap_message(id: &str) -> Option<&'static str> {
         | "t98-counted-field-task-order"
         | "t107-collected-task-order"
         | "t117-detected-task-order" => Some("Error: first"),
+        "t118-unreachable-completed-task-failure" => Some("Error: cycle"),
         "t108-host-operation-dropped-error" => Some("Error: host failure"),
         "t109-generator-close-throws" => Some("Error: close"),
         "t110-pad-start-cut-inside-sequence" => {

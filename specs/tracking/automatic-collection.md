@@ -371,8 +371,9 @@ the runtime library from that directory.
   figure of 1.18x to 1.22x that §344.4 recorded was against a C
   reference of 42 to 44 ms. With the reference at 31.4 ms the same
   ship time was 1.59x.
-- A reference-count cycle of async frames is not reclaimed (§70.3.6,
-  §342.5 item 2). G7 measures which shapes reach it.
+- §348 reclaims a completed task that only unreachable objects
+  hold: the two typical shapes of G7. The evidence is in `compiler.md`
+  §348.4. A cycle of unfinished tasks stays (§348.5 item 4).
 
 ## G6 — benchmark comparison against `main`, and the causes
 

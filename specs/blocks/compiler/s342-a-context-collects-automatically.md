@@ -361,7 +361,9 @@ golden moved.
 1. The conservative scan can keep an unreachable object alive if an
    integer equals its address (`runtime/src/context/memory.rs`, the
    payload scan). Exact reference layouts are not in this section.
-2. A reference-count cycle of async frames is not reclaimed (§70.3.6).
+2. Closed by §348 for completed tasks; a cycle of unfinished tasks
+   stays (§348 rule 5). A reference-count cycle of async frames is
+   not reclaimed (§70.3.6).
 3. Closed by §344. One collection of about 4 MiB of live bytes took
    about 6 ms in the `callbacks` workload on the ship tier. The cause
    was the read of the data buffer of an `i32[]`.

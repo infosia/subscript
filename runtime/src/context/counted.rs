@@ -240,53 +240,7 @@ impl Context {
             // SAFETY: the generator marker refers to a live generated frame.
             description = unsafe { self.generator_description(payload as *mut u8) };
         }
-        let word = |offset: usize| -> Result<usize, &'static str> {
-            let end = offset
-                .checked_add(8)
-                .ok_or("malformed object description size")?;
-            let bytes = description
-                .get(offset..end)
-                .ok_or("malformed object description size")?;
-            let mut value = [0; 8];
-            value.copy_from_slice(bytes);
-            usize::try_from(u64::from_ne_bytes(value))
-                .map_err(|_| "malformed object description size")
-        };
-        let mut cursor = 8usize;
-        let mut fields = Vec::new();
-        for _ in 0..word(0)? {
-            let offset = word(cursor)?;
-            let size = word(
-                cursor
-                    .checked_add(8)
-                    .ok_or("malformed object description size")?,
-            )?;
-            cursor = cursor
-                .checked_add(16)
-                .ok_or("malformed object description size")?;
-            let end = cursor
-                .checked_add(size)
-                .ok_or("malformed object description size")?;
-            let nodes = description
-                .get(cursor..end)
-                .ok_or("malformed object description size")?;
-            if nodes.is_empty() || nodes.len() % 24 != 0 {
-                return Err("malformed object description size");
-            }
-            for (index, node) in nodes.chunks_exact(24).enumerate() {
-                let mut kind = [0; 8];
-                kind.copy_from_slice(&node[..8]);
-                match (u64::from_ne_bytes(kind), index + 1 == nodes.len() / 24) {
-                    (1 | 5 | 6, true) | (2..=4, false) => {}
-                    _ => return Err("malformed object description size"),
-                }
-            }
-            fields.push((offset, cursor));
-            cursor = end;
-        }
-        if cursor != description.len() {
-            return Err("malformed object description size");
-        }
+        let fields = object_fields(&description)?;
         let mut handles = Vec::new();
         let mut storage = Vec::new();
         for (offset, cursor) in fields {
@@ -382,7 +336,7 @@ impl Context {
 }
 
 impl Context {
-    fn collection_marked(&self, address: usize) -> bool {
+    pub(super) fn collection_marked(&self, address: usize) -> bool {
         if !self.uses_ship_arena() {
             return self
                 .allocations
@@ -525,4 +479,61 @@ impl Context {
         self.release_reference_holder(frame as usize, pos);
         self.delete(frame as usize, pos);
     }
+}
+
+/// The fields of an object description: the offset of each field in the
+/// object and the offset of its first node in the description. The release
+/// of unreachable counted fields and the count of its holders
+/// (`compiler.md` §348 rule 3) read one description by this function.
+///
+/// # Errors
+/// Returns an error if a field description has an invalid size or node chain.
+pub(super) fn object_fields(description: &[u8]) -> Result<Vec<(usize, usize)>, &'static str> {
+    let word = |offset: usize| -> Result<usize, &'static str> {
+        let end = offset
+            .checked_add(8)
+            .ok_or("malformed object description size")?;
+        let bytes = description
+            .get(offset..end)
+            .ok_or("malformed object description size")?;
+        let mut value = [0; 8];
+        value.copy_from_slice(bytes);
+        usize::try_from(u64::from_ne_bytes(value)).map_err(|_| "malformed object description size")
+    };
+    let mut cursor = 8usize;
+    let mut fields = Vec::new();
+    for _ in 0..word(0)? {
+        let offset = word(cursor)?;
+        let size = word(
+            cursor
+                .checked_add(8)
+                .ok_or("malformed object description size")?,
+        )?;
+        cursor = cursor
+            .checked_add(16)
+            .ok_or("malformed object description size")?;
+        let end = cursor
+            .checked_add(size)
+            .ok_or("malformed object description size")?;
+        let nodes = description
+            .get(cursor..end)
+            .ok_or("malformed object description size")?;
+        if nodes.is_empty() || nodes.len() % 24 != 0 {
+            return Err("malformed object description size");
+        }
+        for (index, node) in nodes.chunks_exact(24).enumerate() {
+            let mut kind = [0; 8];
+            kind.copy_from_slice(&node[..8]);
+            match (u64::from_ne_bytes(kind), index + 1 == nodes.len() / 24) {
+                (1 | 5 | 6, true) | (2..=4, false) => {}
+                _ => return Err("malformed object description size"),
+            }
+        }
+        fields.push((offset, cursor));
+        cursor = end;
+    }
+    if cursor != description.len() {
+        return Err("malformed object description size");
+    }
+    Ok(fields)
 }

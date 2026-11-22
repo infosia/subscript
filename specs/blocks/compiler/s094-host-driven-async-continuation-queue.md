@@ -139,6 +139,8 @@ ownership immediately. No extra cleanup checkpoint counts as pending.
 The completion cache and values reachable from it survive until their
 last owner releases them. Collection roots include all scheduler states,
 active frames, completion values, and blocked continuations.
+*(Amended 2026-11-22 by §348: a completed task is not a scheduler
+state, and its completion value is not a root by itself.)*
 Context release discards all work without resumption. It releases
 scheduler storage, including blocked cycles, without implicit collection.
 No cleanup body is guaranteed during Context teardown.

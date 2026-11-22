@@ -460,9 +460,14 @@ impl Context {
         }
     }
 
-    fn prepare_collection(&mut self, trace_target: Option<MarkTraceTarget>) -> CollectionReleases {
+    fn prepare_collection(
+        &mut self,
+        trace_target: Option<MarkTraceTarget>,
+        late: &[usize],
+    ) -> CollectionReleases {
         let mut work: Vec<usize> = Vec::new();
         let mut tracer = trace_target.map(MarkTracer::new);
+        let tasks = self.completed_tasks();
         let roots = self
             .roots
             .iter()
@@ -554,13 +559,16 @@ impl Context {
             "active_async_frames",
             active_async_frames,
         );
-        // Counted frames are roots even when the only holders form a cycle.
-        // This deliberately makes such a cycle leak (§70.3.6); collection
-        // must not reinterpret the reference-count ownership model.
+        // compiler.md §348 rules 1 and 5: each registered frame is a root,
+        // except a completed task. The mark reads a completed task when it
+        // reaches it (rule 2), and the step after the mark keeps a completed
+        // task that an outside holder owns (rule 3). A cycle of unfinished
+        // tasks stays a root and leaks (§70.3 rule 6).
         let async_frames = self
             .async_frames
             .keys()
             .copied()
+            .filter(|frame| !tasks.contains(*frame))
             .enumerate()
             .map(|(index, address)| (index, 0, address));
         self.push_root_set(&mut work, &mut tracer, "async_frames", async_frames);
@@ -580,8 +588,9 @@ impl Context {
         );
         let completions = self
             .async_frames
-            .values()
-            .filter_map(|meta| meta.completion.as_ref()?.value())
+            .iter()
+            .filter(|(frame, _)| !tasks.contains(**frame))
+            .filter_map(|(_, meta)| meta.completion.as_ref()?.value())
             .enumerate()
             .flat_map(|(index, completion)| {
                 completion
@@ -596,12 +605,14 @@ impl Context {
                     })
             });
         self.push_root_set(&mut work, &mut tracer, "completion", completions);
-        // compiler.md §116.1 rule 6: a handle holds its Error object as a
-        // collection root.
+        // compiler.md §348 rules 1 and 2: the Error object of each frame that
+        // is not a completed task is a root. A completed task gives its Error
+        // object when the mark reaches it.
         let completion_exceptions = self
             .async_frames
-            .values()
-            .filter_map(|meta| meta.completion.as_ref()?.exception_object())
+            .iter()
+            .filter(|(frame, _)| !tasks.contains(**frame))
+            .filter_map(|(_, meta)| meta.completion.as_ref()?.exception_object())
             .enumerate()
             .map(|(index, address)| (index, 0, address));
         self.push_root_set(
@@ -647,35 +658,45 @@ impl Context {
             registrations.into_iter(),
         );
 
-        if self.uses_ship_arena() {
-            self.arena_mark(&mut work, &mut tracer);
-        } else {
-            while let Some(addr) = work.pop() {
-                let Some((class_id, words)) =
-                    self.allocations.get_mut(&addr).and_then(|allocation| {
-                        if allocation.marked {
-                            return None;
-                        }
-                        allocation.marked = true;
-                        Some((allocation.class_id, allocation.payload_size / 8))
-                    })
-                else {
-                    continue;
-                };
-                self.scan_payload(
-                    addr as *const u8,
-                    words * 8,
-                    class_id,
-                    &mut work,
-                    &mut tracer,
-                );
-            }
-        }
+        self.drain_mark(&mut work, &mut tracer, &tasks);
+        self.root_tasks_with_outside_holders(&tasks, &mut work, &mut tracer);
         let (handles, storage) = self.unreachable_releases();
+        let ending_tasks = self.mark_ending_task_failures(&tasks, late, &mut work, &mut tracer);
         CollectionReleases {
             handles,
             storage,
+            ending_tasks,
             trace: tracer.map_or_else(Vec::new, |tracer| tracer.records),
+        }
+    }
+
+    /// Marks each allocation that the work list reaches, in the mark of the
+    /// active allocator tier. A completed task that the mark reaches gives
+    /// its completion to the work list (`compiler.md` §348 rule 2).
+    pub(super) fn drain_mark(
+        &mut self,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+        tasks: &CompletedTasks,
+    ) {
+        if self.uses_ship_arena() {
+            self.arena_mark(work, tracer, tasks);
+            return;
+        }
+        while let Some(addr) = work.pop() {
+            let Some((class_id, words)) = self.allocations.get_mut(&addr).and_then(|allocation| {
+                if allocation.marked {
+                    return None;
+                }
+                allocation.marked = true;
+                Some((allocation.class_id, allocation.payload_size / 8))
+            }) else {
+                continue;
+            };
+            if class_id == CLASS_GENERATOR {
+                self.push_task_completion(addr, tasks, work, tracer);
+            }
+            self.scan_payload(addr as *const u8, words * 8, class_id, work, tracer);
         }
     }
 
@@ -780,7 +801,12 @@ impl Context {
     /// header, or an exact large-record match); a reached block's header
     /// is stamped `MARK_STATE`. The marker pushes payload words only when
     /// the block's class can hold a handle.
-    pub(super) fn arena_mark(&mut self, work: &mut Vec<usize>, tracer: &mut Option<MarkTracer>) {
+    pub(super) fn arena_mark(
+        &mut self,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+        tasks: &CompletedTasks,
+    ) {
         while let Some(addr) = work.pop() {
             let (block, payload_size) = if let Some((block, class)) = self.arena_lookup_block(addr)
             {
@@ -814,6 +840,9 @@ impl Context {
                 block.cast::<u64>().write(MARK_STATE);
                 (payload, class_id)
             };
+            if class_id == CLASS_GENERATOR {
+                self.push_task_completion(addr, tasks, work, tracer);
+            }
             self.scan_payload(payload, payload_size, class_id, work, tracer);
         }
     }
@@ -1599,6 +1628,9 @@ pub(super) struct CollectionReleases {
     /// Handle leaves. The consumer resolves and sorts these by its task ids.
     pub handles: Vec<usize>,
     storage: Vec<usize>,
+    // compiler.md §348 rule 4: the completed tasks that the mark did not
+    // reach. The release of `handles` ends each of them.
+    ending_tasks: Vec<usize>,
     trace: Vec<String>,
 }
 
@@ -1609,6 +1641,17 @@ impl Context {
     pub fn with_collection<T, R>(
         owner: &mut T,
         context: fn(&mut T) -> &mut Context,
+        consume: impl FnOnce(&mut T, &mut [usize]) -> R,
+    ) -> R {
+        Self::collection_with_late_marks(owner, context, &[], consume)
+    }
+
+    /// [`Context::with_collection`], where the mark reads the words of
+    /// `late` after the release plan is made (`compiler.md` §348 rule 4).
+    pub(super) fn collection_with_late_marks<T, R>(
+        owner: &mut T,
+        context: fn(&mut T) -> &mut Context,
+        late: &[usize],
         consume: impl FnOnce(&mut T, &mut [usize]) -> R,
     ) -> R {
         struct Guard<'a, T> {
@@ -1623,7 +1666,7 @@ impl Context {
                 }
             }
         }
-        let mut plan = context(owner).prepare_collection(mark_trace_target());
+        let mut plan = context(owner).prepare_collection(mark_trace_target(), late);
         let mut handles = std::mem::take(&mut plan.handles);
         let guard = Guard {
             owner,
@@ -1636,6 +1679,7 @@ impl Context {
     /// Frees the release plan's array storage and sweeps the marked heap.
     /// The caller must release every handle from the plan before this call.
     fn finish_collection(&mut self, plan: CollectionReleases) {
+        self.keep_unended_tasks(&plan.ending_tasks);
         for address in plan.storage {
             if self.is_live(address) {
                 self.delete(address, 0);
@@ -1667,7 +1711,7 @@ impl Context {
             self.sweep_regex_values();
             return Vec::new();
         }
-        let mut plan = self.prepare_collection(trace_target);
+        let mut plan = self.prepare_collection(trace_target, &[]);
         plan.handles.sort_unstable_by_key(|handle| {
             self.async_frames.get(handle).map_or(0, |meta| meta.task_id)
         });
