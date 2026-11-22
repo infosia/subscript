@@ -27,7 +27,7 @@ The stages of the current form and the sections that hold their rules:
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214, §254 |
 | reference interpreter | §68.7 |
-| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344, §345, §346, §347, §348, §351, §352 |
+| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344, §345, §346, §347, §348, §351, §352, §353 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84, §152, §349 |
 | the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222, §225, §226 |
@@ -393,3 +393,4 @@ Every section, with its status:
 | §350 | `Promise.race` | active | [`s350-promise-race.md`](compiler/s350-promise-race.md) |
 | §351 | A return into a recursion reaches a poll before it allocates | active | [`s351-a-return-into-a-recursion-reaches-a-poll.md`](compiler/s351-a-return-into-a-recursion-reaches-a-poll.md) |
 | §352 | A generator resume is a call in the poll graph | active | [`s352-a-generator-resume-is-a-call-in-the-poll-graph.md`](compiler/s352-a-generator-resume-is-a-call-in-the-poll-graph.md) |
+| §353 | A host reads the count and the time of collections | active | [`s353-a-host-reads-the-count-and-the-time-of-collections.md`](compiler/s353-a-host-reads-the-count-and-the-time-of-collections.md) |
