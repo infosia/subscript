@@ -1,7 +1,7 @@
 //! Polls on the return path of a recursion (`compiler.md` §351,
 //! acceptance 1, 2, 4, and 5, and rule 12).
 //!
-//! Each shape is a recursion of depth 256 and 1,024 in automatic mode with a
+//! Each shape runs at two depths in automatic mode with a
 //! minimum headroom of 64 bytes. The sample is before the outermost exit,
 //! because the exit collects (§342 rule 8).
 //!
@@ -190,6 +190,15 @@ export function run(depth: i32): void { keep(depth); }
     },
 ];
 
+/// The debug ship program on a 1 MiB main-thread stack overflows at depth
+/// 1,024 for callback-operation. Use smaller depths for this shape.
+fn depths(shape: &Shape) -> [i32; 2] {
+    match shape.name {
+        "callback-operation" => [128, 256],
+        _ => DEPTHS,
+    }
+}
+
 fn source(shape: &Shape, depth: i32) -> String {
     format!("const DEPTH: i32 = {depth};\n{COMMON}{}", shape.source)
 }
@@ -267,7 +276,7 @@ fn scratch(tag: &str) -> PathBuf {
 fn ship(shape: &Shape) -> Vec<ShipFigures> {
     let directory = scratch(shape.name);
     let hooks = directory.join("return_path_hooks.c");
-    let calls = DEPTHS
+    let calls = depths(shape)
         .iter()
         .map(|depth| {
             format!(
@@ -329,7 +338,7 @@ fn ship(shape: &Shape) -> Vec<ShipFigures> {
             collections: numbers[1],
         }
     };
-    DEPTHS
+    depths(shape)
         .iter()
         .map(|&depth| {
             let base = read(depth, "base");
@@ -416,7 +425,7 @@ fn a_return_into_a_recursion_reaches_a_poll_in_the_dev_jit() {
     let mut findings = Vec::new();
     for shape in &SHAPES {
         let bound = bound(per_frame(shape));
-        for depth in DEPTHS {
+        for depth in depths(shape) {
             let (objects, collections, exits) = dev(shape, depth);
             let figures =
                 format!("depth={depth} objects={objects} collections={collections} exits={exits}");

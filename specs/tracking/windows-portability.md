@@ -1790,3 +1790,49 @@ Step wall seconds: fmt 10, build 129, debug 429, release 333, clippy
 The two debug skips are the `perf_gate` line and the
 `collection_stress_sweep` line, as at `6169b0e5`. In the release step
 the test binary of the sweep passed its three tests in 19.98 s.
+
+## Gate state at `524edac8`, 2026-11-22: one Windows-only test defect
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §351.
+
+```text
+gate full 524edac822d7959c8b119e2159129c15a00150ae clean debug 3961/1/5 release 3944/0/5 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 1
+```
+
+`codegen/tests/return_path_polls.rs`,
+`a_return_into_a_recursion_reaches_a_poll_in_the_ship_tier` (§351).
+The linked C program of the `callback-operation` shape exits with
+`0xc00000fd` (`STATUS_STACK_OVERFLOW`) in the debug step. Three runs
+of three fail. The release step passes.
+
+Measured in the debug profile, through the test: depth 512 passes,
+and depth 1,024 fails. The test links the runtime archive of its own
+profile, so the debug step links the debug runtime. A build of the
+same shape with `subscript build --run` links the release runtime and
+passes at depth 2,048. The main thread of the program has a stack of
+1 MiB on this host.
+
+The defect is in the test. The poll placement holds: the release step
+reads 1 object and 85 and 341 collections at depths 256 and 1,024. The
+test now runs that shape at depths 128 and 256, on each host and in
+each profile (§351.4 item 6). In the debug profile it reads:
+
+```text
+ship callback-operation bound=8: depth=128 objects=2 collections=42
+ship callback-operation bound=8: depth=256 objects=1 collections=85
+dev callback-operation bound=8: depth=128 objects=2 collections=43 exits=3
+dev callback-operation bound=8: depth=256 objects=1 collections=86 exits=3
+```
+
+The full gate on the fixed tree, before the commit:
+
+```text
+gate full 524edac822d7959c8b119e2159129c15a00150ae dirty:2 debug 3962/0/5 release 3944/0/5 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+The two `dirty` paths are the test file and the §351 file. Step wall
+seconds: fmt 3, build 57, debug 432, release 275, clippy 9, tsc 1,
+hygiene 2. The two debug skips are those of `6169b0e5`. In the release
+step the test binary of the stress sweep passed its three tests in
+19.10 s.

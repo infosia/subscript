@@ -121,7 +121,8 @@ call is the path from the instruction after the call.
    reaches a suspension before an allocation (a generator that calls
    down through a function value and then yields). Each has a unit
    test of the placement and a removal test of the verifier, and the
-   first has the test of item 1.
+   first has the test of item 1. *(Amended 2026-11-22, §351.4 item
+   6.)* The first runs the test of item 1 at depths 128 and 256.
 2b. **Rule 12.** An async recursion that allocates five objects for
    each level, its held form, and a form that suspends before it
    calls down, at depths 256 and 1,024, automatic mode, minimum
@@ -178,6 +179,17 @@ call is the path from the instruction after the call.
    until a later poll finds the flag set, or until the outermost exit:
    the fixture of the review with an `await`, 257 and 1,025 objects.
    The bytes that the Context holds stay under the limit of §346.
+6. *(Added 2026-11-22.)* The ship program of a debug test build ends
+   a main-thread stack of 1 MiB in the `forEach` shape of acceptance
+   2a. Measured on `x86_64-pc-windows-msvc` at `524edac8`: depth 512
+   passes, and depth 1,024 exits with `0xc00000fd`. Each level has one
+   frame of the runtime `forEach`. The test links the runtime archive
+   of its own profile, and the release build passes at depth 1,024.
+   So the test runs that shape at depths 128 and 256 on each
+   host and in each profile. The bound does not depend on the depth,
+   and with no poll the count is the depth, so the smaller depths
+   show the same fact. The stack that one level takes is not
+   measured.
 
 ### 351.5 Phase Review
 
