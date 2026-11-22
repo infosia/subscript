@@ -594,13 +594,19 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                     expr.pos.clone(),
                 )?
             }
-            K::AsyncAll { jobs, .. } => {
+            K::AsyncAll { mode, jobs, .. } => {
                 let input = self.require_expr(jobs)?;
+                // §350: a race reads the array as `Promise.all` does and
+                // retains each element; the array stays with the caller.
+                let kind = match mode {
+                    hir::AsyncAggregate::Race => l::InstructionKind::AsyncRace,
+                    _ => l::InstructionKind::AsyncAll,
+                };
                 let fresh = matches!(&input, l::Operand::Value(value)
                     if self.values.get(value.0 as usize).is_some_and(|value| value.fresh_owner)
                         && !self.moved_async_owners.contains(value));
                 let result = self.emit(
-                    l::InstructionKind::AsyncAll,
+                    kind,
                     vec![input.clone()],
                     Some(l::ValueType::Data(expr.ty.clone())),
                     false,

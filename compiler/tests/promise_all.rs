@@ -28,6 +28,55 @@ fn counted_array_results_reject_with_a_non_counted_array_control() {
     }
 }
 
+/// The result types that `counted_type()` counts and that
+/// `carries_async_handle()` does not cover: a nested array of handles
+/// and a generator. Each enters the aggregate as a byte copy with no
+/// count, so each is rejected (§166 rule 12, §350 rule 2).
+const WIDER_COUNTED_RESULTS: [(&str, &str, &str); 2] = [
+    (
+        "Promise<i32>[][]",
+        "const h: Promise<i32> = value(7); const xs: Promise<i32>[][] = [[h]]; await h; return xs;",
+        "const xs: Promise<i32>[][][] = await Promise.all(jobs); print(`${await xs[0][0][0]}`);",
+    ),
+    (
+        "Generator<i32>",
+        "await value(0); return numbers();",
+        "const xs: Generator<i32>[] = await Promise.all(jobs); for (const x of xs[0]) { print(`${x}`); }",
+    ),
+];
+
+/// Each wider counted result type is rejected for `Promise.all`, with the
+/// text of the handle-array case. Control: an `i32[]` result checks.
+#[test]
+fn wider_counted_results_reject_with_a_plain_array_control() {
+    for (ty, body, read) in WIDER_COUNTED_RESULTS {
+        let source = format!(
+            "async function value(n: i32): Promise<i32> {{ return n; }}
+             function* numbers(): Generator<i32> {{ yield 1; }}
+             async function result(): Promise<{ty}> {{ {body} }}
+             export async function main(): Promise<void> {{
+                const jobs: Promise<{ty}>[] = [result()];
+                {read}
+             }}"
+        );
+        let errors = check_program(&[SourceFile::new("counted-result.ts", source)]).expect_err(ty);
+        assert!(
+            errors.iter().any(|error| error.code == RuleCode::S013
+                && error.divergence == Some(Divergence::PromiseAllCountedResult)
+                && error.message == "Promise.all cannot store a counted result"),
+            "{ty}: {errors:?}"
+        );
+    }
+    let control = "async function value(n: i32): Promise<i32> { return n; }
+         async function result(): Promise<i32[]> { const xs: i32[] = [await value(7)]; return xs; }
+         export async function main(): Promise<void> {
+            const jobs: Promise<i32[]>[] = [result()];
+            const all: i32[][] = await Promise.all(jobs);
+            print(`${all[0][0]}`);
+         }";
+    check_program(&[SourceFile::new("plain-result.ts", control)]).expect("an i32[] result checks");
+}
+
 #[test]
 fn stored_void_aggregate_accepts_only_discarded_await_results() {
     for used in [false, true] {

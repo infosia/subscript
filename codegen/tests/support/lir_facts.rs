@@ -1208,6 +1208,7 @@ fn instruction_arity(
             _ => usize::MAX,
         }),
         K::AsyncAll
+        | K::AsyncRace
         | K::AsyncHandleRetain
         | K::AsyncHandleRelease
         | K::AsyncHandleArrayRetain

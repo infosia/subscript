@@ -399,6 +399,11 @@ impl Expr {
                 ..
             } => vec![allocation(&self.pos), call(&self.pos)],
             K::TaskGroup { .. } => vec![call(&self.pos)],
+            // §350 rule 7: an empty race traps at the call.
+            K::AsyncAll {
+                mode: AsyncAggregate::Race,
+                ..
+            } => vec![allocation(&self.pos), lifetime(&self.pos), call(&self.pos)],
             K::AsyncAll { .. } => vec![allocation(&self.pos), lifetime(&self.pos)],
             K::AsyncCall { callee, .. } | K::AsyncHandleCreate { callee, .. } => {
                 let mut sites = Vec::new();

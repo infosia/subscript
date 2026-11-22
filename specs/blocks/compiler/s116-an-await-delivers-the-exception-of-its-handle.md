@@ -48,7 +48,9 @@ the completion, not the ownership.
 3. **Each `await` of the handle raises the same object.** No copy is
    made.
 4. **A handle that holds an unobserved exception traps when its count
-   reaches zero.** "Unobserved" means that no `await` raised it. The
+   reaches zero.** "Unobserved" means that no `await` raised it.
+   *(Amended 2026-11-22 by §350 rule 5: an input of a `Promise.race`
+   is observed from the call of the race.)* The
    trap is `TrapKind::UncaughtException` (29), with the report text and
    the position of the last `throw`. This is the counterpart of item 4
    of the measurements. A handle that a leak keeps alive never reaches

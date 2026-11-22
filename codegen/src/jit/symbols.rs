@@ -40,6 +40,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_async_register_uncounted,
         subscript_rt_async_all,
         subscript_rt_async_all_no_handle,
+        subscript_rt_async_race,
         subscript_rt_async_host_operation,
         subscript_rt_file_operation,
         subscript_rt_task_group,

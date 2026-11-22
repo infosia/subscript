@@ -1148,3 +1148,38 @@ export async function main(): Promise<void> {\n\
     );
     assert_eq!(c.matches("subscript_rt_async_all(ctx").count(), 1, "{c}");
 }
+
+/// compiler.md §350 in the emitted C: `Promise.race` passes the completion
+/// size of its element type and the position of the call.
+pub(super) fn promise_race_entry_passes_the_completion_size() {
+    use subscript_codegen::emit_c;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "async function flag(x: boolean): Promise<boolean> { return x; }\n\
+async function nothing(): Promise<void> { return; }\n\
+export async function main(): Promise<void> {\n\
+  const b: boolean = await Promise.race([flag(true), flag(false)]);\n\
+  await Promise.race([nothing()]);\n\
+  print(`${b}`);\n}\n";
+    let files = [SourceFile::new("race-size.ts", SOURCE)];
+    let hir = check_program(&files).expect("probe checks cleanly");
+    let c = emit_c(&hir).expect("probe emits C").source;
+    let calls: Vec<Vec<&str>> = c
+        .match_indices("subscript_rt_async_race(ctx")
+        .map(|(start, _)| {
+            let call = &c[start + "subscript_rt_async_race(".len()..];
+            call[..call.find(");").expect("call closes")]
+                .split(", ")
+                .collect()
+        })
+        .collect();
+    assert_eq!(calls.len(), 2, "{c}");
+    assert_eq!(calls[0][2], "sizeof(bool)", "{c}");
+    assert_eq!(calls[1][2], "0u", "{c}");
+    assert!(
+        calls
+            .iter()
+            .all(|call| call.len() == 4 && call[3].ends_with('u')),
+        "{c}"
+    );
+}

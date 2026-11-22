@@ -1393,6 +1393,11 @@ rejection_classes! {
     Self::PromiseAllCountedResult => (RuleCode::S013, Diverges(Divergence::PromiseAllCountedResult)),
     Self::PromiseAllArguments => (RuleCode::S013, TscRejects),
     Self::PromiseAllSpread => (RuleCode::S013, Diverges(Divergence::ForOfSpreadCall)),
+    Self::PromiseRaceTypeArguments => (RuleCode::S013, Diverges(Divergence::PromiseAllTypeArguments)),
+    Self::PromiseRaceInput => (RuleCode::S013, Diverges(Divergence::PromiseAllInput)),
+    Self::PromiseRaceCountedResult => (RuleCode::S013, Diverges(Divergence::PromiseAllCountedResult)),
+    Self::PromiseRaceArguments => (RuleCode::S013, TscRejects),
+    Self::PromiseRaceSpread => (RuleCode::S013, Diverges(Divergence::ForOfSpreadCall)),
     Self::PromiseStaticCall => (RuleCode::S013, Diverges(Divergence::PromiseObject)),
     Self::WorkerStaticObjectMethod => (
         RuleCode::S018,

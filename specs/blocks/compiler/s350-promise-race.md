@@ -31,9 +31,12 @@ The prelude does not change.
    spread, one element type `Promise<T>`. The result type is
    `Promise<T>`. The result is a handle as any other: `await`, a held
    form, S013 for a handle that the program drops.
-2. **A result type that holds a handle is rejected**, as for
+2. **A result type that holds a count is rejected**, as for
    `Promise.all` (§166 rule 12), with a diagnostic that names
-   `Promise.race`.
+   `Promise.race`. The test is the counted type of the result: a
+   handle, a generator, an array or a `FixedArray` of them at any
+   depth. The same test now holds for `Promise.all`, which tested a
+   handle and an array of handles only.
 3. **The first completion wins (decision A).** The race completes
    with the completion of the first input whose completion it reads:
    the value, or the exception. An `await` of the race gives that
@@ -45,9 +48,9 @@ The prelude does not change.
    completion at the return of the call: an `await` of it resumes one
    turn after the completion of the winner, as node does and as
    `Promise.all` does.
-5. **An input that lost is observed.** An exception of an input of a
-   race does not trap at the release of that input, if the input lost
-   and if it fails after the race completed. The program can await an
+5. **An input of a race is observed from the call.** An exception of
+   an input does not trap at the release of that input: not if the
+   input lost, and not if it fails after the race completed. The program can await an
    input again, and that await gives its value or raises its exception
    (§70.3 rule 4).
 6. **After the race has its completion, it holds no input.** The race
@@ -102,8 +105,10 @@ The prelude does not change.
    traps with the new kind at the call, equal in the three tiers. The
    header cites the collision: node does not settle.
 4. **Corpus reject entries**: a result type that holds a handle
-   (rule 2); a spread or a second argument (rule 1); each with the
-   header that states what `tsc` does.
+   (rule 2), in a form that `tsc` accepts (`Promise<Promise<i32>[]>[]`;
+   `tsc` rejects the annotation of a race over `Promise<Promise<i32>>[]`);
+   a spread argument (rule 1); each with the header that states what
+   `tsc` does.
 5. **Rule 6.** A test in the three tiers: a loop of 1,000 and of
    1,400 turns, each turn makes a race of one task that completes and
    one handle that does not complete in the loop; the live bytes after
@@ -138,3 +143,92 @@ The prelude does not change.
 - An array literal with handles of different result types (a union
   for `tsc`; the array rule of this language rejects it, as for
   `Promise.all`).
+
+### 350.5 Phase Review
+
+Form.
+
+- A race is the aggregate of `Promise.all` with a mode
+  (`runtime/src/context/async_scheduler.rs`). The entry is
+  `subscript_rt_async_race(ctx, jobs, result_size, pos_id)`. The frame
+  holds the completion size of `T`, and the win is a copy of the bytes
+  of the winner.
+- `remaining` of a race counts its reaction jobs that are queued or
+  registered. At the win the race takes its job from each input that
+  has no completion and releases each input. A job that was in the
+  ready queue at the win runs and reads nothing; the frame stays
+  registered until those jobs ran.
+- Rule 5: at the call, an input with an exception is marked as
+  observed, and an input with no completion goes to a list in the
+  collection state. Each place that stores a failure calls
+  `note_task_failure` (§342 rule 14b), which applies the list before a
+  release or a detection reads the completion. One handle is in the
+  list one time.
+- The trap of rule 7 is `TrapKind::PromiseRaceEmpty`, 38,
+  `promise-race-empty`.
+- The checker has five rejection sites of the race, so that each
+  rejection shows a race example. The LIR instruction is `AsyncRace`,
+  with a `Call` trap site that `AsyncAll` does not have.
+- The interpreter has the race in `codegen/src/interpreter/async_race.rs`
+  and the fact of rule 5 as a flag of its coroutine.
+- The index form of rule 9 with a loop needs one more statement: a
+  handle that the loop stores into an array element needs an `await`
+  on the path after the loop (S013). `a509` and the tutorial await
+  each handle that remains.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| `a507` | equal in the three tiers and under node v24.22.1, byte for byte |
+| Resume turn: direct `await`, `await Promise.race([task])`, `await Promise.all([task])` | 3, 4, 4 in the three tiers and under node |
+| Rule 6, live bytes after 1,000 and 1,400 turns | race: dev JIT 159 and 159, ship tier 160 and 160, interpreter 57 and 57; `Promise.all`: 64,156 and 89,756, 80,160 and 112,160, 48,055 and 67,255 |
+| Rule 6 at the runtime API, 100 and 1,000 turns | registered frames, unfinished tasks, and waiters of the input that does not complete: 1, 1, 0 at both counts; `Promise.all`: 101, 1, 100 and 1,001, 1, 1,000 |
+| Rule 6 in the interpreter | registered tasks and waiters equal at 1,000 and 1,400 turns; 400 more of each with the detach switched off |
+| Rule 5 | an input that lost and then throws: the run ends with no trap in the three tiers; the same task with no race traps with an uncaught exception at 5:3 in the three tiers |
+| Rule 7 | kind 38 at the call (13:24 in `t120`) in the three tiers; at the pin the checker rejects the program with S016 |
+| `a509`, 20 runs in each tier | 40 of 40 equal to the golden; no run over its time limit |
+| Mutations at the runtime | no observation of the inputs: 4 tests fail; no detach: 14 tests fail |
+| Stress sweep, 614 entries | dev JIT 611 of 611, ship tier 609 of 609, interpreter 499 of 499; 487 exit counts compared; 6 not compared by §349 rule 16 |
+| Cost of the tests | `codegen/tests/promise_race.rs`: 0.9 s in a release build, 1.7 s in a debug build, 8 ship builds; the runtime tests 0.07 s |
+| `perf-gate --gate`, two passes | each criterion met, on the tree before the corrections of the review: `a22` ship tier 1.33x and 1.32x, `collect` ship tier 1.14x and 1.14x, `a22` dev JIT 19.88x and 19.77x, `collect` dev JIT 3.69x and 3.67x |
+
+Phase Review (a subagent with no context): no CRITICAL, 1 MAJOR, 4
+MINOR. The review followed each count of an input, each path that
+reads the observed fact, and the job sequence of rule 4, and it
+evaluated each line of the golden of `a507` by the microtask rules of
+node.
+
+| Finding | Close |
+|---|---|
+| MAJOR: in the interpreter, a held race that lost its last holder before its completion gave an internal error at a queued job of an input that lost | the interpreter keeps the settled state after the release; a test in the three tiers |
+| Rule 2 tested a handle and an array of handles, and a counted type of another form passed (`Promise<Promise<i32>[][]>`); the same for `Promise.all` | the test is the counted type, for both forms; rule 2 states it |
+| The tutorial and the language reference did not state rule 5 as the contract does, the mixed literal, or the empty race under node; §349.6 item 7 stated the former state as a present fact | each is corrected |
+| New `unsafe` calls of the runtime had no `// SAFETY:` comment | each has one |
+| The test of acceptance 5 in the three tiers compares the live bytes and not the count of unfinished tasks | open item 1 |
+
+`tools/gate.sh full` on the tree before this record:
+
+```text
+gate full 80b3f15f9940ea0c093131e496113b7daa953c1e dirty:69 debug 4044/0/5 release 4025/0/5 skips 2/0 clippy 4/10/13 goldens-moved 1 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
+### 350.6 Open
+
+1. The test of acceptance 5 in the three tiers compares the live
+   bytes. The count of unfinished tasks is compared at the runtime
+   API and in the interpreter test only.
+2. An array literal with handles of different result types is
+   rejected by the array rule (S100); `tsc` gives a union (§350.4).
+3. A scalar argument (`Promise.race(x)` with `x: i32`) is rejected at
+   a site whose class states that `tsc` accepts the form, and `tsc`
+   rejects it (TS2769). `Promise.all` has the same class at its site.
+4. A `Worker.receive` that lost a race takes the next message of its
+   Worker (rule 8). A program that drops that handle does not read
+   that message.
+5. `Promise.any`, `Promise.allSettled`, `Promise.resolve`, and
+   `Promise.reject` stay rejected; `await Promise.resolve(1)` gives
+   S016 "unknown name `Promise`" (§166.3 item 1).
+

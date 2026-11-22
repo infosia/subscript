@@ -1812,8 +1812,10 @@ pub enum ExprKind {
         /// Creation or join obligation.
         origin: Option<u32>,
     },
-    /// Creates an aggregate handle from an input-array snapshot (§166).
+    /// Creates an aggregate handle from an input-array snapshot (§166, §350).
     AsyncAll {
+        /// `Promise.all` or `Promise.race`.
+        mode: AsyncAggregate,
         /// The input array, evaluated once at the call.
         jobs: Box<Expr>,
         /// Function-local must-await obligation identity.
@@ -1918,4 +1920,14 @@ pub enum TaskGroupOperation {
     Join,
     /// End the declaring scope.
     Release,
+}
+
+/// The aggregate that one input-array snapshot creates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AsyncAggregate {
+    /// `Promise.all`: each value, in input sequence (§166).
+    All,
+    /// `Promise.race`: the first completion (§350 rule 3).
+    Race,
 }

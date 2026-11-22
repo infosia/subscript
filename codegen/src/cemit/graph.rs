@@ -549,6 +549,41 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.assign(out, result, &call)?;
                 self.consume_runtime_traps(out, &instruction.traps, true, true)
             }
+            l::InstructionKind::AsyncRace => {
+                // compiler.md §350: the completion size of `T`, as
+                // `Promise.all` passes it for the same `T`.
+                let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
+                    return Err(internal("race input type is missing"));
+                };
+                let Type::AsyncHandle(element) = &**input else {
+                    return Err(internal("race element type is missing"));
+                };
+                let result_size = if **element == Type::Void {
+                    "0u".to_string()
+                } else {
+                    format!("sizeof({})", self.emitter.completion_ctype(element)?)
+                };
+                let position = self.emitter.pos_id(&instruction.pos);
+                let call = self.emitter.runtime_call(
+                    "void*",
+                    "subscript_rt_async_race",
+                    &[
+                        "void*".into(),
+                        "const void*".into(),
+                        "uint64_t".into(),
+                        "uint32_t".into(),
+                    ],
+                    &[
+                        "ctx".into(),
+                        operands[0].clone(),
+                        result_size,
+                        format!("{position}u"),
+                    ],
+                );
+                self.assign(out, result, &call)?;
+                // Rule 7: an empty array traps at the call.
+                self.consume_runtime_traps(out, &instruction.traps, true, true)
+            }
             l::InstructionKind::HostCompletion {
                 target,
                 result_size,

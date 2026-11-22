@@ -1008,6 +1008,10 @@ const _: () = assert!(Context::collection_pending_offset() == 28);
 mod async_all_tests;
 
 #[cfg(test)]
+#[path = "context/async_race_tests.rs"]
+mod async_race_tests;
+
+#[cfg(test)]
 #[path = "context/array_fact_tests.rs"]
 mod array_fact_tests;
 

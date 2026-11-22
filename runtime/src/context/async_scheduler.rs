@@ -31,6 +31,9 @@ pub(crate) struct AsyncFrameMeta {
     // holder, so an exception that leaves it settles into a trap.
     pub(crate) host_root: bool,
     pub(super) kind: AsyncKind,
+    // compiler.md §350 rule 5: a race took this frame as an input. A
+    // failure that the frame stores later is observed.
+    pub(super) observed_by_aggregate: bool,
 }
 
 /// Aligned result storage for one scheduler resume (`compiler.md` §94.2).
@@ -127,12 +130,25 @@ impl AsyncKind {
     }
 }
 pub(super) struct Aggregate {
+    mode: AggregateMode,
     inputs: Vec<Option<*mut u8>>,
     result: *mut u8,
+    // The reaction jobs of this aggregate that are queued or registered.
     remaining: usize,
     result_size: usize,
     elem_size: usize,
     reported: bool,
+}
+
+/// The combinator of an aggregate. Both have task kind 2 (`compiler.md`
+/// §350 rule 10).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AggregateMode {
+    /// `Promise.all` (§166): each input, then a result array.
+    All,
+    /// `Promise.race` (§350): the first completion that a job reads. A race
+    /// has no result array, and `elem_size` is zero.
+    Race,
 }
 
 impl Aggregate {
@@ -176,6 +192,7 @@ impl Context {
                 waiters: Vec::new(),
                 host_root: false,
                 kind: AsyncKind::Invocation,
+                observed_by_aggregate: false,
             },
         );
     }
@@ -699,7 +716,19 @@ impl Context {
                     continue;
                 }
                 AsyncJob::Aggregate { handle, index } => {
-                    unsafe { self.async_all_react(handle, index) };
+                    let race = self
+                        .async_frames
+                        .get(&(handle as usize))
+                        .and_then(|meta| meta.kind.aggregate())
+                        .is_some_and(|state| state.mode == AggregateMode::Race);
+                    if race {
+                        // SAFETY: `handle` is a registered race frame: the
+                        // lookup above found it, and a race frame stays
+                        // registered while one of its jobs is queued.
+                        unsafe { self.async_race_react(handle, index) };
+                    } else {
+                        unsafe { self.async_all_react(handle, index) };
+                    }
                     if self.trapped() {
                         if let Some(trap) = self.trap_record() {
                             self.async_trapping = Some((job, trap.kind));
@@ -835,6 +864,7 @@ impl Context {
         }
         if let Some(meta) = self.async_frames.get_mut(&(handle as usize)) {
             meta.kind = AsyncKind::Runtime(Box::new(RuntimeTask::Aggregate(Aggregate {
+                mode: AggregateMode::All,
                 inputs: inputs.clone(),
                 result,
                 remaining,
@@ -1008,6 +1038,8 @@ impl Context {
             .flat_map(|(index, meta)| match meta.kind.aggregate() {
                 None => Vec::new(),
                 Some(state) => std::iter::once((index, 0, state.result as usize))
+                    // A race has no result array (§350 rule 10).
+                    .filter(|root| root.2 != 0)
                     .chain(
                         state
                             .inputs
@@ -1019,6 +1051,260 @@ impl Context {
                     .collect(),
             })
             .collect()
+    }
+}
+
+impl Context {
+    /// `Promise.race` (`compiler.md` §350). Returns a handle with one count,
+    /// which the caller owns. The call takes a snapshot of `jobs` and holds
+    /// one count of each element; the caller keeps its own counts and its
+    /// array. The race completes with `result_size` bytes, which is zero
+    /// for `void`.
+    ///
+    /// Rule 4: the race registers a reaction job on each input in array
+    /// order. An input with a completion at the call queues its job at the
+    /// call, so the race has no completion at the return of the call. Rule
+    /// 7: an empty array traps with [`TrapKind::PromiseRaceEmpty`] at
+    /// `pos_id` and returns null.
+    ///
+    /// # Safety
+    /// `jobs` is a live array of registered handles in this Context, and
+    /// each input records `result_size` bytes.
+    pub unsafe fn async_race_of(
+        &mut self,
+        jobs: *const u8,
+        result_size: usize,
+        pos_id: u32,
+    ) -> *mut u8 {
+        if !self.require_live_handle(jobs as usize, pos_id) {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: the caller contract of this function.
+        let array = unsafe { &*(jobs as *const ArrayHeader) };
+        let inputs: Vec<Option<*mut u8>> = (0..array.len as usize)
+            // SAFETY: the array holds `len` handle words.
+            .map(|index| Some(unsafe { array.data.cast::<*mut u8>().add(index).read() }))
+            .collect();
+        if inputs.is_empty() {
+            self.trap(
+                TrapKind::PromiseRaceEmpty,
+                crate::trap::PROMISE_RACE_EMPTY_MESSAGE,
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        }
+        let handle = self.alloc(16, CLASS_GENERATOR, pos_id);
+        if handle.is_null() {
+            return handle;
+        }
+        // SAFETY: `handle` is a fresh live allocation of sixteen bytes.
+        unsafe { self.async_register(handle, result_size) };
+        // Rule 12: one count for each element, duplicates included.
+        for input in inputs.iter().flatten() {
+            // SAFETY: the caller contract of this function.
+            unsafe { self.async_retain(*input) };
+        }
+        let remaining = inputs.len();
+        if let Some(meta) = self.async_frames.get_mut(&(handle as usize)) {
+            meta.kind = AsyncKind::Runtime(Box::new(RuntimeTask::Aggregate(Aggregate {
+                mode: AggregateMode::Race,
+                inputs: inputs.clone(),
+                result: std::ptr::null_mut(),
+                remaining,
+                result_size,
+                elem_size: 0,
+                reported: false,
+            })));
+        }
+        for (index, input) in inputs.iter().flatten().enumerate() {
+            // Rule 5: the race observes each input from the call.
+            self.observe_aggregate_input(*input as usize);
+            let job = AsyncJob::Aggregate { handle, index };
+            match self.async_frames.get_mut(&(*input as usize)) {
+                Some(meta) if meta.completion.is_none() => meta.waiters.push(job),
+                _ => self.async_ready.push_back(job),
+            }
+        }
+        handle
+    }
+
+    /// One reaction job of a race (`compiler.md` §350 rules 3 and 6). The
+    /// first job that runs completes the race with the completion of its
+    /// input and detaches the race from each other input. A later job of
+    /// the race finds its input detached and only ends.
+    unsafe fn async_race_react(&mut self, handle: *mut u8, index: usize) {
+        let Some(meta) = self.async_frames.get_mut(&(handle as usize)) else {
+            self.async_missing_completion(0);
+            return;
+        };
+        let settled = meta.completion.is_some();
+        let Some(state) = meta.kind.aggregate_mut() else {
+            self.async_missing_completion(0);
+            return;
+        };
+        let Some(remaining) = state.remaining.checked_sub(1) else {
+            self.async_missing_completion(0);
+            return;
+        };
+        state.remaining = remaining;
+        let result_size = state.result_size;
+        match (state.inputs.get_mut(index).and_then(Option::take), settled) {
+            // Rule 6: the input lost. The detach released it and marked it.
+            (None, true) => {}
+            (Some(input), false) => {
+                // SAFETY: `handle` is the registered race frame of this job.
+                // The race holds one count of `input` from its call, so
+                // `input` is a registered frame.
+                if !unsafe { self.async_race_win(handle, input, result_size) } {
+                    return;
+                }
+                // SAFETY: `handle` stays registered: the win does not remove
+                // it. The race holds one count of each input it still holds.
+                unsafe { self.async_race_detach(handle) };
+            }
+            _ => {
+                self.async_missing_completion(0);
+                return;
+            }
+        }
+        // SAFETY: `handle` is a live frame: it is registered at the start of
+        // this job, and only the removal below at `remaining == 0` deletes it.
+        if unsafe { self.async_count(handle) } != 0 {
+            return;
+        }
+        // No holder remains: an exception that no `await` raised traps here,
+        // as for `Promise.all` (§116.1 rule 4).
+        let exception = self
+            .async_frames
+            .get_mut(&(handle as usize))
+            .and_then(|meta| {
+                let state = meta.kind.aggregate_mut()?;
+                if state.reported {
+                    return None;
+                }
+                let exception = meta.completion.clone()?.unobserved()?;
+                state.reported = true;
+                Some(exception)
+            });
+        if let Some(exception) = exception {
+            self.trap(
+                TrapKind::UncaughtException,
+                exception.message,
+                exception.pos_id,
+            );
+        }
+        let done = self
+            .async_frames
+            .get(&(handle as usize))
+            .and_then(|meta| meta.kind.aggregate())
+            .is_some_and(|state| state.remaining == 0);
+        if done && !self.trapped() {
+            self.async_frames.remove(&(handle as usize));
+            self.delete(handle as usize, 0);
+        }
+    }
+
+    /// Completes the race `handle` with the completion of `input` and
+    /// releases the count of the race on `input` (`compiler.md` §350 rule
+    /// 3). Returns false after an internal trap.
+    unsafe fn async_race_win(
+        &mut self,
+        handle: *mut u8,
+        input: *mut u8,
+        result_size: usize,
+    ) -> bool {
+        let Some(meta) = self.async_frames.get_mut(&(input as usize)) else {
+            self.async_missing_completion(0);
+            return false;
+        };
+        let input_size = meta.result_size;
+        let completion = meta.completion.as_mut().map(|completion| {
+            if let crate::exception::Completion::Exception(payload) = completion {
+                payload.observed = true;
+            }
+            completion.clone()
+        });
+        match completion {
+            Some(crate::exception::Completion::Value(bytes)) => {
+                if bytes.len() != result_size || input_size != result_size {
+                    self.async_missing_completion(0);
+                    return false;
+                }
+                if result_size != 0 {
+                    // Rule 10: the race completion holds the value of a host
+                    // completion, so the release of the input keeps it.
+                    if let AsyncKind::Runtime(task) = &mut meta.kind {
+                        if let RuntimeTask::HostOperation(source) = task.as_mut() {
+                            source.value_observed = true;
+                        }
+                    }
+                }
+                // SAFETY: `bytes` holds `result_size` readable bytes.
+                unsafe { self.async_complete(handle, bytes.as_ptr(), result_size) };
+            }
+            Some(crate::exception::Completion::Exception(payload)) => {
+                // SAFETY: the object is a live Context handle and exception roots retain it (section 263).
+                unsafe {
+                    self.raise_exception(
+                        payload.exception.object as *mut u8,
+                        payload.exception.message,
+                        payload.exception.pos_id,
+                    )
+                };
+                self.async_complete_exception(handle);
+            }
+            None => {
+                self.async_missing_completion(0);
+                return false;
+            }
+        }
+        // SAFETY: the race holds one count of `input` from its call.
+        unsafe { self.async_release(input, 0) };
+        true
+    }
+
+    /// `compiler.md` §350 rule 6: after the race has its completion, it
+    /// holds no input. For each input that the race still holds, the
+    /// detach removes the waiter of the race if the input has no
+    /// completion, and releases the count of the race. The job of an input
+    /// that has a completion is in the ready queue; it stays in `remaining`
+    /// and ends with no read when it runs. Rule 5 holds for each input from
+    /// the call, so no failure of an input that lost traps at its release.
+    unsafe fn async_race_detach(&mut self, handle: *mut u8) {
+        let held: Vec<(usize, *mut u8)> = match self
+            .async_frames
+            .get_mut(&(handle as usize))
+            .and_then(|meta| meta.kind.aggregate_mut())
+        {
+            Some(state) => state
+                .inputs
+                .iter_mut()
+                .enumerate()
+                .filter_map(|(index, input)| input.take().map(|input| (index, input)))
+                .collect(),
+            None => return,
+        };
+        let mut detached = 0;
+        for (index, input) in held {
+            let job = AsyncJob::Aggregate { handle, index };
+            if let Some(meta) = self.async_frames.get_mut(&(input as usize)) {
+                if meta.completion.is_none() {
+                    if let Some(position) = meta.waiters.iter().position(|waiter| *waiter == job) {
+                        meta.waiters.remove(position);
+                        detached += 1;
+                    }
+                }
+            }
+            // SAFETY: the race holds one count of `input` from its call.
+            unsafe { self.async_release(input, 0) };
+        }
+        if let Some(state) = self
+            .async_frames
+            .get_mut(&(handle as usize))
+            .and_then(|meta| meta.kind.aggregate_mut())
+        {
+            state.remaining = state.remaining.saturating_sub(detached);
+        }
     }
 }
 

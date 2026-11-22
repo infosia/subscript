@@ -757,6 +757,41 @@ pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
             };
             Some(&ENTRY)
         }
+        RejectionSite::PromiseRaceTypeArguments => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function value(): Promise<i32> { return 1; }\nasync function f(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race<i32>(jobs); }",
+                subscript: "async function value(): Promise<i32> { return 1; }\nasync function f(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race(jobs); }",
+                why: "Promise.race derives its result type from its input array; explicit type arguments are outside the admitted form.",
+                collision: "compiler.md §350",
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::PromiseRaceInput => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function f(): Promise<void> { const xs: i32[] = [1]; await Promise.race(xs); }",
+                subscript: "async function value(): Promise<i32> { return 1; }\nasync function f(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race(jobs); }",
+                why: "Promise.race takes a homogeneous array of async handles. Other iterables, thenables, and ordinary values have no aggregate registration.",
+                collision: "compiler.md §350",
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::PromiseRaceCountedResult => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function value(): Promise<i32> { return 7; }\nasync function result(): Promise<Promise<i32>[]> { const h: Promise<i32> = value(); const hs: Promise<i32>[] = [h]; await h; return hs; }\nasync function f(): Promise<void> { const jobs: Promise<Promise<i32>[]>[] = [result()]; await Promise.race(jobs); }",
+                subscript: "async function value(): Promise<i32> { return 7; }\nasync function result(): Promise<Promise<i32>[]> { const h: Promise<i32> = value(); const hs: Promise<i32>[] = [h]; await h; return hs; }\nasync function f(): Promise<void> { const xs: Promise<i32>[] = await result(); await Promise.race(xs); }",
+                ..Divergence::PromiseAllCountedResult.entry()
+            };
+            Some(&ENTRY)
+        }
+        RejectionSite::PromiseRaceSpread => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function value(): Promise<i32> { return 1; }\nasync function f(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race(...[jobs]); }",
+                subscript: "async function value(): Promise<i32> { return 1; }\nasync function f(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race(jobs); }",
+                collision: "compiler.md §350",
+                ..Divergence::ForOfSpreadCall.entry()
+            };
+            Some(&ENTRY)
+        }
         _ => None,
     }
 }

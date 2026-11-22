@@ -785,6 +785,9 @@ pub enum InstructionKind {
     AsyncHandleCreate(CallTarget),
     /// Creates an aggregate over one handle array. Its result is `Promise<T[]>` (§166).
     AsyncAll,
+    /// Creates a race over one handle array. Its result is `Promise<T>`, and an
+    /// empty array traps at the call (§350 rules 1 and 7).
+    AsyncRace,
     /// Create a host source and call its C function with the endpoint.
     HostCompletion {
         /// Checked completion target.
@@ -883,6 +886,7 @@ impl InstructionKind {
                 | Self::TaskGroup(crate::hir::TaskGroupOperation::Join)
                 | Self::HostCompletion { .. }
                 | Self::AsyncAll
+                | Self::AsyncRace
                 | Self::AsyncHandleCreate(_)
                 | Self::AsyncHandleRetain
                 | Self::AsyncHandleArrayRetain

@@ -129,6 +129,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r543-dropped-default-handle.ts", RuleCode::S013, 8),
     ("r559-floating-worker-receive.ts", RuleCode::S013, 20),
     ("r560-worker-field-receive.ts", RuleCode::S100, 18),
+    ("r561-promise-race-handle-result.ts", RuleCode::S013, 17),
+    ("r562-promise-race-spread-argument.ts", RuleCode::S013, 11),
     ("r534-conditional-handle-binding.ts", RuleCode::S013, 8),
     ("r507-c-callback-through-method.ts", RuleCode::S100, 8),
     ("r508-nested-lambda-calls-outer-name.ts", RuleCode::S100, 8),

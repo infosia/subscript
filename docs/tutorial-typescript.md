@@ -863,8 +863,9 @@ after 3 steps: 30
 These forms are awaitable: `Context.suspend()`, a direct call of an
 `async` function or `async` instance method, and a handle that an
 earlier call produced. A call through a function value that returns a handle is also awaitable (§167).
-`Promise.all` over an array of handles, `TaskGroup.join()`, and a call
-of a host completion function are awaitable too (§166, §170, §178).
+`Promise.all` and `Promise.race` over an array of handles,
+`TaskGroup.join()`, and a call of a host completion function are
+awaitable too (§166, §350, §170, §178).
 A named async function is a value. An async arrow can capture a `const`
 local of an enclosing function; the arrow can then be stored, returned,
 and called later (§181). A captured `let`, `var`, parameter, or `this`
@@ -902,7 +903,58 @@ A local, an array, a field, or a global can hold
 a handle (§70.3 rule 2a). A handle can pass to another function.
 Every handle a program creates must have
 one awaited completion. `new Promise` and the statics other than
-`Promise.all` do not exist.
+`Promise.all` and `Promise.race` do not exist.
+
+`Promise.race` completes with the first completion that it reads: a
+value, or an exception that the `await` raises (§350). If some inputs
+have a completion at the call, the first of them in the array wins. An
+input that lost is not cancelled. It runs to its end, and the program
+can await it later. The race observes each input from the call. So an
+exception of an input does not trap at the release of that input. This
+is true if the input lost, if it failed before the call, and if the
+program never awaits it. An `await` of that input still raises its
+exception. A literal with handles of different result types is
+rejected, as for `Promise.all`. A race over an empty array traps with
+`promise-race-empty`. JavaScript does not settle that race.
+
+```ts
+async function after(n: i32, steps: i32): Promise<i32> {
+  for (let i: i32 = 0; i < steps; i += 1) {
+    await Context.suspend();
+  }
+  return n;
+}
+
+async function fails(steps: i32): Promise<i32> {
+  for (let i: i32 = 0; i < steps; i += 1) {
+    await Context.suspend();
+  }
+  throw new Error("late");
+}
+
+export async function main(): Promise<void> {
+  const slow: Promise<i32> = after(2, 3);
+  const late: Promise<i32> = fails(4);
+  print(`first ${await Promise.race([slow, after(1, 1), late])}`);
+  print(`slow ${await slow}`); // the input that lost ran on
+  for (let i: i32 = 0; i < 4; i += 1) {
+    await Context.suspend(); // `late` fails here, and nothing traps
+  }
+  print("end");
+}
+```
+
+```text
+first 1
+slow 2
+end
+```
+
+The race gives the value, not the index of the input that won. To get
+the index, await each input in an async function that returns the
+index with the value, and race those calls. The
+[Workers](#workers-are-threads-with-copied-messages) section shows this
+form.
 
 `then`, `catch`, and `finally` on a handle create a new handle (§186).
 A callback lambda can capture a `const`. A callback parameter has the
@@ -1318,6 +1370,78 @@ export async function main(): Promise<void> {
 ```text
 reply=42
 ended
+```
+
+A race over the receives of some Workers takes the first message of
+any of them. `tagged` returns the index of its Worker with the message.
+The loop gives a new `tagged` call to the Worker that won. The handle
+that lost stays in the race and takes the next message of its Worker.
+When one Worker ends, the race continues over the other one. The sums
+do not depend on which Worker posts first:
+
+```ts
+class Num {
+  value: i32;
+  constructor(value: i32) {
+    this.value = value;
+  }
+}
+
+class Tagged {
+  index: i32;
+  num: Num | null;
+  constructor(index: i32, num: Num | null) {
+    this.index = index;
+    this.num = num;
+  }
+}
+
+function count(inbox: Inbox<Num>, outbox: Outbox<Num>): void {
+  const n: Num | null = inbox.wait();
+  if (n != null) {
+    for (let k: i32 = 1; k <= n.value; k += 1) {
+      outbox.post(new Num(k));
+    }
+  }
+}
+
+async function tagged(index: i32, w: Worker<Num, Num>): Promise<Tagged> {
+  return new Tagged(index, await w.receive());
+}
+
+export async function main(): Promise<void> {
+  const a: Worker<Num, Num> = Worker.spawn(count);
+  const b: Worker<Num, Num> = Worker.spawn(count);
+  a.post(new Num(3));
+  b.post(new Num(4));
+  a.close();
+  b.close();
+  const sums: i32[] = [0, 0];
+  let handles: Promise<Tagged>[] = [tagged(0, a), tagged(1, b)];
+  let live: i32 = 2;
+  while (live > 0) {
+    const t: Tagged = await Promise.race(handles);
+    const n: Num | null = t.num;
+    if (n != null) {
+      sums[t.index] += n.value;
+      const slot: i32 = live == 2 ? t.index : 0;
+      handles[slot] = tagged(t.index, t.index == 0 ? a : b);
+    } else {
+      live -= 1;
+      if (live == 1) {
+        handles = [handles[1 - t.index]];
+      }
+    }
+  }
+  for (const h of handles) {
+    await h;
+  }
+  print(`a=${sums[0]} b=${sums[1]}`);
+}
+```
+
+```text
+a=6 b=10
 ```
 
 A host that owns its loop steps the Context while the pending count is

@@ -39,6 +39,9 @@ pub const DEFAULT_COLLECTION_MODE: CollectionMode = CollectionMode::Automatic;
 /// The default minimum headroom in bytes (`compiler.md` §346 rule 2).
 pub const DEFAULT_MIN_HEADROOM_BYTES: usize = 16 << 20;
 
+// The smallest prune limit of the observed race inputs (§350 rule 5).
+const OBSERVED_INPUTS_MIN_LIMIT: usize = 16;
+
 /// The largest detection interval in outermost exits (`compiler.md` §342
 /// rule 15).
 pub const MAX_DETECTION_INTERVAL: u32 = 1024;
@@ -92,6 +95,11 @@ pub(crate) struct CollectionState {
     allocations: u64,
     // compiler.md §342 rule 14b: a failed unobserved task can exist.
     task_failure_possible: bool,
+    // compiler.md §350 rule 5: the inputs of a race that had no completion
+    // when the race took them, as (frame, task id). A failure that one of
+    // them stores is observed. The list is pruned when it reaches the limit.
+    observed_inputs: Vec<(usize, u64)>,
+    observed_inputs_limit: usize,
 }
 
 impl CollectionState {
@@ -114,6 +122,8 @@ impl CollectionState {
             outermost_exits: 0,
             allocations: 0,
             task_failure_possible: false,
+            observed_inputs: Vec::new(),
+            observed_inputs_limit: OBSERVED_INPUTS_MIN_LIMIT,
         }
     }
 
@@ -412,6 +422,56 @@ impl Context {
     /// task calls this, so that the next outermost exit reads the tasks.
     pub(crate) fn note_task_failure(&mut self) {
         self.collection.task_failure_possible = true;
+        // compiler.md §350 rule 5: each site that stores a failure calls
+        // this before any release or detection reads the failure.
+        if !self.collection.observed_inputs.is_empty() {
+            self.apply_observed_inputs();
+        }
+    }
+
+    /// `compiler.md` §350 rule 5: a race observes `frame` from its call. An
+    /// exception completion is marked now; a frame with no completion is
+    /// marked when it stores a failure ([`Context::note_task_failure`]).
+    pub(super) fn observe_aggregate_input(&mut self, frame: usize) {
+        let Some(meta) = self.async_frames.get_mut(&frame) else {
+            return;
+        };
+        match meta.completion.as_mut() {
+            Some(crate::exception::Completion::Exception(payload)) => payload.observed = true,
+            Some(crate::exception::Completion::Value(_)) => {}
+            None if meta.observed_by_aggregate => {}
+            None => {
+                meta.observed_by_aggregate = true;
+                let task_id = meta.task_id;
+                if self.collection.observed_inputs.len() >= self.collection.observed_inputs_limit {
+                    self.apply_observed_inputs();
+                    self.collection.observed_inputs_limit = OBSERVED_INPUTS_MIN_LIMIT
+                        .max(self.collection.observed_inputs.len().saturating_mul(2));
+                }
+                self.collection.observed_inputs.push((frame, task_id));
+            }
+        }
+    }
+
+    /// Marks the failure of each listed input that has one, and keeps the
+    /// inputs that have no completion. The task id tells a reused address
+    /// from the listed frame.
+    fn apply_observed_inputs(&mut self) {
+        let mut inputs = std::mem::take(&mut self.collection.observed_inputs);
+        inputs.retain(
+            |&(frame, task_id)| match self.async_frames.get_mut(&frame) {
+                Some(meta) if meta.task_id == task_id => match meta.completion.as_mut() {
+                    None => true,
+                    Some(crate::exception::Completion::Exception(payload)) => {
+                        payload.observed = true;
+                        false
+                    }
+                    Some(crate::exception::Completion::Value(_)) => false,
+                },
+                _ => false,
+            },
+        );
+        self.collection.observed_inputs = inputs;
     }
 
     /// True when a failed unobserved task can exist (`compiler.md` §342

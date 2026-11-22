@@ -502,7 +502,7 @@ impl Interpreter<'_> {
             l::InstructionKind::TaskGroup(operation) => {
                 self.task_group_operation(*operation, &operands, &instruction.pos)?
             }
-            l::InstructionKind::AsyncAll => {
+            l::InstructionKind::AsyncAll | l::InstructionKind::AsyncRace => {
                 let jobs = operands
                     .first()
                     .ok_or_else(|| self.missing_operand(instruction, 0))?
@@ -519,7 +519,11 @@ impl Interpreter<'_> {
                         "aggregate element type is missing",
                     ));
                 };
-                Some(self.async_all(jobs, element, &instruction.pos)?)
+                if instruction.kind == l::InstructionKind::AsyncRace {
+                    Some(self.async_race(jobs, element, &instruction.pos)?)
+                } else {
+                    Some(self.async_all(jobs, element, &instruction.pos)?)
+                }
             }
             l::InstructionKind::HostCompletion { target, .. } => {
                 let reason = match target {

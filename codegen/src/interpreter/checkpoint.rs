@@ -55,7 +55,15 @@ impl Interpreter<'_> {
             let outcome = match &frame {
                 AsyncJob::Invocation(handle) => self.async_resume(handle),
                 AsyncJob::Group { group, index } => self.task_group_react(group, *index),
-                AsyncJob::Aggregate { handle, index } => self.async_all_react(handle, *index),
+                AsyncJob::Aggregate { handle, index } => {
+                    let race = matches!(&handle.borrow().kind,
+                        CoroutineKind::Aggregate(aggregate) if aggregate.race);
+                    if race {
+                        self.async_race_react(handle, *index)
+                    } else {
+                        self.async_all_react(handle, *index)
+                    }
+                }
             };
             if let Err(error) = outcome {
                 if matches!(error, InterpretError::Trap { .. }) {

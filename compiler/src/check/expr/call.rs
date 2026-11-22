@@ -873,8 +873,10 @@ impl<'p> Checker<'p> {
         let name = prop.name.to_string();
         let prop_pos = self.pos(prop.span);
         if self.ambient_namespace(m.object, fx) == Some("Promise") {
-            if name == "all" {
-                return self.check_promise_all(c, fx, pos);
+            match name.as_str() {
+                "all" => return self.check_promise_all(c, hir::AsyncAggregate::All, fx, pos),
+                "race" => return self.check_promise_all(c, hir::AsyncAggregate::Race, fx, pos),
+                _ => {}
             }
             self.reject_subset(
                 RejectionSite::PromiseStaticCall,

@@ -107,6 +107,7 @@ pub(super) fn is_conversion(kind: &l::InstructionKind) -> bool {
         | K::ExceptionResume
         | K::TaskGroup(_)
         | K::AsyncAll
+        | K::AsyncRace
         | K::AwaitRaise
         | K::CollectionPoll => false,
     }

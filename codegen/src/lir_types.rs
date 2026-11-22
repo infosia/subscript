@@ -49,7 +49,8 @@ fn runtime_trap_matches_lir(runtime: TrapKind, lir: &l::TrapKind) -> bool {
         | TrapKind::Regex
         | TrapKind::RegexBudget
         | TrapKind::TaskGroup
-        | TrapKind::WorkerTrapped => *lir == l::TrapKind::Call,
+        | TrapKind::WorkerTrapped
+        | TrapKind::PromiseRaceEmpty => *lir == l::TrapKind::Call,
         _ => false,
     }
 }

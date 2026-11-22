@@ -15,6 +15,8 @@ mod local_lambda_self_call;
 mod native_fixture;
 #[path = "support/pool.rs"]
 mod pool;
+#[path = "lir/promise_race.rs"]
+mod promise_race;
 #[path = "lir/reload_raise.rs"]
 mod reload_raise;
 #[path = "lir/snapshot.rs"]

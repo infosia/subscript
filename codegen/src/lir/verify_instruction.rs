@@ -666,12 +666,25 @@ pub(super) fn verify_instruction_contract(
                     [l::ValueType::Data(Type::Array(input))],
                     Some(l::ValueType::Data(Type::AsyncHandle(output))),
                 ) => {
-                    matches!((&**input, &**output), (Type::AsyncHandle(element), Type::Array(result)) if element == result && !element.carries_async_handle())
+                    matches!((&**input, &**output), (Type::AsyncHandle(element), Type::Array(result)) if element == result && element.counted_type().is_none())
                 }
                 _ => false,
             };
             if !valid {
                 bad("aggregate signature is invalid", errors);
+            }
+        }
+        l::InstructionKind::AsyncRace => {
+            // §350 rules 1 and 2: `Promise<T>[] -> Promise<T>`, and `T` is not counted.
+            let valid = match (operand_types.as_slice(), result_type.as_ref()) {
+                (
+                    [l::ValueType::Data(Type::Array(input))],
+                    Some(l::ValueType::Data(output @ Type::AsyncHandle(result))),
+                ) => **input == *output && result.counted_type().is_none(),
+                _ => false,
+            };
+            if !valid {
+                bad("race signature is invalid", errors);
             }
         }
         l::InstructionKind::HostCompletion { .. } => {

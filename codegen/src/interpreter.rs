@@ -293,6 +293,9 @@ struct Coroutine {
     /// The awaited frame this suspension registered on, with the position
     /// that reports a resume without a completion. The registration owns one count.
     awaiting: Option<AwaitedHandle>,
+    /// A race took this frame as an input (`compiler.md` §350 rule 5): a
+    /// failure that the frame stores later is observed.
+    observed_by_aggregate: bool,
 }
 
 /// The completion of an async handle (`compiler.md` §116.2 rules 1 and 5).
@@ -584,6 +587,7 @@ impl<'m> Interpreter<'m> {
                 host_root: false,
                 waiters: Vec::new(),
                 awaiting: None,
+                observed_by_aggregate: false,
             }));
             if function.is_async {
                 #[cfg(test)]
@@ -944,7 +948,7 @@ impl<'m> Interpreter<'m> {
                     state.completed = true;
                     state.completion = Some(Completion::Exception(Box::new(ExceptionCompletion {
                         exception: exception.clone(),
-                        observed: false,
+                        observed: state.observed_by_aggregate,
                     })));
                     (std::mem::take(&mut state.waiters), state.owners)
                 };
@@ -1840,6 +1844,7 @@ mod poison;
 use poison::PoisonRegistry;
 
 mod async_all;
+mod async_race;
 mod task_group;
 use async_all::{AsyncJob, CoroutineKind};
 

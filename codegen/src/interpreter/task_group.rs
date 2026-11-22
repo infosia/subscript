@@ -91,6 +91,7 @@ impl Interpreter<'_> {
                     host_root: false,
                     waiters: Vec::new(),
                     awaiting: None,
+                    observed_by_aggregate: false,
                 }));
                 #[cfg(test)]
                 self.async_registry
@@ -186,6 +187,8 @@ impl Interpreter<'_> {
         if state.completed {
             return Ok(());
         }
+        let completion =
+            super::async_all::observed_by_aggregate(completion, state.observed_by_aggregate);
         state.completed = true;
         state.completion = Some(completion);
         self.async_ready.extend(std::mem::take(&mut state.waiters));

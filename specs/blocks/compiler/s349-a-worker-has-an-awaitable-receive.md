@@ -273,6 +273,7 @@ gate full c7ca4b37dc52fffe68a3441b71ec50b38ad12e88 dirty:62 debug 4004/0/5 relea
 6. Rule 14 (the interpreter refuses `receive`) and rule 15 (the cost
    with no receive) have no test of their own: the corpus headers
    state the first, and `perf-gate` reads the second.
-7. The language has no `Promise.race`, so a program cannot take the
-   first message of some Workers with one `await`.
+7. Closed by §350. At the landing of §349 the language had no
+   `Promise.race`, so a program could not take the first message of
+   some Workers with one `await`.
 

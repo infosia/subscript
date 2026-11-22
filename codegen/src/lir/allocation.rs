@@ -245,6 +245,7 @@ pub fn instruction_allocation(
         | K::MakeClosure(_)
         | K::AsyncHandleCreate(_)
         | K::AsyncAll
+        | K::AsyncRace
         | K::HostCompletion { .. }
         | K::TaskGroup(_)
         | K::AsyncHandleRelease

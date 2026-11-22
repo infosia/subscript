@@ -92,6 +92,9 @@ Measured `node` order (`tsc`-emitted CommonJS, `print` bound to
     completion carries bytes and a size only, so the aggregate cannot
     store a counted result through the §70.3 rule 2a path (measured in
     round 2).
+    *(Amended 2026-11-22 by §350 rule 2: the test is the counted
+    type of `T`. A nested array of handles and a generator passed the
+    former test, and a program with them ran.)*
 13. `collisions.md` C8 states that `Promise.all` over `Promise<T>[]` is
     the one admitted combinator.
 14. A waiter and a ready job have a tagged form: an invocation
@@ -138,6 +141,8 @@ The Phase Review found these. None is CRITICAL or MAJOR.
 1. A `Promise` static in an `await` operand (`await Promise.race(ps)`)
    gives S016 "unknown name `Promise`" and a follow-on S013 for the
    dropped handle, not the S013 of rule 12. Present before §166.
+   *(Closed 2026-11-22 for `Promise.race` by §350. The other statics
+   keep this result.)*
 2. A container of the `void[]` value is accepted:
    `await Promise.all(vs)` with `vs: Promise<void[]>[]` gives a
    `void[][]` whose length a program reads. Each element read is

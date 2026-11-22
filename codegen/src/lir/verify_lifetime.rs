@@ -121,6 +121,7 @@ fn read_operands(
         | SetFromSource(_)
         | TaskGroup(_)
         | AsyncAll
+        | AsyncRace
         | MapFromSource
         | IteratorCreate { .. }
         | AsyncHandleRetain

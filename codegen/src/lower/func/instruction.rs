@@ -678,6 +678,44 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 }
                 Some(RV::Scalar(handle))
             }
+            l::InstructionKind::AsyncRace => {
+                // compiler.md §350: `subscript_rt_async_race(ctx, jobs,
+                // result_size, pos)`; the completion size of `T` is the one
+                // that `Promise.all` passes for the same `T`.
+                let Some(l::ValueType::Data(Type::Array(input))) = operand_types.first() else {
+                    return Err(internal("race input type is missing"));
+                };
+                let Type::AsyncHandle(element) = &**input else {
+                    return Err(internal("race element type is missing"));
+                };
+                let size = if **element == Type::Void {
+                    0
+                } else {
+                    self.ml.layouts.size_align(element)?.0
+                };
+                let size = self.builder.ins().iconst(types::I64, size as i64);
+                let jobs = self.expect_scalar(operands[0])?;
+                let position = self.position_id(&instruction.pos);
+                let position = self.iconst(types::I32, position);
+                let mut signature = Signature::new(self.ml.call_conv);
+                for ty in [types::I64, types::I64, types::I64, types::I32] {
+                    signature.params.push(AbiParam::new(ty));
+                }
+                signature.returns.push(AbiParam::new(types::I64));
+                let entry = self
+                    .ml
+                    .module
+                    .declare_function("subscript_rt_async_race", Linkage::Import, &signature)
+                    .map_err(|error| internal(format!("declare race entry: {error}")))?;
+                let handle = self
+                    .call_runtime(entry, &[self.ctx, jobs, size, position], true)?
+                    .ok_or_else(|| internal("race call has no result"))?;
+                // Rule 7: an empty array traps at the call and returns null.
+                for trap in &instruction.traps {
+                    self.emit_trap(trap, TrapOperand::Pending)?;
+                }
+                Some(RV::Scalar(handle))
+            }
             l::InstructionKind::HostCompletion {
                 target,
                 result_size,

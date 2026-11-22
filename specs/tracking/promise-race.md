@@ -1,8 +1,8 @@
 # `Promise.race`
 
-Status: **measured 2026-11-22 at `7c1130fa`; the contract is
-`compiler.md` §350.** The measurement round changed no file of the
-tree.
+Status: **§350 COMPLETE.** Measured 2026-11-22 at `7c1130fa`; the
+measurement round changed no file of the tree. The evidence of the
+implementation and the Phase Review are in `compiler.md` §350.5.
 
 ## Owner decisions, 2026-11-22
 

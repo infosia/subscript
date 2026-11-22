@@ -102,7 +102,13 @@ pub enum TrapKind {
     ArrayStorageBorrowed = 36,
     /// C replaced a pointer that the script cannot receive (compiler.md §325).
     ForeignPointerReplaced = 37,
+    /// `Promise.race` of an array with no element (compiler.md §350 rule 7).
+    PromiseRaceEmpty = 38,
 }
+
+/// The message of a [`TrapKind::PromiseRaceEmpty`] trap (compiler.md §350
+/// rule 7).
+pub(crate) const PROMISE_RACE_EMPTY_MESSAGE: &str = "Promise.race of an empty array";
 
 impl TrapKind {
     /// Decodes the stable `u32` form; unknown values map to `None`.
@@ -142,6 +148,7 @@ impl TrapKind {
             35 => TrapKind::WorkerSpawnInWorker,
             36 => TrapKind::ArrayStorageBorrowed,
             37 => TrapKind::ForeignPointerReplaced,
+            38 => TrapKind::PromiseRaceEmpty,
             _ => return None,
         })
     }
@@ -182,6 +189,7 @@ impl TrapKind {
             TrapKind::WorkerSpawnInWorker => "worker-spawn-in-worker",
             TrapKind::ArrayStorageBorrowed => "array-storage-borrowed",
             TrapKind::ForeignPointerReplaced => "foreign-pointer-replaced",
+            TrapKind::PromiseRaceEmpty => "promise-race-empty",
         }
     }
 
@@ -216,6 +224,7 @@ impl TrapKind {
             (TrapKind::ArrayStorageBorrowed, _) => {
                 Cow::Borrowed("the array storage is borrowed by a native call")
             }
+            (TrapKind::PromiseRaceEmpty, _) => Cow::Borrowed(PROMISE_RACE_EMPTY_MESSAGE),
             (other, _) => Cow::Borrowed(other.rule()),
         }
     }
@@ -281,7 +290,7 @@ mod tests {
     fn kind_round_trips_through_u32() {
         for v in (1..=17u32)
             .chain(19..=24)
-            .chain([28, 29, 30, 31, 32, 33, 34, 35, 36])
+            .chain([28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38])
         {
             let k = TrapKind::from_u32(v).expect("known kind");
             assert_eq!(k as u32, v);
@@ -291,8 +300,21 @@ mod tests {
             TrapKind::from_u32(37),
             Some(TrapKind::ForeignPointerReplaced)
         );
-        assert_eq!(TrapKind::from_u32(38), None);
+        assert_eq!(TrapKind::from_u32(38), Some(TrapKind::PromiseRaceEmpty));
+        assert_eq!(TrapKind::from_u32(39), None);
         assert_eq!(TrapKind::from_u32(99), None);
+    }
+
+    /// compiler.md §350 rule 7: the kind of an empty race.
+    #[test]
+    fn promise_race_empty_has_a_stable_code_name_and_message() {
+        assert_eq!(TrapKind::PromiseRaceEmpty as u32, 38);
+        assert_eq!(TrapKind::from_u32(38), Some(TrapKind::PromiseRaceEmpty));
+        assert_eq!(TrapKind::PromiseRaceEmpty.rule(), "promise-race-empty");
+        assert_eq!(
+            TrapKind::PromiseRaceEmpty.message(None),
+            "Promise.race of an empty array"
+        );
     }
 
     /// `specs/blocks/compiler.md` §113.1 rule 5 and §115.7 rule 8: the

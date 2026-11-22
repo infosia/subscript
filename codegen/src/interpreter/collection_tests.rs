@@ -802,3 +802,71 @@ export function main(): void { hold(); }
         }
     }
 }
+
+/// `compiler.md` §350 rule 6 in the interpreter, which keeps its frames
+/// outside the Context: after a loop that races a completed task against a
+/// handle that never completes, the registered tasks and the waiters are
+/// the same at 1,000 and 1,400 turns. Control: the same loop with
+/// `Promise.all` keeps one aggregate and one waiter for each turn. Cost:
+/// four interpreter runs.
+#[test]
+fn a_race_per_turn_keeps_no_waiter_on_the_input_that_lost() {
+    let template = r#"
+async function idle(): Promise<i32> { return 0; }
+class Pair {
+  first: Promise<i32>;
+  second: Promise<i32>;
+  constructor() { this.first = idle(); this.second = idle(); }
+  start(): void { this.first = this.waitSecond(); this.second = this.waitFirst(); }
+  async waitSecond(): Promise<i32> { await Context.suspend(); return await this.second; }
+  async waitFirst(): Promise<i32> { await Context.suspend(); return await this.first; }
+}
+async function value(n: i32): Promise<i32> { return n; }
+let never: boolean = false;
+export async function main(): Promise<void> {
+  const p: Pair = new Pair();
+  p.start();
+  let sum: i32 = 0;
+  const alls: Promise<i32[]>[] = [];
+  for (let i: i32 = 0; i < __N__; i += 1) { __FORM__ }
+  if (never) { for (const h of alls) { await h; } }
+  print(`${sum}`);
+}
+"#;
+    let counts = |form: &str, repeats: u32| -> (usize, usize) {
+        let source = template
+            .replace("__N__", &repeats.to_string())
+            .replace("__FORM__", form);
+        let files = [SourceFile::new("s350-detach.ts", source)];
+        let module = crate::lir::lower_module(&check_program(&files).expect("checked source"))
+            .expect("verified LIR");
+        let mut interpreter = Interpreter::new(&module).expect("interpreter");
+        if let Some(initializer) = module.initializer {
+            interpreter
+                .call_function(initializer, Vec::new())
+                .expect("initializer");
+        }
+        let Value::Coroutine(root) = interpreter
+            .call_function(module.entry.expect("entry"), Vec::new())
+            .expect("root")
+        else {
+            panic!("async root");
+        };
+        interpreter.async_kick(&root).expect("start");
+        while interpreter.async_pending() != 0 {
+            interpreter.async_step().expect("checkpoint");
+        }
+        let waiters = interpreter
+            .async_handles
+            .borrow()
+            .values()
+            .map(|handle| handle.borrow().waiters.len())
+            .sum();
+        (interpreter.async_tasks().len(), waiters)
+    };
+    let race = "sum += await Promise.race([value(1), p.first]);";
+    assert_eq!(counts(race, 1000), counts(race, 1400));
+    let all = "alls.push(Promise.all([value(1), p.first]));";
+    let (tasks, waiters) = counts(all, 1000);
+    assert_eq!(counts(all, 1400), (tasks + 400, waiters + 400));
+}

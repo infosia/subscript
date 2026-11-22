@@ -338,6 +338,25 @@ pub unsafe extern "C" fn subscript_rt_async_all_no_handle(
     }
 }
 
+/// `Promise.race` over an array snapshot (compiler.md §350). Returns a
+/// handle with one count, which the caller owns; the caller keeps its own
+/// array. An empty array traps with `PromiseRaceEmpty` at `pos_id` and
+/// returns null.
+///
+/// # Safety
+/// Shared contract; `jobs` is a live handle array whose handles record
+/// results of `result_size` bytes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_async_race(
+    ctx: *mut Context,
+    jobs: *const u8,
+    result_size: u64,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: the caller contract of this function.
+    unsafe { (&mut *ctx).async_race_of(jobs, result_size as usize, pos_id) }
+}
+
 /// Starts a called async invocation and exposes ACTIVE during its body (§169).
 /// `pos_id` identifies the creation call site.
 ///

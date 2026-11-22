@@ -1733,6 +1733,7 @@ fn main() -> std::process::ExitCode {
             operations::array_creation_entries_state_the_handle_fact,
             operations::function_value_map_passes_the_handle_fact,
             operations::promise_all_entry_states_the_handle_fact,
+            operations::promise_race_entry_passes_the_completion_size,
         ],
         main_thread: [
             trap_corpus_entries_match_dev_stdout_on_both_tiers,

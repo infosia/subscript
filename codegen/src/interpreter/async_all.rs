@@ -38,12 +38,17 @@ impl CoroutineKind {
     }
 }
 pub(super) struct Aggregate {
+    /// True for `Promise.race` (`compiler.md` §350); both combinators have
+    /// task kind 2 (§350 rule 10).
+    pub(super) race: bool,
     pub(super) inputs: Vec<Option<Rc<RefCell<Coroutine>>>>,
-    result: *mut u8,
-    element: Type,
-    remaining: usize,
+    /// The result array of `Promise.all`; null for a race.
+    pub(super) result: *mut u8,
+    pub(super) element: Type,
+    /// The reaction jobs of this aggregate that are queued or registered.
+    pub(super) remaining: usize,
     pub(super) reported: bool,
-    pos: Pos,
+    pub(super) pos: Pos,
 }
 impl<'m> Interpreter<'m> {
     pub(super) fn async_all(
@@ -52,29 +57,8 @@ impl<'m> Interpreter<'m> {
         element: &Type,
         pos: &Pos,
     ) -> Result<Value, InterpretError> {
-        let len = unsafe { self.context.array_len(jobs) } as usize;
-        let mut inputs = Vec::with_capacity(len);
-        for index in 0..len {
-            let address = unsafe {
-                self.context
-                    .array_data(jobs)
-                    .add(index * std::mem::size_of::<usize>())
-            };
-            let bytes =
-                unsafe { std::slice::from_raw_parts(address, std::mem::size_of::<usize>()) };
-            let Value::Coroutine(input) =
-                self.unpack(&Type::AsyncHandle(Box::new(element.clone())), bytes)?
-            else {
-                return Err(
-                    self.invalid(Some(pos.clone()), "aggregate input is not an async handle")
-                );
-            };
-            {
-                let mut state = input.borrow_mut();
-                state.owners = state.owners.saturating_add(1);
-            }
-            inputs.push(Some(input));
-        }
+        let inputs = self.aggregate_inputs(jobs, element, pos)?;
+        let len = inputs.len();
         let size = if *element == Type::Void {
             0
         } else {
@@ -103,6 +87,7 @@ impl<'m> Interpreter<'m> {
             #[cfg(test)]
             active: false,
             kind: CoroutineKind::Aggregate(Aggregate {
+                race: false,
                 inputs: inputs.clone(),
                 result,
                 element: element.clone(),
@@ -120,6 +105,7 @@ impl<'m> Interpreter<'m> {
             host_root: false,
             waiters: Vec::new(),
             awaiting: None,
+            observed_by_aggregate: false,
         }));
         #[cfg(test)]
         self.async_registry
@@ -140,6 +126,40 @@ impl<'m> Interpreter<'m> {
             }
         }
         Ok(Value::Coroutine(handle))
+    }
+
+    /// Reads the handles of an aggregate input array, and takes one count
+    /// of each element, duplicates included (§166, §350 rule 12).
+    pub(super) fn aggregate_inputs(
+        &mut self,
+        jobs: *mut u8,
+        element: &Type,
+        pos: &Pos,
+    ) -> Result<Vec<Option<Rc<RefCell<Coroutine>>>>, InterpretError> {
+        let len = unsafe { self.context.array_len(jobs) } as usize;
+        let mut inputs = Vec::with_capacity(len);
+        for index in 0..len {
+            let address = unsafe {
+                self.context
+                    .array_data(jobs)
+                    .add(index * std::mem::size_of::<usize>())
+            };
+            let bytes =
+                unsafe { std::slice::from_raw_parts(address, std::mem::size_of::<usize>()) };
+            let Value::Coroutine(input) =
+                self.unpack(&Type::AsyncHandle(Box::new(element.clone())), bytes)?
+            else {
+                return Err(
+                    self.invalid(Some(pos.clone()), "aggregate input is not an async handle")
+                );
+            };
+            {
+                let mut state = input.borrow_mut();
+                state.owners = state.owners.saturating_add(1);
+            }
+            inputs.push(Some(input));
+        }
+        Ok(inputs)
     }
 
     pub(super) fn async_all_react(
@@ -204,6 +224,7 @@ impl<'m> Interpreter<'m> {
         if let Some(completion) = completion {
             let waiters = {
                 let mut state = handle.borrow_mut();
+                let completion = observed_by_aggregate(completion, state.observed_by_aggregate);
                 state.completed = true;
                 state.completion = Some(completion);
                 std::mem::take(&mut state.waiters)
@@ -224,7 +245,19 @@ impl Aggregate {
         words: &mut Vec<usize>,
         coroutines: &mut Vec<Rc<RefCell<Coroutine>>>,
     ) {
-        words.push(self.result as usize);
+        // A race has no result array (§350 rule 10).
+        if !self.result.is_null() {
+            words.push(self.result as usize);
+        }
         coroutines.extend(self.inputs.iter().flatten().cloned());
     }
+}
+
+/// `compiler.md` §350 rule 5: a failure that a frame stores after a race
+/// took it as an input is observed.
+pub(super) fn observed_by_aggregate(mut completion: Completion, observed: bool) -> Completion {
+    if let Completion::Exception(payload) = &mut completion {
+        payload.observed |= observed;
+    }
+    completion
 }

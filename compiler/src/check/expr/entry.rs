@@ -1066,7 +1066,7 @@ impl<'p> Checker<'p> {
                 super::MemberKey::Ident(prop) if prop.name.as_ref() == "join");
             if group_join
                 || (self.ambient_namespace(member.object, fx) == Some("Promise")
-                    && matches!(&member.prop, super::MemberKey::Ident(prop) if prop.name.as_ref() == "all"))
+                    && matches!(&member.prop, super::MemberKey::Ident(prop) if matches!(prop.name.as_ref(), "all" | "race")))
             {
                 let handle = self.check_expr_with_result_dependency(operand, fx);
                 let Type::AsyncHandle(value) = self.apparent_type(&handle.ty) else {

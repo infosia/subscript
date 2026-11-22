@@ -1407,6 +1407,11 @@ PromiseAllTypeArguments	s166-PromiseAllTypeArguments	S013	Promise.all takes no e
 PromiseAllInput	s166-PromiseAllInput	S013	Promise.all requires Promise<T>[]
 PromiseAllCountedResult	s166-PromiseAllCountedResult	S013	Promise.all cannot store a counted result
 PromiseAllSpread	s166-PromiseAllSpread	S013	spread arguments require variadic parameters, which the language does not have
+PromiseRaceArguments	s350-PromiseRaceArguments	S013	Promise.race requires one Promise<T>[] argument
+PromiseRaceTypeArguments	s350-PromiseRaceTypeArguments	S013	Promise.race takes no explicit type arguments
+PromiseRaceInput	s350-PromiseRaceInput	S013	Promise.race requires Promise<T>[]
+PromiseRaceCountedResult	s350-PromiseRaceCountedResult	S013	Promise.race cannot store a counted result
+PromiseRaceSpread	s350-PromiseRaceSpread	S013	Promise.race takes one Promise<T>[] argument, not a spread argument
 TaskGroupPosition	s170-position	S009	TaskGroup requires one const local or a synchronous borrowed parameter
 TaskGroupUnjoined	s170-unjoined	S013	a task group requires a join in its declaring scope
 TaskGroupUnsupported	s170-unsupported	S009	TaskGroup has no method `missing`

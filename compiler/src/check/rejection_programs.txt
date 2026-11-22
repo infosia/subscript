@@ -8953,6 +8953,35 @@ async function value(): Promise<i32> { return 1; }
 export async function main(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.all(...[jobs]); }
 END FILE
 END PROGRAM
+PROGRAM	s350-PromiseRaceTypeArguments			0
+FILE	E	target/s154/forms/s350-PromiseRaceTypeArguments/main.ts
+async function value(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race<i32>(jobs); }
+END FILE
+END PROGRAM
+PROGRAM	s350-PromiseRaceInput			0
+FILE	E	target/s154/forms/s350-PromiseRaceInput/main.ts
+export async function main(): Promise<void> { const xs: i32[] = [1]; await Promise.race(xs); }
+END FILE
+END PROGRAM
+PROGRAM	s350-PromiseRaceCountedResult			0
+FILE	E	target/s154/forms/s350-PromiseRaceCountedResult/main.ts
+async function value(): Promise<i32> { return 7; }
+async function result(): Promise<Promise<i32>[]> { const h: Promise<i32> = value(); const hs: Promise<i32>[] = [h]; await h; return hs; }
+export async function main(): Promise<void> { const jobs: Promise<Promise<i32>[]>[] = [result()]; await Promise.race(jobs); }
+END FILE
+END PROGRAM
+PROGRAM	s350-PromiseRaceArguments	TS2554		0
+FILE	E	target/s154/forms/s350-PromiseRaceArguments/main.ts
+export async function main(): Promise<void> { await Promise.race(); }
+END FILE
+END PROGRAM
+PROGRAM	s350-PromiseRaceSpread			0
+FILE	E	target/s154/forms/s350-PromiseRaceSpread/main.ts
+async function value(): Promise<i32> { return 1; }
+export async function main(): Promise<void> { const jobs: Promise<i32>[] = [value()]; await Promise.race(...[jobs]); }
+END FILE
+END PROGRAM
 PROGRAM	r-s167-generic			0
 FILE	E	target/s154/forms/s167-generic/main.ts
 export function main(): void { const f = async <T>(x: T): Promise<T> => x; }

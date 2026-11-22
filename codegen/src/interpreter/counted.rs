@@ -110,7 +110,11 @@ impl Interpreter<'_> {
                 }
             }
             let unread = match &state.kind {
-                CoroutineKind::Aggregate(a) => a.inputs.iter().any(Option::is_some),
+                // §350 rule 6: a race keeps its state while a reaction job
+                // of an input that lost is queued, as the runtime frame does.
+                CoroutineKind::Aggregate(a) => {
+                    a.inputs.iter().any(Option::is_some) || a.remaining != 0
+                }
                 CoroutineKind::GroupJoin(group) => {
                     group.borrow().inputs.iter().any(Option::is_some)
                 }
