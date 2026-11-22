@@ -1358,3 +1358,23 @@ The first attempt at this revision stopped at the build step. The
 merge changed `Cargo.lock`, and the offline build did not find the new
 crates in the local cargo cache. `cargo fetch --locked` resolved it.
 That is a host state, not a defect of the tree.
+
+## Gate state at `ba43e426`, 2026-11-22
+
+Host and tools as at `573104df`.
+
+```text
+gate full ba43e426e03b26145ea3332922b6d5b0eff4aeef clean debug 4048/0/5 release 4029/0/5 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 3, build 154, debug 350, release 195, clippy
+14, tsc 0, hygiene 1.
+
+The two debug skips are the `perf_gate` line and the
+`collection_stress_sweep` line. In the release step the sweep's test
+binary passed in 21.09 s.
+
+The unix-only CPU test of §349 acceptance 1,
+`cpu::a_receive_that_waits_uses_no_cpu`
+(`codegen/tests/worker_receive.rs`), passes in the debug and the
+release step.
