@@ -115,6 +115,41 @@ fn value_class_at_address(
         )
 }
 
+/// True if a `Coerce` with no trap takes a value of a reference class to
+/// the nullable type of the same class (`compiler.md` §351 rule 9). The
+/// value is a pointer to the object in both types. The interpreter copies
+/// the handle, the dev JIT keeps the pointer, and the emitted C casts the
+/// pointer, so no tier allocates in the Context.
+fn reference_to_nullable(
+    module: &l::Module,
+    function: &l::Function,
+    instruction: &l::Instruction,
+) -> bool {
+    let source = match instruction.operands.as_slice() {
+        [l::Operand::Value(value)] => function
+            .values
+            .get(value.0 as usize)
+            .filter(|data| data.id == *value)
+            .or_else(|| function.values.iter().find(|data| data.id == *value))
+            .map(|data| &data.ty),
+        _ => None,
+    };
+    let Some(l::ValueType::Data(Type::Class(source))) = source else {
+        return false;
+    };
+    let reference = module
+        .classes
+        .get(source.0)
+        .is_some_and(|class| !class.is_value);
+    instruction.traps.is_empty()
+        && reference
+        && matches!(
+            result_type(function, instruction),
+            Some(l::ValueType::Data(Type::Nullable(target, _)))
+                if matches!(target.as_ref(), Type::Class(target) if target == source)
+        )
+}
+
 /// The table fact of an intrinsic operation. An operation that the module
 /// table does not list can allocate.
 fn intrinsic_can_allocate(module: &l::Module, intrinsic: &l::Intrinsic) -> bool {
@@ -179,7 +214,9 @@ fn call_allocation(
 /// The match is total, so a new instruction kind cannot exist without its
 /// fact. A conversion, a binary operation, and an iterator read allocate
 /// only for a result that is not scalar: a string concatenation, a
-/// formatted number, a code point, or a boxed value.
+/// formatted number, a code point, or a boxed value. A coercion of a
+/// reference class to its own nullable type cannot allocate (`compiler.md`
+/// §351 rule 9).
 #[must_use]
 pub fn instruction_allocation(
     module: &l::Module,
@@ -218,6 +255,7 @@ pub fn instruction_allocation(
         | K::AsyncHandleRetain
         | K::AsyncHandleArrayRetain
         | K::CollectionPoll => Never,
+        K::Coerce if reference_to_nullable(module, function, instruction) => Never,
         K::Binary(_) | K::Cast | K::Coerce | K::IteratorValue => {
             if result_is_scalar(function, instruction) {
                 Never
@@ -526,6 +564,26 @@ export function main(): void {
             facts(&module, "outer", call),
             vec![InstructionAllocation::Callee(join)]
         );
+    }
+
+    #[test]
+    fn a_reference_class_to_its_nullable_type_cannot_allocate() {
+        use InstructionAllocation::{Can, Never};
+        let module = lower(
+            "class P { x: i32 = 0; }\n\
+             function wrap(p: P): P | null { return p; }\n\
+             function text(s: string): string | null { return s; }\n\
+             export function main(): void {\n\
+               const p: P | null = wrap(new P());\n\
+               const s: string | null = text(\"a\");\n\
+               print(`${p !== null} ${s !== null}`);\n\
+             }",
+        );
+        let coerce = |kind: &l::InstructionKind| *kind == l::InstructionKind::Coerce;
+        assert_eq!(facts(&module, "wrap", coerce), vec![Never]);
+        // The rule names a reference class only: a string keeps the fact
+        // of a result that is not scalar.
+        assert_eq!(facts(&module, "text", coerce), vec![Can]);
     }
 
     #[test]
