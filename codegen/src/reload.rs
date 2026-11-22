@@ -1071,10 +1071,17 @@ impl ReloadSession {
         self.call_main()?;
         call_code(&mut self.ctx, self.async_runner).map_err(RunError::Internal)?;
         self.check_trap()?;
-        while self.async_pending() != 0 {
-            self.async_step()?;
+        // §349 rule 11: `run_main` owns its loop, so it waits on the receive
+        // signal when no task is pending, and steps again if the wait
+        // returned after the signal.
+        loop {
+            while self.async_pending() != 0 {
+                self.async_step()?;
+            }
+            if !self.async_wait() {
+                return Ok(());
+            }
         }
-        Ok(())
     }
 
     /// Calls the exported zero-argument `void` function `name`. This
@@ -1166,7 +1173,8 @@ impl ReloadSession {
         self.ctx.boundary_scratch_mark()
     }
 
-    /// Returns the number of ready jobs plus parked registrations (§94.2).
+    /// Returns the number of ready jobs plus parked registrations (§94.2),
+    /// plus one while a `Worker.receive` can complete (§349 rule 10).
     /// The count includes a trapping job that the Context still holds trapped.
     /// It excludes blocked continuations, stopped frames, and completed frames
     /// retained only by handles. This observer executes no script.
@@ -1182,6 +1190,18 @@ impl ReloadSession {
     #[must_use]
     pub fn async_unfinished(&self) -> usize {
         self.ctx.async_unfinished()
+    }
+
+    /// Blocks until a `Worker.receive` that waits can complete, and
+    /// returns true (`compiler.md` §349 rule 11). Returns false at once if
+    /// no receive waits or the Context is trapped. Only a caller that owns
+    /// its loop and has no other work calls it, when
+    /// [`ReloadSession::async_pending`] is zero; the caller then steps again.
+    /// [`ReloadSession::async_step`] and [`ReloadSession::async_pending`]
+    /// never block. This wait executes no script.
+    #[must_use]
+    pub fn async_wait(&self) -> bool {
+        self.ctx.async_wait()
     }
 
     /// Reads registered tasks in id order, with resolved positions beside their ids (§169).

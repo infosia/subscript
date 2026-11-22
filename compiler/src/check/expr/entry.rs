@@ -1319,6 +1319,26 @@ impl<'p> Checker<'p> {
                         };
                     }
                 }
+                // compiler.md §349 rule 1: `await w.receive()` awaits the
+                // handle of an ordinary call.
+                if let (Type::Worker(..), super::MemberKey::Ident(method)) =
+                    (&receiver_type, &member.prop)
+                {
+                    if method.name.as_ref() == "receive" {
+                        // A Worker method is not a user call, so an unread
+                        // type argument list gets the builtin text (§231
+                        // rule 1).
+                        self.type_argument_user_calls.remove(&call.span);
+                        let handle = self.check_method_call_on(
+                            receiver,
+                            method,
+                            call,
+                            fx,
+                            self.pos(call.span),
+                        );
+                        return self.await_call_handle(handle, fx, pos);
+                    }
+                }
                 let field = match (&receiver_type, &member.prop) {
                     (Type::Class(class), super::MemberKey::Ident(name)) => self.classes[class.0]
                         .fields

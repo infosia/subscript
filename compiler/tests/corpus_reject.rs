@@ -127,6 +127,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r547-capture-of-an-index-copy.ts", RuleCode::S009, 12),
     ("r542-dropped-slice-handle-result.ts", RuleCode::S013, 10),
     ("r543-dropped-default-handle.ts", RuleCode::S013, 8),
+    ("r559-floating-worker-receive.ts", RuleCode::S013, 20),
+    ("r560-worker-field-receive.ts", RuleCode::S100, 18),
     ("r534-conditional-handle-binding.ts", RuleCode::S013, 8),
     ("r507-c-callback-through-method.ts", RuleCode::S100, 8),
     ("r508-nested-lambda-calls-outer-name.ts", RuleCode::S100, 8),

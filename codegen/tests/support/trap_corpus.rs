@@ -238,6 +238,8 @@ pub fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t82-worker-trap-site" => (TrapKind::WorkerTrapped, 16, 14),
         "t114-worker-spawn-in-worker" => (TrapKind::WorkerTrapped, 13, 35),
         "t115-worker-spawn-in-initializer" => (TrapKind::WorkerTrapped, 13, 36),
+        // compiler.md §349 rule 6: the trap site of the Worker, as join() reports it.
+        "t119-worker-receive-trap-site" => (TrapKind::WorkerTrapped, 18, 14),
         other => panic!("{other}: trap corpus entry has no exact expectation"),
     }
 }
@@ -353,7 +355,7 @@ pub fn trap_message(id: &str) -> Option<&'static str> {
         "t114-worker-spawn-in-worker" | "t115-worker-spawn-in-initializer" => {
             Some("worker trapped with worker-spawn-in-worker: a Worker cannot spawn a Worker")
         }
-        "t82-worker-trap-site" => Some(
+        "t82-worker-trap-site" | "t119-worker-receive-trap-site" => Some(
             "worker trapped with index-out-of-bounds: index 5 out of bounds for array length 1",
         ),
         _ => None,

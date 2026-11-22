@@ -1163,6 +1163,15 @@ impl<'p> Checker<'p> {
                     ),
                     "close" => (WorkerFn::Close, Vec::new(), Type::Void),
                     "join" => (WorkerFn::Join, Vec::new(), Type::Void),
+                    // compiler.md §349 rule 1: an ordinary handle.
+                    "receive" => (
+                        WorkerFn::Receive,
+                        Vec::new(),
+                        Type::async_handle(Type::Nullable(
+                            output.clone(),
+                            crate::ambient::nullable_result("Worker", "receive"),
+                        )),
+                    ),
                     _ => {
                         let type_name = checker.type_name(&Type::Worker(input, output));
                         checker.reject_subset(
@@ -1186,7 +1195,7 @@ impl<'p> Checker<'p> {
                     &pos,
                     &name,
                 ));
-                hir::Expr {
+                let value = hir::Expr {
                     pending_work: None,
                     kind: ExprKind::Call {
                         callee: Callee::Worker(function),
@@ -1194,7 +1203,8 @@ impl<'p> Checker<'p> {
                     },
                     ty: ret,
                     pos,
-                }
+                };
+                checker.track_async_call_result(value, fx)
             }
             Type::Inbox(message) => {
                 let function = match name.as_str() {

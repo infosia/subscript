@@ -304,7 +304,9 @@ impl WorkerFn {
     pub fn can_allocate(self) -> bool {
         match self {
             // A message crosses by a copy into a fresh allocation, and a
-            // spawn and a join hold runtime state for the worker.
+            // spawn and a join hold runtime state for the worker. A
+            // receive allocates its task frame and can materialize a
+            // message (compiler.md §349 rule 13).
             Self::Spawn(_)
             | Self::Post
             | Self::Poll
@@ -312,7 +314,8 @@ impl WorkerFn {
             | Self::Join
             | Self::InboxWait
             | Self::InboxPoll
-            | Self::OutboxPost => true,
+            | Self::OutboxPost
+            | Self::Receive => true,
         }
     }
 }
@@ -352,6 +355,7 @@ mod tests {
         assert!(JsonFn::Finish.can_allocate());
         assert!(TextFn::EncodeUri.can_allocate());
         assert!(WorkerFn::Spawn(0).can_allocate());
+        assert!(WorkerFn::Receive.can_allocate());
         assert!(ContextBytesFn::BytesOf.can_allocate());
         assert!(!ContextBytesFn::FromBytes.can_allocate());
     }

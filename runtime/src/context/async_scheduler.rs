@@ -90,6 +90,9 @@ pub(super) enum RuntimeTask {
     GroupJoin(usize),
     CountedInvocation(usize),
     HostOperation(super::host_operation::HostOperation),
+    // compiler.md §349 rule 9: a Worker receive. Only a step or the call
+    // completes it; no host completion function reaches it.
+    WorkerReceive,
 }
 impl AsyncKind {
     pub(super) fn aggregate(&self) -> Option<&Aggregate> {
@@ -118,6 +121,7 @@ impl AsyncKind {
                 RuntimeTask::GroupJoin(_) => 3,
                 RuntimeTask::CountedInvocation(_) => 1,
                 RuntimeTask::HostOperation(_) => 4,
+                RuntimeTask::WorkerReceive => 5,
             },
         }
     }
@@ -271,14 +275,15 @@ impl Context {
         self.async_parked.len()
     }
 
-    /// The number of registered invocations and host operations without a cached
-    /// completion (§94.2 and §178). A host reads it beside
-    /// `async_pending` to tell quiescence from blocked work.
+    /// The number of registered invocations, host operations, and Worker
+    /// receives without a cached completion (§94.2, §178, and §349 rule 9).
+    /// A host reads it beside `async_pending` to tell quiescence from
+    /// blocked work.
     #[must_use]
     pub fn async_unfinished(&self) -> usize {
         self.async_frames
             .values()
-            .filter(|meta| meta.completion.is_none() && matches!(meta.kind.task_kind(), 1 | 4))
+            .filter(|meta| meta.completion.is_none() && matches!(meta.kind.task_kind(), 1 | 4 | 5))
             .count()
     }
 
@@ -380,7 +385,7 @@ impl Context {
                     .is_some_and(|state| state.remaining != 0),
             ),
             RuntimeTask::CountedInvocation(_) => (None, false),
-            RuntimeTask::HostOperation(_) => (None, false),
+            RuntimeTask::HostOperation(_) | RuntimeTask::WorkerReceive => (None, false),
         };
         if keep {
             return match meta.completion.as_ref() {
@@ -450,7 +455,9 @@ impl Context {
     pub fn async_is_stale(&self, frame: *const u8) -> bool {
         self.async_frames
             .get(&(frame as usize))
-            .is_some_and(|meta| meta.created_epoch != self.reload_epoch && !matches!(&meta.kind, AsyncKind::Runtime(task) if matches!(task.as_ref(), RuntimeTask::HostOperation(_))))
+            // compiler.md §349 rule 9: hot reload treats a Worker receive as
+            // it treats a host operation.
+            .is_some_and(|meta| meta.created_epoch != self.reload_epoch && !matches!(&meta.kind, AsyncKind::Runtime(task) if matches!(task.as_ref(), RuntimeTask::HostOperation(_) | RuntimeTask::WorkerReceive)))
     }
 
     /// Caches the fulfilled representation after the first held await.
@@ -609,10 +616,14 @@ impl Context {
         unsafe { self.async_release(frame, 0) };
     }
 
-    /// Work a host checkpoint can advance: runnable jobs plus parked waiters.
+    /// Work a host checkpoint can advance: runnable jobs plus parked
+    /// waiters, plus one while a Worker receive waits and the signal of
+    /// the Context is set (`compiler.md` §349 rule 10).
     #[must_use]
     pub fn async_pending(&self) -> usize {
-        self.async_ready.len() + self.async_parked.len()
+        self.async_ready.len()
+            + self.async_parked.len()
+            + usize::from(self.workers.receive_can_complete())
     }
 
     /// Runs one host checkpoint (`compiler.md` §94.1 rules 8 and 9): it
@@ -655,12 +666,21 @@ impl Context {
         let parked = std::mem::take(&mut self.async_parked);
         self.async_ready
             .extend(parked.into_iter().map(AsyncJob::Invocation));
-        if self.async_ready.is_empty() {
+        // compiler.md §349 rules 4 and 15: a step with no receive pays one
+        // test of a count here.
+        let deliver = self.workers.receive_can_complete();
+        if self.async_ready.is_empty() && !deliver {
             return self.async_report(dispatched, limit);
         }
         let active_base = self.active_async_frames.len();
         self.enter_script();
-        while limit != Some(dispatched) {
+        // §349 rule 4: the delivery runs inside the bracket and before the
+        // step runs tasks. Its allocations only set the pending flag (§342
+        // rule 5), and the exit of this bracket serves it (§342 rule 8).
+        if deliver {
+            self.worker_receive_deliver();
+        }
+        while limit != Some(dispatched) && !self.trapped() {
             let Some(job) = self.async_ready.pop_front() else {
                 break;
             };
@@ -999,5 +1019,155 @@ impl Context {
                     .collect(),
             })
             .collect()
+    }
+}
+
+impl Context {
+    /// `Worker.receive()` (`compiler.md` §349). Returns a handle with one
+    /// count, which the caller owns. A trap returns null.
+    ///
+    /// Rule 2: if no earlier receive of `worker` waits and its outbox holds
+    /// a message, the handle completes at the call with the materialized
+    /// message (rule 13). Rule 5: an ended Worker with an empty outbox
+    /// completes it with null. Rule 6: a trapped Worker with an empty outbox
+    /// traps this Context as `join()` does. Otherwise the receive waits in
+    /// the FIFO of the Worker, which holds a second count until a step
+    /// completes it (rules 3 and 4).
+    pub(crate) fn worker_receive(&mut self, worker: *mut Worker, pos_id: u32) -> *mut u8 {
+        if self.trapped() {
+            return std::ptr::null_mut();
+        }
+        let Some(at_call) = self.workers.receive_at_call(worker) else {
+            self.trap(
+                TrapKind::Internal,
+                "worker handle is not owned by Context",
+                pos_id,
+            );
+            return std::ptr::null_mut();
+        };
+        let message = match at_call {
+            crate::worker::ReceiveAtCall::Trapped(outcome) => {
+                self.trap_worker_outcome(&outcome);
+                return std::ptr::null_mut();
+            }
+            crate::worker::ReceiveAtCall::Message(receive) => {
+                let message = crate::worker::materialize(self, receive);
+                if self.trapped() {
+                    return std::ptr::null_mut();
+                }
+                Some(message)
+            }
+            crate::worker::ReceiveAtCall::Ended => Some(std::ptr::null_mut()),
+            crate::worker::ReceiveAtCall::Wait => None,
+        };
+        let frame = self.worker_receive_frame(pos_id);
+        if frame.is_null() {
+            return frame;
+        }
+        match message {
+            // SAFETY: `message` is one readable pointer-sized value.
+            Some(message) => unsafe {
+                self.async_complete(
+                    frame,
+                    std::ptr::from_ref(&message).cast(),
+                    std::mem::size_of::<*mut u8>(),
+                )
+            },
+            None => {
+                // SAFETY: `frame` is the registered frame created above.
+                unsafe { self.async_retain(frame) };
+                self.workers.receive_wait(worker, frame);
+            }
+        }
+        frame
+    }
+
+    /// A registered frame of the kind "worker receive" (§349 rule 9), with
+    /// one count. Its completion is one message pointer.
+    fn worker_receive_frame(&mut self, pos_id: u32) -> *mut u8 {
+        let frame = self.alloc(16, CLASS_GENERATOR, pos_id);
+        if frame.is_null() {
+            return frame;
+        }
+        // SAFETY: `frame` is a fresh live allocation of sixteen bytes.
+        unsafe { self.async_register(frame, std::mem::size_of::<*mut u8>()) };
+        let Some(meta) = self.async_frames.get_mut(&(frame as usize)) else {
+            self.delete(frame as usize, pos_id);
+            return std::ptr::null_mut();
+        };
+        meta.create_pos_id = pos_id;
+        meta.kind = AsyncKind::Runtime(Box::new(RuntimeTask::WorkerReceive));
+        frame
+    }
+
+    /// `compiler.md` §349 rules 3 to 6 at a step: clears the signal, then
+    /// for each Worker in spawn order gives the oldest messages to the
+    /// oldest receives that wait, and applies rules 5 and 6. A trap exit
+    /// sets the signal again, so the first step after the host clears the
+    /// trap reads the outboxes again and traps again or delivers.
+    fn worker_receive_deliver(&mut self) {
+        self.workers.take_receive_signal();
+        let mut index = 0;
+        while index < self.workers.worker_count() {
+            let Some(delivery) = self.workers.next_receive_delivery(index) else {
+                index += 1;
+                continue;
+            };
+            match delivery {
+                crate::worker::ReceiveDelivery::Message {
+                    frame,
+                    record,
+                    descriptor,
+                } => {
+                    let message = crate::worker::materialize_record(self, &record, &descriptor);
+                    if self.trapped() {
+                        self.workers.restore_receive(index, frame, record);
+                        self.workers.restore_receive_signal();
+                        return;
+                    }
+                    self.worker_receive_complete(frame, message);
+                }
+                crate::worker::ReceiveDelivery::Ended(frame) => {
+                    self.worker_receive_complete(frame, std::ptr::null_mut());
+                }
+                crate::worker::ReceiveDelivery::Trapped(outcome) => {
+                    self.trap_worker_outcome(&outcome);
+                    self.workers.restore_receive_signal();
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Completes a receive that waited, and ends the count of its FIFO. A
+    /// continuation that waits on it becomes ready (§94.1 rule 5).
+    fn worker_receive_complete(&mut self, frame: *mut u8, message: *mut u8) {
+        let pos_id = self
+            .async_frames
+            .get(&(frame as usize))
+            .map_or(0, |meta| meta.create_pos_id);
+        // SAFETY: `message` is one readable pointer-sized value, and the FIFO
+        // holds one count of the registered `frame`.
+        unsafe {
+            self.async_complete(
+                frame,
+                std::ptr::from_ref(&message).cast(),
+                std::mem::size_of::<*mut u8>(),
+            );
+            self.async_release(frame, pos_id);
+        }
+    }
+
+    /// `compiler.md` §349 rule 11: blocks until the signal of the Context
+    /// is set, and returns `true`. Returns `false` at once if no receive
+    /// waits or the Context is trapped. Only a driver that owns its loop
+    /// calls it, when the pending count is zero; a host that owns its loop
+    /// steps instead.
+    pub fn async_wait(&self) -> bool {
+        if self.trapped() || !self.workers.has_waiting_receive() {
+            return false;
+        }
+        self.workers.wait_receive_signal();
+        true
     }
 }

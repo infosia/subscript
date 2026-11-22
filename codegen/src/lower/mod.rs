@@ -262,6 +262,7 @@ pub(crate) struct RtFns {
     pub worker_inbox_wait: FuncId,
     pub worker_inbox_poll: FuncId,
     pub worker_outbox_post: FuncId,
+    pub worker_receive: FuncId,
 }
 
 /// Parameters of the development-tier Cranelift lowering.
@@ -1249,6 +1250,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64],
             Some(I32),
         )?,
+        worker_receive: mk("subscript_rt_worker_receive", &[I64, I64, I32], Some(I64))?,
     })
 }
 

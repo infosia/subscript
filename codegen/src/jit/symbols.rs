@@ -289,6 +289,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_worker_inbox_wait,
         subscript_rt_worker_inbox_poll,
         subscript_rt_worker_outbox_post,
+        subscript_rt_worker_receive,
         subscript_rt_regex_new,
         subscript_rt_regex_test,
         subscript_rt_regex_source,

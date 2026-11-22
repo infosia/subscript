@@ -115,6 +115,7 @@ declare class Worker<In extends object, Out extends object> {
   poll(): Out | null;  // never blocks; null = nothing available
   close(): void;       // worker-side wait() then observes end-of-input
   join(): void;        // traps (kind 22) if the worker Context trapped
+  receive(): Promise<Out | null>;  // null = the worker ended and the outbox is empty
 }
 
 // N is deliberately unused structurally so plain array literals remain assignable.

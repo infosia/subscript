@@ -17,7 +17,9 @@
 //! Cost: one child for each run, on the worker pool of the standing sweeps
 //! (`support/pool.rs`). Measured on an arm64 macOS host with 594 entries
 //! and 1,666 runs: 68 s in a debug build, 36 to 45 s in a release build.
-//! The slowest run is one ship-tier entry at 12 s (debug). The sweep runs
+//! The slowest run is one ship-tier entry at 12 s (debug). The parent also
+//! checks and lowers each entry that names `Worker`, once
+//! ([`calls_worker_receive`]). The sweep runs
 //! in `tools/gate.sh full` only: it runs when
 //! `SUBSCRIPT_FULL_INTERPRETER_SWEEP` is set, which the release step of the
 //! full gate sets, and prints a `gate-skip:` line in each other run.
@@ -30,7 +32,7 @@ use subscript_codegen::interpreter::{interpret_with_collection, InterpretError};
 use subscript_codegen::lir::lower_module;
 use subscript_codegen::{run_c_aot_configured, run_jit_configured, NativeLibrary, RunConfig};
 use subscript_codegen::{EntryArg, ReloadSession, RunError, TrapReport};
-use subscript_compiler::SourceFile;
+use subscript_compiler::{lir, SourceFile};
 use subscript_runtime::context::CollectionMode;
 use subscript_runtime::TrapKind;
 
@@ -176,6 +178,64 @@ fn host_driven(entry: &Entry) -> bool {
         Category::Accept => accept_runs::host_hooks(&entry.id) != (None, None),
         Category::Trap => entry.id == "t50-wire-entry-unknown-value",
     }
+}
+
+/// The reason that the sweep does not compare the exit counts of an entry
+/// whose program calls `Worker.receive` (`compiler.md` §349 rule 16).
+const RECEIVE_REASON: &str = "Worker.receive";
+
+/// True when the program calls `Worker.receive` (`compiler.md` §349
+/// rule 16): its LIR has a call of the Worker intrinsic `Receive`. Such a
+/// call waits on the Worker thread, so the exit count of the program is
+/// not a function of the program.
+///
+/// A program can hold a Worker only if one of its files names `Worker`, so
+/// the parent checks and lowers only those programs. Cost: one check and
+/// one LIR lowering for each such entry (15 of 610 entries), and no
+/// native compilation. The control test does two of them in 0.02 s
+/// (release).
+fn calls_worker_receive(sources: &[SourceFile]) -> bool {
+    if !sources.iter().any(|file| file.source.contains("Worker")) {
+        return false;
+    }
+    let Ok(hir) = corpus::check_program(sources) else {
+        return false;
+    };
+    let Ok(module) = lower_module(&hir) else {
+        return false;
+    };
+    let Some(receive) = module.intrinsic_operations.iter().find(|operation| {
+        operation.family == lir::IntrinsicFamily::Worker && operation.semantic_name == "Receive"
+    }) else {
+        return false;
+    };
+    module
+        .functions
+        .iter()
+        .flat_map(|function| &function.blocks)
+        .flat_map(|block| &block.instructions)
+        .any(|instruction| {
+            matches!(
+                &instruction.kind,
+                lir::InstructionKind::Call(lir::CallTarget {
+                    kind: lir::CallTargetKind::Intrinsic(lir::Intrinsic {
+                        family: lir::IntrinsicFamily::Worker,
+                        operation,
+                        ..
+                    }),
+                    ..
+                }) if *operation == receive.operation
+            )
+        })
+}
+
+/// The text form of [`calls_worker_receive`]: a file that names `Worker`
+/// and has `.receive(`. The sweep compares the two predicates, so a fault
+/// of either one fails the sweep.
+fn source_calls_receive(sources: &[SourceFile]) -> bool {
+    sources
+        .iter()
+        .any(|file| file.source.contains("Worker") && file.source.contains(".receive("))
 }
 
 /// The table of runs that the sweep does not make, with the reason of each
@@ -849,8 +909,17 @@ fn collection_stress_sweep() {
 
     let mut runs: Vec<(usize, Tier)> = Vec::new();
     let mut not_run: Vec<(String, Tier, String)> = Vec::new();
+    let mut receive_failures = Vec::new();
+    let mut receive = vec![false; entries.len()];
     for (index, entry) in entries.iter().enumerate() {
         let sources = entry.sources();
+        receive[index] = calls_worker_receive(&sources);
+        if receive[index] != source_calls_receive(&sources) {
+            receive_failures.push(format!(
+                "{}: the LIR predicate of Worker.receive gives {} and the text predicate gives {}",
+                entry.id, receive[index], !receive[index]
+            ));
+        }
         for tier in TIERS {
             match exclusion(entry, &sources, tier) {
                 Some(reason) => not_run.push((entry.id.clone(), tier, reason)),
@@ -913,14 +982,22 @@ fn collection_stress_sweep() {
     // in each entry that each of them runs to the end. Where one tier gives
     // no count, the two counts that remain are compared. A trapped run, a
     // run that the table excludes, and a host-driven dev JIT run
-    // ([`dev_host_run`]) give no count.
+    // ([`dev_host_run`]) give no count. §349 rule 16: the count of a
+    // program that calls `Worker.receive` depends on the time of the Worker
+    // thread, so it is not compared; the output and the trap of the entry
+    // are still compared above.
     let mut exit_compared = 0usize;
     let mut exit_compared_three = 0usize;
+    let mut exit_not_compared_receive = 0usize;
     let mut exit_differences = Vec::new();
     let mut keys: Vec<&usize> = exits.keys().collect();
     keys.sort();
     for index in keys {
         let id = &entries[*index].id;
+        if receive[*index] && exits[index].iter().flatten().count() >= 2 {
+            exit_not_compared_receive += 1;
+            continue;
+        }
         let mut compare_pair = |first: (&str, u64), second: (&str, u64)| {
             if first.1 != second.1 {
                 exit_differences.push(format!(
@@ -975,7 +1052,7 @@ fn collection_stress_sweep() {
         );
     }
     eprintln!(
-        "collection stress: {} entries, {exit_compared} exit counts compared, {exit_compared_three} of them in three tiers, slowest run {} in {:.1} s, {:.1} s",
+        "collection stress: {} entries, {exit_compared} exit counts compared, {exit_compared_three} of them in three tiers, {exit_not_compared_receive} not compared: {RECEIVE_REASON}, slowest run {} in {:.1} s, {:.1} s",
         entries.len(),
         slowest.1,
         slowest.0.as_secs_f64(),
@@ -1003,6 +1080,7 @@ fn collection_stress_sweep() {
             .map(|line| format!("rule 10a Internal error: {line}")),
     );
     failures.extend(exit_differences);
+    failures.extend(receive_failures);
     assert!(
         failures.is_empty(),
         "{} collection stress failure(s):\n{}",
@@ -1199,4 +1277,23 @@ fn the_sweep_comparison_reports_a_changed_golden() {
         stdout,
     };
     assert!(compare(&entry.id, Tier::Interpreter, &changed, &outcome).is_some());
+}
+
+/// The firing control of [`calls_worker_receive`] (`compiler.md` §349
+/// rule 16, §345 rule 4). A predicate that is true for each Worker program
+/// leaves out every exit count of a Worker entry, and a predicate that is
+/// false for each program leaves out none; each one fails here. Cost: two
+/// checks and two LIR lowerings; no run.
+#[test]
+fn receive_predicate_separates_receive_from_other_worker_programs() {
+    let receive = corpus::entry_sources(
+        &corpus::corpus_accept(),
+        "a503-worker-receive-call-sequence",
+    );
+    let no_receive = corpus::entry_sources(&corpus::corpus_accept(), "a112-worker-echo");
+    assert!(no_receive
+        .iter()
+        .any(|file| file.source.contains("Worker.spawn")));
+    assert!(calls_worker_receive(&receive));
+    assert!(!calls_worker_receive(&no_receive));
 }

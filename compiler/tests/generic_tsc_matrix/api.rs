@@ -241,22 +241,26 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
                     let body = format!("{callee}{type_arguments}({});", args.join(", "));
                     let body = if api.name == "TaskGroup.join" {
                         format!("return {body}")
-                    } else if api.name == "Context.suspend" {
+                    } else if matches!(api.name.as_str(), "Context.suspend" | "Worker.receive") {
+                        // A handle that the body drops is S013 (§349 rule 1).
                         format!("await {body}")
                     } else {
                         body
                     };
-                    let async_word = if api.name == "Context.suspend" {
-                        "async "
-                    } else {
-                        ""
-                    };
-                    let result_type =
-                        if matches!(api.name.as_str(), "Context.suspend" | "TaskGroup.join") {
-                            "Promise<void>"
+                    let async_word =
+                        if matches!(api.name.as_str(), "Context.suspend" | "Worker.receive") {
+                            "async "
                         } else {
-                            "void"
+                            ""
                         };
+                    let result_type = if matches!(
+                        api.name.as_str(),
+                        "Context.suspend" | "TaskGroup.join" | "Worker.receive"
+                    ) {
+                        "Promise<void>"
+                    } else {
+                        "void"
+                    };
                     let declaration = format!("class Box {{ v: i32 = 1; }} @ValueType class Value {{ v: i32 = 1; }} {async_word}function g<T{}>({expression}: {role_type}{receiver}{extra}): {result_type} {{ {body} }}", kind.constraint);
                     let declaration = format!(
                         "{} {declaration}",
@@ -389,11 +393,12 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
                         } else {
                             argument.to_string()
                         };
-                        let (result, prefix) = if api.name == "TaskGroup.join" {
-                            ("Promise<void>", "return ")
-                        } else {
-                            ("void", "")
-                        };
+                        let (result, prefix) =
+                            if matches!(api.name.as_str(), "TaskGroup.join" | "Worker.receive") {
+                                ("Promise<void>", "return ")
+                            } else {
+                                ("void", "")
+                            };
                         let main = format!("function admitted({}): {result} {{ {prefix}g<{argument_type}>({value}{supplied}); }}", concrete_extra.trim().trim_start_matches(',').trim());
                         let source =
                             format!("{declaration} {main} export function main(): void {{}}");
@@ -474,7 +479,7 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     }
     assert_eq!(
         omissions.len(),
-        9527,
+        9737,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(

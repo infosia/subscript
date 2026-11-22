@@ -57,7 +57,9 @@ recorded only.
    stress sweep reads it after the last script exit and before the
    release of the Context, by a channel that is not the stdout of the
    script. For each entry that the three tiers run to the end with no
-   trap, the three counts are equal.
+   trap, the three counts are equal. *(Amended 2026-11-22 by §349
+   rule 16: the sweep does not compare the count of a program that
+   calls `Worker.receive`.)*
 
 ### 345.2 Acceptance
 

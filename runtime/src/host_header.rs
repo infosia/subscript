@@ -92,6 +92,10 @@ pub fn render() -> Result<String, String> {
         FFI_SOURCE,
         "pub unsafe extern \"C\" fn subscript_rt_ctx_async_unfinished",
     )?;
+    let async_wait_docs = docs_for(
+        FFI_SOURCE,
+        "pub unsafe extern \"C\" fn subscript_rt_ctx_async_wait",
+    )?;
     let task_visitor_docs = docs_for(TASK_SOURCE, "pub type AsyncTaskVisitor")?;
     let task_visitor = parse_fn_type(TASK_SOURCE, "AsyncTaskVisitor")?;
     let task_visit_docs = docs_for(
@@ -372,6 +376,9 @@ pub fn render() -> Result<String, String> {
         }
         if function.name == "subscript_rt_ctx_async_unfinished" {
             push_comment(&mut out, &async_unfinished_docs);
+        }
+        if function.name == "subscript_rt_ctx_async_wait" {
+            push_comment(&mut out, &async_wait_docs);
         }
         out.push_str(&c_function(&function.name, function)?);
         out.push_str(";\n");
@@ -780,6 +787,31 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
         assert!(header.contains("drains the ready queue to\n * empty"));
         assert!(header.contains("started invocations without a completion"));
         assert!(header.contains("On a trapped subscript_rt_context this\n * is a no-op"));
+    }
+
+    /// `compiler.md` §349.2 item 6: the wait function and the kind number.
+    #[test]
+    fn generated_host_header_declares_the_worker_receive_wait() {
+        let header = render().expect("render host header");
+        let lines: Vec<&str> = header.lines().collect();
+        for name in ["subscript_rt_ctx_async_wait", "subscript_rt_worker_receive"] {
+            let index = lines
+                .iter()
+                .position(|line| line.contains(&format!(" {name}(")))
+                .unwrap_or_else(|| panic!("{name} is declared"));
+            assert_eq!(lines[index - 1], " */", "{name} carries its documentation");
+        }
+        assert!(header
+            .contains("int32_t subscript_rt_ctx_async_wait(const subscript_rt_context* ctx);"));
+        assert!(header.contains(
+            "uint8_t* subscript_rt_worker_receive(subscript_rt_context* parent, \
+             subscript_rt_worker* worker, uint32_t pos_id);"
+        ));
+        assert!(header.contains("Only a driver that owns its loop calls it"));
+        assert!(header.contains("worker receive=5"));
+        assert!(header.contains(
+            "since the last step that read the\n * outboxes (`compiler.md` §349 rule 10)"
+        ));
     }
 
     #[test]

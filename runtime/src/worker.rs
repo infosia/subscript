@@ -11,6 +11,13 @@ use std::thread::JoinHandle;
 use crate::context::{CollectionSettings, Context};
 use crate::trap::{TrapKind, TrapRecord};
 
+mod receive;
+#[cfg(test)]
+mod receive_tests;
+
+use receive::ReceiveSignal;
+pub(crate) use receive::{ReceiveAtCall, ReceiveDelivery};
+
 const CLASS_WORKER_MESSAGE: u32 = 0xFFFF_FF0A;
 
 /// Initializer called on a newly created worker Context before its entry.
@@ -118,6 +125,8 @@ pub struct Worker {
     output: Arc<Queue>,
     thread: Option<JoinHandle<WorkerOutcome>>,
     outcome: Option<WorkerOutcome>,
+    // compiler.md §349 rule 3: the receive frames that wait, oldest first.
+    receives: VecDeque<*mut u8>,
 }
 
 /// Worker-side opaque receiving endpoint for parent-to-worker messages.
@@ -140,12 +149,18 @@ struct Queue {
     descriptor: Arc<QueueDescriptor>,
     state: Mutex<QueueState>,
     ready: Condvar,
+    // compiler.md §349 rule 10: the signal of the spawning Context. Only
+    // an outbox has one.
+    signal: Option<Arc<ReceiveSignal>>,
 }
 
 #[derive(Default)]
 struct QueueState {
     messages: VecDeque<Box<[u8]>>,
     closed: bool,
+    // compiler.md §349 rule 8: the outcome of the Worker, written before
+    // the outbox closes.
+    outcome: Option<WorkerOutcome>,
 }
 
 pub(crate) enum Receive {
@@ -167,6 +182,10 @@ pub(crate) enum WorkerOutcome {
 #[derive(Default)]
 pub(crate) struct WorkerSet {
     workers: Vec<Box<Worker>>,
+    // compiler.md §349 rule 10: the one signal of the Context.
+    signal: Arc<ReceiveSignal>,
+    // The number of receives that wait, over all Workers (rule 15).
+    waiting: usize,
 }
 
 pub(crate) enum PostResult {
@@ -182,6 +201,25 @@ impl Queue {
             descriptor: Arc::new(descriptor),
             state: Mutex::new(QueueState::default()),
             ready: Condvar::new(),
+            signal: None,
+        }
+    }
+
+    fn with_signal(descriptor: QueueDescriptor, signal: Arc<ReceiveSignal>) -> Queue {
+        Queue {
+            signal: Some(signal),
+            ..Queue::new(descriptor)
+        }
+    }
+
+    /// Sets the signal of the spawning Context (`compiler.md` §349 rule
+    /// 10). Each caller holds the queue lock, so a thread that sees the
+    /// change under the queue lock also sees the signal. The lock order is
+    /// the queue lock, then the signal lock. No path takes the signal lock
+    /// and then a queue lock.
+    fn notify_receiver(&self) {
+        if let Some(signal) = &self.signal {
+            signal.set();
         }
     }
 
@@ -199,6 +237,8 @@ impl Queue {
         }
         state.messages.push_back(copied);
         self.ready.notify_one();
+        self.notify_receiver();
+        drop(state);
         true
     }
 
@@ -278,10 +318,24 @@ impl Queue {
 
     fn close(&self) {
         let mut state = self.lock();
+        self.close_locked(&mut state);
+    }
+
+    /// Closes the queue under the queue lock that the caller holds.
+    fn close_locked(&self, state: &mut QueueState) {
         if !state.closed {
             state.closed = true;
             self.ready.notify_all();
+            self.notify_receiver();
         }
+    }
+
+    /// `compiler.md` §349 rule 8: writes the outcome of the Worker, then
+    /// closes the queue, under one hold of the queue lock.
+    fn finish(&self, outcome: WorkerOutcome) {
+        let mut state = self.lock();
+        state.outcome = Some(outcome);
+        self.close_locked(&mut state);
     }
 }
 
@@ -315,9 +369,10 @@ impl Worker {
         input_descriptor: QueueDescriptor,
         output_descriptor: QueueDescriptor,
         setup: WorkerContextSetup,
+        signal: Arc<ReceiveSignal>,
     ) -> std::io::Result<Box<Worker>> {
         let input = Arc::new(Queue::new(input_descriptor));
-        let output = Arc::new(Queue::new(output_descriptor));
+        let output = Arc::new(Queue::with_signal(output_descriptor, signal));
         let thread_input = Arc::clone(&input);
         let thread_output = Arc::clone(&output);
         let thread = std::thread::Builder::new()
@@ -327,6 +382,7 @@ impl Worker {
             output,
             thread: Some(thread),
             outcome: None,
+            receives: VecDeque::new(),
         }))
     }
 
@@ -354,6 +410,10 @@ impl Worker {
     }
 
     fn poll(&self) -> Receive {
+        // compiler.md §349 rule 7: while a receive waits, poll() gives null.
+        if !self.receives.is_empty() {
+            return Receive::Empty;
+        }
         self.output.poll()
     }
 }
@@ -367,7 +427,14 @@ impl WorkerSet {
         output_descriptor: QueueDescriptor,
         setup: WorkerContextSetup,
     ) -> std::io::Result<*mut Worker> {
-        let mut worker = Worker::start(init, entry, input_descriptor, output_descriptor, setup)?;
+        let mut worker = Worker::start(
+            init,
+            entry,
+            input_descriptor,
+            output_descriptor,
+            setup,
+            self.receive_signal(),
+        )?;
         let handle = std::ptr::from_mut(worker.as_mut());
         self.workers.push(worker);
         Ok(handle)
@@ -482,6 +549,9 @@ fn run_worker(
         None => WorkerOutcome::Clean,
     };
     drop(inbox);
+    // compiler.md §349 rule 8: the outbox carries the outcome before it
+    // closes, so a step reads it with no join().
+    outbox.queue.finish(outcome.clone());
     drop(outbox);
     drop(ctx);
     outcome
@@ -491,6 +561,16 @@ pub(crate) fn materialize(ctx: &mut Context, receive: Receive) -> *mut u8 {
     let Receive::Message { record, descriptor } = receive else {
         return std::ptr::null_mut();
     };
+    materialize_record(ctx, &record, &descriptor)
+}
+
+/// Materializes one message record into a Context allocation. The caller
+/// keeps the record, so a delivery that traps can put it back.
+pub(crate) fn materialize_record(
+    ctx: &mut Context,
+    record: &[u8],
+    descriptor: &QueueDescriptor,
+) -> *mut u8 {
     if ctx.trapped() {
         return std::ptr::null_mut();
     }

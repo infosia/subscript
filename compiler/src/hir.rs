@@ -1601,6 +1601,9 @@ pub enum WorkerFn {
     InboxPoll,
     /// Worker-side `Outbox.post(message)`.
     OutboxPost,
+    /// Parent-side `Worker.receive()`; returns an owned task handle
+    /// (`compiler.md` §349 rule 1).
+    Receive,
 }
 
 /// One interpolation segment of a template literal.

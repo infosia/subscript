@@ -1281,6 +1281,50 @@ The rules that follow from the isolation:
 - Post all independent work before the first `join`, or the work runs
   in sequence.
 
+`receive()` is the form that composes with `await`. It returns a
+`Promise<Out | null>`. The promise completes with the oldest message of
+the outbox, or with `null` after the Worker ended and its outbox is
+empty. If no message is available, the receive waits, and it completes
+at a scheduler step of your Context, never on the Worker thread. While
+a receive waits, `poll()` returns `null`. A trapped Worker with an
+empty outbox traps the receiving Context, as `join()` does.
+
+```ts
+class Num {
+  value: i32;
+  constructor(value: i32) {
+    this.value = value;
+  }
+}
+
+function twice(inbox: Inbox<Num>, outbox: Outbox<Num>): void {
+  const n: Num | null = inbox.wait();
+  if (n != null) {
+    outbox.post(new Num(n.value * 2));
+  }
+}
+
+export async function main(): Promise<void> {
+  const worker: Worker<Num, Num> = Worker.spawn(twice);
+  worker.post(new Num(21));
+  worker.close();
+  const reply: Num | null = await worker.receive(); // completes at a step
+  const end: Num | null = await worker.receive(); // null: the Worker ended
+  print(reply != null ? `reply=${reply.value}` : "none");
+  print(end == null ? "ended" : "more");
+}
+```
+
+```text
+reply=42
+ended
+```
+
+A host that owns its loop steps the Context while the pending count is
+not zero. A message for a receive that waits makes that count not zero.
+`subscript run` has no other work, so it waits for the Worker when
+nothing is pending.
+
 The host still owns the main loop. Workers are the language's own
 threads for computation, not a way to call the host from a thread it
 does not know.

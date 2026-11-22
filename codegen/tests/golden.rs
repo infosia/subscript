@@ -83,8 +83,15 @@ fn run_dev_corpus_entry(
         let run = (|| {
             session.call_main()?;
             session.call_export("secondEntry")?;
-            while session.async_pending() != 0 {
-                session.async_step()?;
+            // compiler.md §349 rule 11: this loop owns the run, so it waits
+            // on a Worker receive when no task is pending.
+            loop {
+                while session.async_pending() != 0 {
+                    session.async_step()?;
+                }
+                if !session.async_wait() {
+                    break;
+                }
             }
             Ok(session.take_output())
         })();

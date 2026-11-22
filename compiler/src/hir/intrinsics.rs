@@ -1010,7 +1010,7 @@ impl StrFn {
 
 impl WorkerFn {
     /// Worker operations in stable intrinsic-number order.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Spawn(0),
         Self::Post,
         Self::Poll,
@@ -1019,6 +1019,7 @@ impl WorkerFn {
         Self::InboxWait,
         Self::InboxPoll,
         Self::OutboxPost,
+        Self::Receive,
     ];
 
     /// Removes the worker-entry payload from the operation identity.

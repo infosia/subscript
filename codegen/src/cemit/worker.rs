@@ -180,7 +180,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 .ok_or_else(|| internal(format!("Worker.{name} has no runtime symbol")))?,
             operands,
             operand_types,
-            false,
+            // compiler.md §349 rule 6: a receive names its call position.
+            name == "Receive",
             result,
         )
     }

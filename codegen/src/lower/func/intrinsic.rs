@@ -1137,6 +1137,27 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 .map(RV::Scalar)
                 .ok_or_else(|| internal("Worker.Spawn has no result"));
         }
+        if name == "Receive" {
+            // compiler.md §349 rule 1: the runtime returns an owned task
+            // handle; the position names the call for a trap (rule 6).
+            let [worker] = operands else {
+                return Err(internal(format!(
+                    "Worker.Receive has {} operand(s), expected 1",
+                    operands.len()
+                )));
+            };
+            let worker = self.expect_scalar(*worker)?;
+            let position = self.position_id(pos);
+            let position = self.iconst(types::I32, position);
+            return self
+                .call_runtime(
+                    self.ml.rt.worker_receive,
+                    &[self.ctx, worker, position],
+                    checked,
+                )?
+                .map(RV::Scalar)
+                .ok_or_else(|| internal("Worker.Receive has no result"));
+        }
 
         let expected = match name {
             "Post" | "OutboxPost" => 2,

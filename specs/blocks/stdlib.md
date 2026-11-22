@@ -2233,6 +2233,7 @@ declare class Worker<In extends object, Out extends object> {
   ): Worker<In, Out>;
   post(message: In): void;
   poll(): Out | null;  // never blocks; null = nothing available
+  receive(): Promise<Out | null>;  // null = the worker ended and the outbox is empty
   close(): void;       // worker-side wait() then observes end-of-input
   join(): void;        // traps (kind 22) if the worker Context trapped
 }
@@ -2247,6 +2248,20 @@ then `join` is the orderly shutdown; releasing a Context closes,
 joins, and frees its live workers. A Worker cannot spawn a Worker:
 `Worker.spawn` in a Worker Context traps `worker-spawn-in-worker`
 (compiler.md §275).
+
+*(Revised 2026-11-22, `compiler.md` §349.)* `receive()` returns a
+handle that completes with the next message, or with `null` after the
+Worker ended and its outbox is empty. A message that is in the outbox
+at the call completes the handle at the call. A receive that waits
+completes at a scheduler step of the Context, and receives that wait
+get the messages in call sequence. While a receive waits, `poll()`
+returns `null`. If the Worker Context trapped and its outbox is empty,
+the receive traps the Context as `join()` does (kind 22, at the trap
+site of the Worker). The spawning side still does not block in a
+call: only a driver that owns its loop and has no pending task waits
+for a Worker (§349 rule 11; `subscript_rt_ctx_async_wait`,
+`ReloadSession::async_wait`). A host that owns its loop steps while
+the pending count is not zero.
 
 ### 16.2 Messages
 

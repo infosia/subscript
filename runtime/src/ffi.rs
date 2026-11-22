@@ -356,6 +356,35 @@ pub unsafe extern "C" fn subscript_rt_worker_poll(
     unsafe { &mut *parent }.worker_poll(worker)
 }
 
+/// Starts one awaitable receive of a worker-to-parent message
+/// (`compiler.md` §349). Returns a task handle with one count, which the
+/// caller owns and ends with `subscript_rt_async_release`. Its completion is
+/// one message pointer: a fresh allocation owned by `parent`, or null when the
+/// Worker ended and its outbox is empty.
+///
+/// If no earlier receive of `worker` waits and a message is queued, the handle
+/// has its completion at the return. Otherwise the receive waits, and a
+/// scheduler step of `parent` completes it, oldest receive first. While a
+/// receive waits, `subscript_rt_worker_poll` returns null. If the Worker
+/// trapped and its outbox is empty, the call or the step records trap kind 22
+/// (`worker-trapped`) at the trap site of the Worker, as
+/// `subscript_rt_worker_join` does. A trap returns null. `pos_id` is the
+/// position of the call.
+///
+/// # Safety
+///
+/// `parent` follows the exclusive Context contract and `worker` belongs to it.
+#[must_use]
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_worker_receive(
+    parent: *mut Context,
+    worker: *mut Worker,
+    pos_id: u32,
+) -> *mut u8 {
+    // SAFETY: forwarded parent and worker contracts.
+    unsafe { &mut *parent }.worker_receive(worker, pos_id)
+}
+
 /// Closes a worker's parent-to-worker queue.
 ///
 /// Already queued messages remain receivable. After they are drained, worker
@@ -804,6 +833,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_clear_trap(ctx: *mut Context) -> i32 {
 
 /// Returns the work a host checkpoint can advance: runnable continuations
 /// and aggregate reactions, plus frames that wait for the next checkpoint.
+/// It also counts one while a Worker receive waits and a Worker of this
+/// Context posted, ended, or trapped since the last step that read the
+/// outboxes (`compiler.md` §349 rule 10). So a host that steps while this
+/// count is not zero delivers each Worker message.
 ///
 /// # Safety
 ///
@@ -814,7 +847,8 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_pending(ctx: *const Context) -> 
     unsafe { &*ctx }.async_pending() as u64
 }
 
-/// Returns the number of started invocations without a completion, plus pending host operations.
+/// Returns the number of started invocations without a completion, plus pending host operations
+/// and Worker receives that wait (`compiler.md` §349 rule 9).
 ///
 /// # Safety
 ///
@@ -850,6 +884,24 @@ pub unsafe extern "C" fn subscript_rt_ctx_async_step(ctx: *mut Context) -> u64 {
         ctx.end_host_entry();
     }
     pending
+}
+
+/// Blocks until a Worker of this Context posts, ends, or traps, if a Worker
+/// receive waits (`compiler.md` §349 rule 11). Returns 1 after such a wait.
+/// Returns 0 at once if no receive waits or the Context is trapped. The
+/// thread sleeps on a condition variable and does not spin.
+/// Only a driver that owns its loop calls it, when
+/// `subscript_rt_ctx_async_pending` is zero, and steps again after a
+/// return of 1. A host that owns its loop and calls the step function does
+/// not call it.
+///
+/// # Safety
+///
+/// `ctx` follows the shared Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_async_wait(ctx: *const Context) -> i32 {
+    // SAFETY: shared Context contract.
+    i32::from(unsafe { &*ctx }.async_wait())
 }
 
 /// Starts at most `max_dispatches` jobs and returns checkpoint counts (`compiler.md` §168).
@@ -994,7 +1046,8 @@ pub unsafe extern "C" fn subscript_rt_ctx_visit_live_allocations(
 
 /// Visits registered tasks in task-id order (§169), without script or Context allocation.
 /// States: READY=1, PARKED=2, WAITING=3, ACTIVE=4, COMPLETE=5, STOPPED=6.
-/// Kinds: invocation=1, aggregate=2. A null visitor returns zero.
+/// Kinds: invocation=1, aggregate=2, group join=3, host operation=4, worker receive=5.
+/// A null visitor returns zero.
 /// If pending is zero and unfinished is positive, follow each waiting task's awaited_task_id.
 /// Resolve position ids through program.alloc.h; zero means no script site.
 ///

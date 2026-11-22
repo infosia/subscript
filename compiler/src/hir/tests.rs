@@ -884,9 +884,10 @@ fn module_is_constructible_empty() {
 
 #[test]
 fn worker_intrinsic_identity_uses_the_all_table_order() {
-    assert_eq!(WorkerFn::ALL.len(), 8);
+    assert_eq!(WorkerFn::ALL.len(), 9);
     assert_eq!(WorkerFn::Spawn(37).intrinsic_identity(), WorkerFn::ALL[0]);
     assert_eq!(WorkerFn::OutboxPost.intrinsic_identity(), WorkerFn::ALL[7]);
+    assert_eq!(WorkerFn::Receive.intrinsic_identity(), WorkerFn::ALL[8]);
 }
 
 #[test]

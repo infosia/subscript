@@ -574,6 +574,7 @@ fn intrinsic_runtime_symbol(family: l::IntrinsicFamily, name: &str) -> Option<&'
         (l::IntrinsicFamily::Worker, "InboxWait") => "subscript_rt_worker_inbox_wait",
         (l::IntrinsicFamily::Worker, "InboxPoll") => "subscript_rt_worker_inbox_poll",
         (l::IntrinsicFamily::Worker, "OutboxPost") => "subscript_rt_worker_outbox_post",
+        (l::IntrinsicFamily::Worker, "Receive") => "subscript_rt_worker_receive",
         _ => return None,
     })
 }

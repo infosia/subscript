@@ -18,6 +18,7 @@ mod poisoned_containers;
 mod private_names;
 mod removal;
 mod type_alias;
+mod worker_receive;
 
 #[test]
 fn check_options_reject_an_unknown_enabled_module() {

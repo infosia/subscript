@@ -166,10 +166,18 @@ pub(super) fn execute_entry(
                 let runner = module.get_finalized_function(lowered.async_runner);
                 call_script_entry(runner, &mut ctx);
             }
-            while !ctx.trapped() && ctx.async_pending() != 0 {
-                // SAFETY: every pending item was registered by a generated
-                // async export wrapper in this finalized module.
-                ctx.async_step();
+            // §349 rule 11: this driver owns its loop, so it waits on the
+            // receive signal when no task is pending, and steps again if
+            // the wait returned after the signal.
+            loop {
+                while !ctx.trapped() && ctx.async_pending() != 0 {
+                    // SAFETY: every pending item was registered by a generated
+                    // async export wrapper in this finalized module.
+                    ctx.async_step();
+                }
+                if !ctx.async_wait() {
+                    break;
+                }
             }
         }
     }

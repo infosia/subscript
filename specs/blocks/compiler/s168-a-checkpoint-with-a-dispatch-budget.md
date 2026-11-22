@@ -66,7 +66,8 @@ empty.
 11. The host header (`runtime/include/subscript_runtime.h`), the C and
     C++ tutorial, and the Rust tutorial state the API, rule 6, and the
     loop form: call the budgeted step each frame; work remains while
-    `pending` is not zero.
+    `pending` is not zero. *(Amended 2026-11-22 by §349 rule 10: the
+    pending count includes a `Worker.receive` that can complete.)*
 12. §94.1 rule 12 stays true of `subscript_rt_ctx_async_step`. Its text
     names §168 as the bounded form.
 

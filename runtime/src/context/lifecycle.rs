@@ -234,6 +234,14 @@ impl Context {
             );
             return false;
         };
+        self.trap_worker_outcome(&outcome)
+    }
+
+    /// Traps this Context with the outcome of a Worker that did not end
+    /// cleanly, and returns `false`; a clean outcome returns `true`.
+    /// `join()` and `receive()` (`compiler.md` §349 rule 6) share it, so
+    /// both report the same kind, message, and position.
+    pub(crate) fn trap_worker_outcome(&mut self, outcome: &WorkerOutcome) -> bool {
         match outcome {
             WorkerOutcome::Clean => true,
             WorkerOutcome::Trapped(record) => {

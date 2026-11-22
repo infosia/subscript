@@ -1908,6 +1908,11 @@ Accept: `a369`, `a370`. Reject: `r421`.
   *(Revised 2026-09-03, `compiler.md` §84: `string` fields are
   transferable by copy. Accept adds `a182`; reject adds `r182`,
   `r183`; retired:r108.)*
+  *(Revised 2026-11-22, `compiler.md` §349: the spawning side has
+  `receive(): Promise<Out | null>`. It is a pull, delivered at a
+  scheduler step; `onmessage` push delivery stays not carried. Accept
+  adds `a502` to `a506`; trap adds `t119`; reject adds `r559`,
+  `r560`.)*
 
   - **Model.** A worker is a runtime-owned OS thread running a
     dedicated Context of the same program image; module state is

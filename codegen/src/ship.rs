@@ -101,9 +101,17 @@ int main(void) {
     if (subscript_rt_ctx_trap_kind(ctx) == 0) {
         call_script_entry(ctx, subscript_kick_async_exports);
     }
-    while (subscript_rt_ctx_trap_kind(ctx) == 0 &&
-           subscript_rt_ctx_async_pending(ctx) != 0) {
-        (void)subscript_rt_ctx_async_step(ctx);
+    /* compiler.md 349 rule 11: this main owns its loop, so it waits on the
+     * receive signal when no task is pending, and steps again if the wait
+     * returned after the signal. */
+    for (;;) {
+        while (subscript_rt_ctx_trap_kind(ctx) == 0 &&
+               subscript_rt_ctx_async_pending(ctx) != 0) {
+            (void)subscript_rt_ctx_async_step(ctx);
+        }
+        if (subscript_rt_ctx_async_wait(ctx) == 0) {
+            break;
+        }
     }
     uint64_t len = 0;
     const unsigned char *out = subscript_rt_ctx_stdout(ctx, &len);

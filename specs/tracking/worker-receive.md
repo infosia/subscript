@@ -1,8 +1,8 @@
 # `Worker.receive()` — an awaitable receive on the spawning side
 
-Status: **measured 2026-11-22 at `7f7be71d`; the contract is
-`compiler.md` §349.** The measurement round changed no file of the
-tree.
+Status: **§349 COMPLETE.** Measured 2026-11-22 at `7f7be71d`; the
+measurement round changed no file of the tree. The evidence of the
+implementation and the Phase Review are in `compiler.md` §349.5.
 
 ## Owner decisions, 2026-11-22
 

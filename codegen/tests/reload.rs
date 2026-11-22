@@ -829,8 +829,15 @@ fn run_reload_entry(entry: &ReloadEntry) -> Vec<String> {
                     .expect("each async root has a checked host entry");
                 session.call_export(&entry.name)?;
             }
-            while session.async_pending() != 0 {
-                session.async_step()?;
+            // compiler.md §349 rule 11: this loop owns the run, so it waits
+            // on a Worker receive when no task is pending.
+            loop {
+                while session.async_pending() != 0 {
+                    session.async_step()?;
+                }
+                if !session.async_wait() {
+                    break;
+                }
             }
             Ok(())
         });

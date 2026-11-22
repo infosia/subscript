@@ -313,6 +313,10 @@ subscript_rt_completion_status subscript_rt_complete_void(subscript_rt_context* 
 /**
  * Returns the work a host checkpoint can advance: runnable continuations
  * and aggregate reactions, plus frames that wait for the next checkpoint.
+ * It also counts one while a Worker receive waits and a Worker of this
+ * subscript_rt_context posted, ended, or trapped since the last step that read the
+ * outboxes (`compiler.md` §349 rule 10). So a host that steps while this
+ * count is not zero delivers each Worker message.
  *
  * # Safety
  *
@@ -350,13 +354,29 @@ uint64_t subscript_rt_ctx_async_step(subscript_rt_context* ctx);
  */
 subscript_rt_async_step_report subscript_rt_ctx_async_step_budget(subscript_rt_context* ctx, uint64_t max_dispatches);
 /**
- * Returns the number of started invocations without a completion, plus pending host operations.
+ * Returns the number of started invocations without a completion, plus pending host operations
+ * and Worker receives that wait (`compiler.md` §349 rule 9).
  *
  * # Safety
  *
  * `ctx` follows the shared subscript_rt_context contract.
  */
 uint64_t subscript_rt_ctx_async_unfinished(const subscript_rt_context* ctx);
+/**
+ * Blocks until a Worker of this subscript_rt_context posts, ends, or traps, if a Worker
+ * receive waits (`compiler.md` §349 rule 11). Returns 1 after such a wait.
+ * Returns 0 at once if no receive waits or the subscript_rt_context is trapped. The
+ * thread sleeps on a condition variable and does not spin.
+ * Only a driver that owns its loop calls it, when
+ * `subscript_rt_ctx_async_pending` is zero, and steps again after a
+ * return of 1. A host that owns its loop and calls the step function does
+ * not call it.
+ *
+ * # Safety
+ *
+ * `ctx` follows the shared subscript_rt_context contract.
+ */
+int32_t subscript_rt_ctx_async_wait(const subscript_rt_context* ctx);
 /**
  * Ends one callback registration (§111 rule 5).
  *
@@ -622,7 +642,8 @@ uint32_t subscript_rt_ctx_trap_pos_id(const subscript_rt_context* ctx);
 /**
  * Visits registered tasks in task-id order (§169), without script or subscript_rt_context allocation.
  * States: READY=1, PARKED=2, WAITING=3, ACTIVE=4, COMPLETE=5, STOPPED=6.
- * Kinds: invocation=1, aggregate=2. A null visitor returns zero.
+ * Kinds: invocation=1, aggregate=2, group join=3, host operation=4, worker receive=5.
+ * A null visitor returns zero.
  * If pending is zero and unfinished is positive, follow each waiting task's awaited_task_id.
  * Resolve position ids through program.alloc.h; zero means no script site.
  *
@@ -753,6 +774,27 @@ uint8_t* subscript_rt_worker_poll(subscript_rt_context* parent, subscript_rt_wor
  * null only when that size is zero).
  */
 int32_t subscript_rt_worker_post(subscript_rt_context* parent, subscript_rt_worker* worker, const uint8_t* payload);
+/**
+ * Starts one awaitable receive of a worker-to-parent message
+ * (`compiler.md` §349). Returns a task handle with one count, which the
+ * caller owns and ends with `subscript_rt_async_release`. Its completion is
+ * one message pointer: a fresh allocation owned by `parent`, or null when the
+ * Worker ended and its outbox is empty.
+ *
+ * If no earlier receive of `worker` waits and a message is queued, the handle
+ * has its completion at the return. Otherwise the receive waits, and a
+ * scheduler step of `parent` completes it, oldest receive first. While a
+ * receive waits, `subscript_rt_worker_poll` returns null. If the Worker
+ * trapped and its outbox is empty, the call or the step records trap kind 22
+ * (`worker-trapped`) at the trap site of the Worker, as
+ * `subscript_rt_worker_join` does. A trap returns null. `pos_id` is the
+ * position of the call.
+ *
+ * # Safety
+ *
+ * `parent` follows the exclusive subscript_rt_context contract and `worker` belongs to it.
+ */
+uint8_t* subscript_rt_worker_receive(subscript_rt_context* parent, subscript_rt_worker* worker, uint32_t pos_id);
 /**
  * Spawns a runtime-owned OS thread with a fresh dedicated subscript_rt_context.
  *

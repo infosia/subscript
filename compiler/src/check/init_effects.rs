@@ -765,7 +765,8 @@ impl<'a> ModuleEffectScanner<'a> {
                     | hir::WorkerFn::Join
                     | hir::WorkerFn::InboxWait
                     | hir::WorkerFn::InboxPoll
-                    | hir::WorkerFn::OutboxPost => false,
+                    | hir::WorkerFn::OutboxPost
+                    | hir::WorkerFn::Receive => false,
                 } {
                     self.record_indirect_call();
                 }

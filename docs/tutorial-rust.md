@@ -462,8 +462,9 @@ that the mirror declares for its name.
 ## Workers, from a Rust host
 
 A script spawns workers through the standard library (`Worker`,
-`Inbox`, `Outbox`; Q35, `compiler.md` §38–§40). The host calls
-nothing: there is no worker API on `ReloadSession`.
+`Inbox`, `Outbox`; Q35, `compiler.md` §38–§40). The host calls no
+worker function. The one related call on `ReloadSession` is the wait
+of `Worker.receive` below.
 
 ```ts
 class EchoMessage {
@@ -498,6 +499,51 @@ export function main(): void {}
 One `session.call_export("update")` drives the whole round trip, and
 `take_output()` returns `echo=74`.
 
+`receive()` is the form that composes with `await`. It returns a
+`Promise<Out | null>` that completes with the oldest message of the
+outbox, or with `null` after the worker ended and its outbox is empty.
+If no message is available, the receive waits, and it completes at a
+scheduler step of your Context, never on the worker thread. While a
+receive waits, `poll()` returns `null`.
+
+```ts
+class Num {
+  value: i32;
+  constructor(value: i32) {
+    this.value = value;
+  }
+}
+
+function twice(inbox: Inbox<Num>, outbox: Outbox<Num>): void {
+  const n: Num | null = inbox.wait();
+  if (n != null) {
+    outbox.post(new Num(n.value * 2));
+  }
+}
+
+export async function main(): Promise<void> {
+  const worker: Worker<Num, Num> = Worker.spawn(twice);
+  worker.post(new Num(21));
+  worker.close();
+  const reply: Num | null = await worker.receive(); // completes at a step
+  const end: Num | null = await worker.receive(); // null: the worker ended
+  print(reply != null ? `reply=${reply.value}` : "none");
+  print(end == null ? "ended" : "more");
+}
+```
+
+```text
+reply=42
+ended
+```
+
+A host that owns its loop calls `session.async_step()` while
+`session.async_pending()` is not zero. A message for a receive that
+waits makes that count not zero. A program with no other work calls
+`session.async_wait()` when the count is zero. It blocks until a
+receive can complete and returns `true`, or returns `false` at once if
+no receive waits. Then step again. `session.run_main()` does this.
+
 What changes for the host:
 
 - **Your Context stays single-threaded.** Each worker owns a fresh
@@ -523,8 +569,9 @@ What changes for the host:
   ```
 
   After every worker joins, a body-only edit swaps normally.
-- **A worker fault is loud at the join.** `join` on a worker whose
-  Context trapped traps the joining Context, and the host receives
+- **A worker fault is loud at the join and at the receive.** `join`, or
+  a `receive` that finds an empty outbox, on a worker whose Context
+  trapped traps the receiving Context, and the host receives
   it as an ordinary `RunError::Trap`, whose position is the worker's
   trap site:
 
@@ -610,7 +657,8 @@ artifact is C either way.
   `main(): void`. A session does not require that export
   (`compiler.md` §53).
 - **Async**: an async export kicks a root but does not pump it.
-  `session.async_pending()` counts ready jobs and parked frames (§94.2).
+  `session.async_pending()` counts ready jobs and parked frames (§94.2),
+  and a `Worker.receive` that can complete (§349 rule 10).
   `session.async_step()` appends existing parked frames after ready jobs,
   then drains the ready queue in first-in, first-out order (§94.1 rules 8 and 9).
   Jobs that join the ready queue during the drain run in that step.

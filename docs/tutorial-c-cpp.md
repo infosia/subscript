@@ -200,7 +200,8 @@ after ready jobs, then drain the ready queue in first-in, first-out order
 Jobs that join the ready queue during the drain run in that step.
 Frames that park during the drain wait for the next step.
 `subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
-(§94.2). A local, an array, a field, or a global can hold an async handle.
+(§94.2), and it also counts a `Worker.receive` that can complete
+(§349 rule 10). A local, an array, a field, or a global can hold an async handle.
 Copies retain the frame; releases decrement its reference count and free
 it at zero (§70.3). No background scheduler runs (see the
 [TypeScript tutorial](tutorial-typescript.md#asyncawait-without-a-scheduler)).
@@ -229,7 +230,7 @@ The callback receives `const subscript_rt_async_task_info*`. The record pointer 
 The visit runs no script, changes no state, and allocates no Context memory. A null visitor returns zero.
 Records arrive in `task_id` order. Context-local ids start at one and are never reused.
 The record gives `task_id`, `awaited_task_id`, `state`, `kind`, `function_pos_id`, and `await_pos_id`.
-Kinds are invocation (1), aggregate (2), group join (3), and host operation (4).
+Kinds are invocation (1), aggregate (2), group join (3), host operation (4), and worker receive (5).
 The `create_pos_id` names the call site; host kicks and aggregates report 0.
 A host operation reports its call site as `create_pos_id`, and zero function and await positions.
 A waiting invocation can name a host operation: it waits for your completion call.
@@ -1620,8 +1621,9 @@ What the host must know:
 - **Worker handles never outlive the parent Context.** Releasing the
   parent closes, joins, and frees every live worker
   (`subscript_rt_worker_spawn` in the generated header).
-- **A worker failure is loud at `join`**, as trap kind 22
-  (`worker-trapped`) on the joining Context. It is never silent.
+- **A worker failure is loud at `join` and at `receive`**, as trap
+  kind 22 (`worker-trapped`) on the joining or receiving Context. It is
+  never silent.
 - **A worker's `print` goes to the worker's own sink, not to yours.**
   That sink dies with the worker Context. Measured on both tiers: a
   worker that prints produces no line in the parent's output and none
@@ -1648,6 +1650,52 @@ handle from reaching another Context.
 [`examples/e11-parallel-workers.ts`](../examples/e11-parallel-workers.ts)
 is the worked example: four workers, four Contexts, one aggregated
 result.
+
+`receive()` is the form that composes with `await`. It returns a
+`Promise<Out | null>` that completes with the oldest message of the
+outbox, or with `null` after the worker ended and its outbox is empty.
+If no message is available, the receive waits, and it completes at a
+scheduler step of your Context, never on the worker thread. While a
+receive waits, `poll()` returns `null`.
+
+```ts
+class Num {
+  value: i32;
+  constructor(value: i32) {
+    this.value = value;
+  }
+}
+
+function twice(inbox: Inbox<Num>, outbox: Outbox<Num>): void {
+  const n: Num | null = inbox.wait();
+  if (n != null) {
+    outbox.post(new Num(n.value * 2));
+  }
+}
+
+export async function main(): Promise<void> {
+  const worker: Worker<Num, Num> = Worker.spawn(twice);
+  worker.post(new Num(21));
+  worker.close();
+  const reply: Num | null = await worker.receive(); // completes at a step
+  const end: Num | null = await worker.receive(); // null: the worker ended
+  print(reply != null ? `reply=${reply.value}` : "none");
+  print(end == null ? "ended" : "more");
+}
+```
+
+```text
+reply=42
+ended
+```
+
+A host that owns its loop calls `subscript_rt_ctx_async_step(ctx)`
+while `subscript_rt_ctx_async_pending(ctx)` is not zero. A message for
+a receive that waits makes that count not zero, so the frame loop needs
+no other call. A program with no other work calls
+`subscript_rt_ctx_async_wait(ctx)` when the count is zero. It blocks
+until a receive can complete and returns 1, or returns 0 at once if no
+receive waits. Then step again. The generated `entry.c` does this.
 
 ### The rules a host must know
 
@@ -1695,7 +1743,7 @@ contract.
   Jobs that join the ready queue during the drain run in that step.
   Frames that park during the drain wait for the next step.
   `subscript_rt_ctx_async_pending(ctx)` counts ready jobs and parked frames
-  (§94.2). A host that never steps leaves them
+  (§94.2), and a `Worker.receive` that can complete (§349 rule 10). A host that never steps leaves them
   parked forever: no background scheduler runs. Releasing the Context drops parked computations without
   running any remainder. Measured:
 

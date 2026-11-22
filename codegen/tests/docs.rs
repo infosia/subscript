@@ -403,9 +403,9 @@ fn documentation_blocks() {
         let groups = source_groups(&blocks).unwrap_or_else(|error| panic!("{file}: {error}"));
         let expected_ts = match file {
             "README.md" => 1,
-            "docs/tutorial-c-cpp.md" => 12,
-            "docs/tutorial-rust.md" => 3,
-            "docs/tutorial-typescript.md" => 33,
+            "docs/tutorial-c-cpp.md" => 13,
+            "docs/tutorial-rust.md" => 4,
+            "docs/tutorial-typescript.md" => 34,
             _ => panic!("{file}: add the measured TypeScript fence count to the scope table"),
         };
         assert_eq!(

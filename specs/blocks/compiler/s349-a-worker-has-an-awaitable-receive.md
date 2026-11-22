@@ -58,7 +58,8 @@ completion. The **outcome** of a Worker is "runs", "ended", or
    "trapped", the outbox is empty, and a receive waits or is called,
    the Context traps with kind 22 at the trap site of the Worker, with
    the message of `join()`. The messages that the Worker posted before
-   its trap are delivered first.
+   its trap are delivered first. If the host clears the trap, the next
+   step reports it again, as each `join()` does.
 7. **While a receive waits, `poll()` returns `null` (decision B).**
    `join()` does not change: it blocks until the Worker ends and does
    not read the outbox. A receive that waited through a `join()`
@@ -82,12 +83,14 @@ completion. The **outcome** of a Worker is "runs", "ended", or
 11. **A driver with no host step waits on the signal (decision D).**
     The runtime has one function that blocks until the signal is set,
     and returns at once with "nothing to wait for" if no receive
-    waits. The C API exports it. Each driver that owns its loop (the
-    dev JIT entry, the generated `main` of the ship tier,
-    `ReloadSession::run_main`, the capture binary) calls it when the
+    waits. The C API exports it (`subscript_rt_ctx_async_wait`), and
+    `ReloadSession` has the same function (`async_wait`). Each driver
+    that owns its loop (the dev JIT entry, the generated `main` of
+    the ship tier, `ReloadSession::run_main`) calls it when the
     pending count is zero, and steps again if it returned after a
-    wait. A host that owns its loop does not call it, and no other
-    function of the C API blocks on a Worker.
+    wait. A host that owns its loop and has other work does not call
+    it, and no other function of the C API or of `ReloadSession`
+    blocks on a Worker.
 12. **A run that waits for a Worker that does not end does not
     return.** This is the result of `join()` on that Worker today.
     The wait uses no CPU.
@@ -100,6 +103,16 @@ completion. The **outcome** of a Worker is "runs", "ended", or
 15. **No hidden cost.** A step locks one outbox for each Worker that
     has a receive that waits, and only if the signal is set. A
     program with no receive pays one test of a count in each step.
+
+16. **The exit count of a program that calls `receive` is not a
+    function of the program.** A receive that completes at its call
+    adds no outermost exit, and one that waits adds a step, so the
+    count follows the time of the Worker thread. The stress sweep
+    compares the output and the trap of such an entry, and does not
+    compare its exit count (§345 rule 4). The sweep derives the fact
+    from the lowered program, and a second derivation from the source
+    text must agree. *(Added 2026-11-22, after the corpus entries:
+    `a505` gave 6 to 9 exits in eight runs of each tier.)*
 
 ### 349.2 Acceptance
 
@@ -152,6 +165,7 @@ completion. The **outcome** of a Worker is "runs", "ended", or
   name.
 - §168 (the step budget) and the host header: the pending count
   includes a receive that can complete (rule 10).
+- §345 rule 4: rule 16 here.
 
 ### 349.4 Not in this section
 
@@ -161,3 +175,104 @@ completion. The **outcome** of a Worker is "runs", "ended", or
 - An awaitable `Inbox` on the Worker side: the entry of a Worker is
   synchronous (§40).
 - `Promise.race`: the language has none.
+
+### 349.5 Phase Review
+
+Form.
+
+- `runtime/src/worker/receive.rs` holds the signal of a Context
+  (`ReceiveSignal`: one flag, one mutex, one condition variable), the
+  sequence of the receives that wait for each Worker, and the choice
+  of rules 2, 3, 5, and 6. A post, a close, and the end of a Worker
+  set the signal while they hold the lock of the outbox, so a thread
+  that reads a message under that lock reads the signal also. The
+  lock sequence is outbox, then signal; no path takes them in the
+  other sequence.
+- The Worker writes its outcome and closes its outbox in one hold of
+  the lock (rule 8). `join()` and a receive report a trap through one
+  function, `Context::trap_worker_outcome`.
+- A receive that waits is a frame of `RuntimeTask::WorkerReceive`,
+  kind 5 for the task visitor. The sequence of a Worker holds one
+  count of the frame until the delivery, so a handle that the caller
+  releases before the delivery stays valid.
+- The delivery is in the drain, inside the script bracket, before the
+  tasks run. A step with a budget of zero returns before it.
+- `receive` is operation 8 of the Worker intrinsic family. Its result
+  is a fresh owned handle, as the result of an async call is; the LIR
+  needed no new fact.
+- The drivers: the dev JIT entry, the C text of the generated `main`,
+  and `ReloadSession::run_main` call the wait. Three loops of tests
+  and tools that run a program to its end call
+  `ReloadSession::async_wait`.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| CPU time, ship tier, release build, three runs: receive, `join()`, the loop of the problem | 187.0 to 189.2 ms, 185.5 to 189.7 ms, 377.3 to 395.7 ms |
+| CPU time, dev JIT, the same | 221.6 to 222.0 ms, 220.8 to 221.6 ms, 443.5 to 443.8 ms |
+| CPU time, debug build, one run | ship tier 208.9, 209.2, 424.7 ms; dev JIT 238.2, 235.2, 464.4 ms |
+| The limits of the test | receive under 1.2 times `join()`; the loop over 1.5 times |
+| A Worker posts one message and traps: receive form and `join()` form | equal: kind 22, the message of the index trap, the position in the Worker, stdout `got 5`, in the two tiers |
+| `a502` to `a506`, 10 runs of each in each tier | 100 of 100 equal to the golden; no run over its time limit |
+| Before the drivers called the wait | the program of acceptance 2a printed nothing in the dev JIT and the ship tier |
+| At the pin | the checker rejects `await w.receive()` with S018 (measured at `7f7be71d`, which has the code tree of the pin) |
+| Stress sweep, 610 entries | dev JIT 607 of 607, ship tier 605 of 605, interpreter 496 of 496; 485 exit counts compared; 5 not compared by rule 16 |
+| Exit counts of `a505`, eight runs of each tier | 6 to 9 in each tier |
+| Cost of the tests | `codegen/tests/worker_receive.rs`: 1.8 s in a release build, 2.8 s in a debug build; each runtime test under 5 ms, with no sleep |
+| `perf-gate --gate`, two passes | each criterion met: `a22` ship tier 1.33x and 1.34x, `collect` ship tier 1.16x and 1.15x, `a22` dev JIT 19.87x and 19.91x, `collect` dev JIT 3.72x and 3.72x |
+
+Phase Review (a subagent with no context): no CRITICAL, 3 MAJOR, 6
+MINOR. The review found no lost wakeup, no path where a host-owned
+loop blocks, and no message that no root reaches, and it evaluated
+each golden by hand.
+
+| Finding | Close |
+|---|---|
+| MAJOR: the Worker set the signal after it released the lock of the outbox, so a runtime test that read the outbox and then stepped could deliver nothing | the signal is set under the lock |
+| MAJOR: the clause "no earlier receive waits" of rule 2 had no test that can fail | `a_receive_waits_at_its_call_while_an_earlier_receive_waits`; Red without the clause |
+| MAJOR: the hot reload clause of rule 9 had no test | `a_receive_that_waits_across_a_reload_is_not_stale`; Red without the kind in the stale test |
+| After the host cleared a rule 6 trap, the receive did not complete and did not trap again | a trap exit of the delivery sets the signal again; rule 6 states it |
+| A message was lost if its materialize step trapped at a step | the delivery gives the record back to the outbox; a test with an allocation limit |
+| An unread message of a released handle stays until a collection | open item 1 |
+| The three tutorials, the language reference, and one header text stated the former pending count or did not state `receive` | each is updated |
+| The margins of the CPU test in a debug build | measured: the ratios are 1.0 and 2.0 in a debug build also |
+| Rule 16 leaves out two entries whose count is a function of the program (`a504`, `a506`) | open item 3 |
+
+The first run of the full gate on this section failed on one test:
+`reload_mode_reproduces_every_committed_golden` ran `a503` and `a505`
+with a loop on the pending count and ended while a receive waited.
+`ReloadSession` had no wait function. Rule 11 now states it, and the
+run after that:
+
+```text
+gate full c7ca4b37dc52fffe68a3441b71ec50b38ad12e88 dirty:62 debug 4004/0/5 release 3985/0/5 skips 2/0 clippy 4/10/13 goldens-moved 1 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
+### 349.6 Open
+
+1. A message of a receive that completed, whose handle the program
+   releases with no `await`, is not released at that point. A
+   collection reclaims it. With automatic collection off and no
+   explicit collection it stays until the Context ends. S013 rejects
+   a handle that the program drops, so the shape needs a handle that
+   the program holds and does not await.
+2. A receive that completes at its call loses its message if the
+   materialize step traps there (an allocation failure). The path at
+   a step keeps it.
+3. Rule 16 leaves out the exit count of each program that calls
+   `receive`, also where the count is a function of the program
+   (`a504`, `a506`).
+4. The CPU test of acceptance 1 is for unix hosts only: the
+   repository has no portable read of the CPU time of a child. On
+   Windows the acceptance has no test.
+5. A run that waits for a Worker that does not end and does not post
+   does not return (rule 12).
+6. Rule 14 (the interpreter refuses `receive`) and rule 15 (the cost
+   with no receive) have no test of their own: the corpus headers
+   state the first, and `perf-gate` reads the second.
+7. The language has no `Promise.race`, so a program cannot take the
+   first message of some Workers with one `await`.
+
