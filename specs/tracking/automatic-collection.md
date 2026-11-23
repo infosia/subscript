@@ -950,3 +950,106 @@ control; a test of the epoch wrap; tests of a word that points to
 garbage in a pending chunk, of `Context.free` in a pending chunk, of
 a pending chunk over many collections, and of a chunk that is read
 at no time.
+
+## G13 — the write barrier of a generational collection
+
+Measured 2026-11-24 at `2395f5ed`, release build, arm64 macOS, the
+ship tier. Origin: a downstream proposal of a non-moving
+generational collection, with a probe of one program: 1.5 % of the
+new allocations (12 % of the bytes) are live at the next collection,
+and 10 to 16 older objects hold a reference to a young one. The
+round measured the record of stores into older blocks, which the
+proposal names as the first experiment. It built no minor
+collection, and it reverted each change.
+
+The rule that a landed form works against: each store of a
+reference gets work that it does not have today.
+
+The paths that write a reference into a block that exists.
+
+| Path | Can the destination be old | Who writes |
+|---|---|---|
+| A field store, an array element store, an inline `push` | yes | generated code; the type of the value tells that it can hold a reference |
+| A store through another address (a value-class field, a fixed array, an out-parameter) | not known: a block, a frame, a global, the stack, or host memory | generated code |
+| A coroutine frame: a local, a save at a suspension, a child handle, a closure capture | yes | generated code |
+| `array_push`, growth, splice, fill, sort, the result of `map` or `filter` | yes; a result can become old while a callback runs | the runtime |
+| A Map or Set insert; the storage pointers at a growth | yes | the runtime |
+| The result array of `Promise.all`; a completion value | yes | the runtime |
+| A module variable; a root slot | no block | a root |
+| The host in a foreign call | yes | no new reference: §325 rule 4 accepts the former value or null only |
+| The host outside a call | | no API stores a reference |
+
+- Each edge from an old block to a young one comes from generated
+  code or from the runtime. The host cannot make one.
+- The LIR does not carry the kind of the destination storage. A flag
+  in the header of the owner needs that fact; a card table does not.
+- A typed record does not see a number word that holds the bits of a
+  young address. That changes what stays live and not soundness. No
+  such store occurred in the runs.
+- A record must be one for each Context: a shared table lost edges
+  when a Worker cleared it.
+- A release through an old holder that is not reachable (§348) waits
+  for a full collection. The detection collection stays full.
+
+Counts, 1 MiB of headroom, summed over the collections of a run.
+
+| Workload | Collections | Stores that can hold a reference | Old-to-young stores | Distinct old owners | Young blocks that are live | Words of a minor mark against the full mark | Slots of a minor sweep against the full sweep |
+|---|---|---|---|---|---|---|---|
+| `collect` | 10 | 600,000 | 0 | 0 | 474,048 of 720,005 | 568,998 of 707,598 | 720,005 of 1,441,568 |
+| `tree` | 30 | 7,864,260 | 343 | 307 | 1,966,545 of 1,966,545 | 3,935,340 of 3,934,726 | 1,966,545 of 3,866,596 |
+| A game form: 20,000 objects that stay, 2,000 temporaries and 2,000 changed references for each frame | 8 | 1,363,896 | 58,797 | 18,269 | 73,264 of 1,194,972 | 928,858 of 2,989,248 | 1,194,972 of 1,516,125 |
+| `callbacks`, `sort`, `particles`, `a22` | 2 to 23 | 16 to 39 | 1 to 3 | 1 to 3 | | | |
+
+In the steady state of the game form: an exact record gives a minor
+mark of 6.5 % of the full mark. A card table of 512-byte cards with
+no test of the value gives about 47 %, because stores of old
+references make most cards dirty. A minor sweep reads about 80 % of
+the slots.
+
+Cost of three barrier forms, counters off: a card byte for each
+store; a flag in the owner header with a card for other stores; a
+card behind a test for null.
+
+| Item | Pin | With a barrier |
+|---|---|---|
+| `perf-gate --gate`, `a22`, ship tier, ms | 5.262 and 5.267 | 5.260 to 5.293; each criterion met |
+| The same, `collect` | 30.405 and 29.873 | 29.901 to 30.547 |
+| A loop of reference stores into old blocks only, ns for each store | 0.68 | 0.05 to 0.07 more |
+| The game form, 30,000 frames, s | 1.03 to 1.07 | 1.06 to 1.08 |
+
+The completeness check: at each full collection a walk finds each
+edge from a live old block to a live young block and reads its
+record. The stress sweep with the card form: 36,636 collections and
+23 edges with no record, from paths that the prototype gave no
+barrier: the storage pointers of a Map at a growth, a closure capture
+into a frame, the result array of `Promise.all`, the shared table
+under a Worker, and one frame that was not assigned. Two controls
+(no barrier on an array element store; none in the runtime helpers)
+fail the check with 320 and 3,616 edges.
+
+Result.
+
+- A barrier can be sound, and its cost on ordinary code is 0 to 2 %.
+- A minor collection reduces the mark. It does not reduce the sweep
+  of the young slots. In the downstream program at 1.5 MiB live the
+  mark is about 0.1 ms and the sweep is 0.5 to 0.7 ms of the pause
+  (G10, G12), so a minor collection removes a small part there.
+- A minor collection pays where the live graph is large and holds
+  references: the full mark is 8.5 ms at 16 MiB and 31 ms at 64 MiB
+  (G9 after §355). No host program with that heap is measured.
+
+Decision: no minor-collection prototype in this round. The next
+evidence is the record of §353 from a host program with a large live
+graph.
+
+Open, for a later round.
+
+1. The fact of the destination storage in the LIR.
+2. A barrier for each runtime path of the table, and for each frame
+   store.
+3. A test of the value (is it young) before the record: it decides
+   how much of the mark a card table gives back; not measured.
+4. Two frame edges of one corpus entry had a card and no owner flag;
+   the cause is not found.
+5. The role of a full collection: the trigger by old growth, the
+   releases of §348, the detection collection.
