@@ -615,3 +615,114 @@ of two runs. An object has 32 bytes.
 
 The measurement is an ignored test of the runtime
 (`the_collection_time_curve_of_the_ship_arena`), about 2 s.
+
+## G10 — the sweep against the slots below the bump marks
+
+Measured 2026-11-23 at `06e4a12d`, release build, arm64 macOS, the
+ship arena. Origin: a downstream report of collections of 0.9 to
+1.1 ms with 1.5 MiB of live bytes, 231,736 to 447,430 slots below
+the bump marks, and about 14,600 words read. The round built three
+prototypes and reverted each change.
+
+The rule that a landed prototype works against: each one adds work
+to the allocation path, which `perf-gate` guards.
+
+Form of the measurement: 23,040 live blocks (1.5 MiB) in four size
+classes, H slots below the bump marks, 200 explicit collections, a
+64 MiB write before each collection to empty the cache. "Dense": the
+live blocks fill 24 chunks and each other chunk is free. "Sparse":
+each chunk holds live blocks. "Full": each slot is live. g is the
+part of the free slots that the program allocates again before each
+collection.
+
+State at the pin, median µs.
+
+| H | Shape | g | Pause | Before the sweep | Sweep of the size classes | ns for each slot |
+|---|---|---|---|---|---|---|
+| 100k | dense | 0 | 402 | 239 | 160 | 1.60 |
+| 450k | dense | 0 | 1,054 | 289 | 762 | 1.69 |
+| 450k | dense | 1.0 | 964 | 292 | 671 | 1.49 |
+| 450k | sparse | 0 | 1,153 | 474 | 679 | 1.51 |
+| 450k | sparse | 1.0 | 1,187 | 575 | 594 | 1.32 |
+| 1M | dense | 0 | 1,765 | 322 | 1,441 | 1.44 |
+| 4M | dense | 0 | 5,818 | 378 | 5,436 | 1.36 |
+| 4M | sparse | 0 | 6,486 | 1,035 | 5,444 | 1.36 |
+
+- The sweep reads the state word of each slot below a bump mark:
+  1.0 to 2.0 ns for each slot. The state of the slot does not change
+  the cost. The sweep of the large allocations is below 1 µs.
+- The time before the sweep is the push of the roots (about 60 µs for
+  23,040 root words) and the mark. It does not follow H.
+- The cost of one marked word grows with the count of chunks: 7.8,
+  9.8, 11.5, and 13.8 ns at 108, 472, 1,044, and 4,168 chunks in the
+  dense shape; 12.6 to 42 ns in the sparse shape. The candidates are
+  one more step of the search of the chunk map for each doubling, and
+  the cache for live blocks in many chunks. Each is not measured
+  alone. This is the growth that G9 records.
+- The figures of G9 come from a unit test of the runtime, whose build
+  counts each lookup in an atomic counter. The effect on G9 is not
+  measured.
+
+The prototypes. B: a count of occupied blocks for each chunk; the
+sweep does not read a chunk with the count 0. C: one occupancy bit
+for each slot. D: one flag for each chunk, set at an allocation into
+the chunk and at the end of a sweep that found a live block.
+
+Sweep of the size classes, median µs.
+
+| H, shape, g | Pin | B | C | D |
+|---|---|---|---|---|
+| 450k dense 0 | 762 | 20 | 26 | 18 |
+| 450k dense 0.1 | 735 | 70 | 82 | 58 |
+| 450k dense 1.0 | 671 | 757 | 821 | 661 |
+| 450k sparse 0 | 679 | 701 | 27 | 669 |
+| 450k sparse 1.0 | 594 | 602 | 791 | 581 |
+| 4M dense 0 | 5,436 | 24 | 62 | 24 |
+| 4M sparse 0 | 5,444 | 5,413 | 88 | 5,372 |
+| 4M dense 1.0 | 7,286 | 7,300 | 8,507 | 7,205 |
+
+| | ns for one bump allocation | ns for one reuse from a free list |
+|---|---|---|
+| Pin | 5.92 to 6.08 | 6.26 to 6.30 |
+| B | 6.29 to 6.40 | 6.32 |
+| C | 6.87 to 6.95 | 6.80 to 6.81 |
+| D | 6.06 to 6.09 | 6.28 to 6.31 |
+
+- `perf-gate --gate` met each criterion with each prototype; the
+  `collect` ratio of the ship tier was 1.13x to 1.17x, inside the
+  spread of four runs of the pin (1.15x to 1.18x).
+- The tests of the runtime passed with each prototype, each with a
+  check of its record on each sweep, and a control that removes one
+  update of the record fails. The stress sweep passed with B and C.
+  With D it passed in 3 of 4 runs; the text of the one failure was
+  not kept, and the pin was not run for a comparison.
+- No prototype reduces a sweep in which each slot was allocated
+  after the last collection (g = 1.0). C is 15 to 25 % slower there.
+
+Decision: no prototype lands.
+
+- The allocator takes a block from a free list before it moves a
+  bump mark. So a bump mark moves only when the free list of its
+  class is empty, and the slots of that class then hold live blocks
+  and blocks that the program allocated after the last collection.
+  In the downstream run the slots below the bump marks grew at each
+  collection (231,736, 386,585, 447,430). That is the g = 1.0 form:
+  the sweep reads blocks that it must retire, and blocks that were
+  free before are a small part.
+- The count of those blocks follows the headroom. 16 MiB of requests
+  of about 50 bytes are about 320,000 blocks, the size of the
+  downstream figures. A smaller headroom gives more collections, each
+  with a shorter sweep. The time before the sweep (about 0.3 ms in
+  the downstream run) does not change.
+- The record of §353 does not show the split. A census of the slot
+  states at the entry of a sweep in the downstream program decides
+  whether D has a use there.
+
+Open.
+
+1. The cost of one marked word against the count of chunks, and its
+   two candidate causes.
+2. A sweep that runs in parts at later allocations takes the retire
+   work out of the pause. It changes when the live bytes fall, and no
+   design exists.
+3. The one failed stress run with prototype D.
