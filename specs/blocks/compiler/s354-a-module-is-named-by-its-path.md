@@ -175,8 +175,9 @@ Red first, at the pin, for each item that states it.
    relative `declare module` in a mirror has a key from that path,
    and no import of the program resolves to it. No mirror in the
    repository has that form.
-5. The `#[cfg(windows)]` test of the names is not compiled on the
-   host of this section.
+5. Closed: the Windows full gate at `ddc0f0e2` compiles and passes
+   the `#[cfg(windows)]` test of the names
+   (`specs/tracking/windows-portability.md`).
 
 ### 354.5 Phase Review
 

@@ -726,3 +726,107 @@ Open.
    work out of the pause. It changes when the live bytes fall, and no
    design exists.
 3. The one failed stress run with prototype D.
+
+## G11 — the cost of one marked word
+
+Measured 2026-11-23 at `b8e593c1`, release build, arm64 macOS, the
+ship arena, the heaps of G10. The figures are medians of 31 passes
+in ns for each word, with a 64 MiB write before each pass. The round
+reverted each change. It closes open items 1 and 3 of G10.
+
+The work of one candidate word at the pin:
+
+1. A search of the sorted chunk map (`partition_point` over pairs of
+   16 bytes): ceil(log2 n) dependent reads, 7, 9, 11, and 13 at 108,
+   472, 1,044, and 4,168 chunks.
+2. A read of the chunk record, then of the block state.
+3. For a word that is no block of a chunk: a lookup in the map of the
+   large allocations, a hash map with the default hasher. An empty
+   map returns before it hashes. A map with one record or more costs
+   about 7 ns for each such word.
+
+| Chunks | Shape | Mark | Lookup only | State read only | A word that is no block, large map empty | The same with one large record |
+|---|---|---|---|---|---|---|
+| 108 | dense | 7.3 | 5.4 | 1.3 to 1.5 | 4.0 | 10.9 to 11.7 |
+| 472 | dense | 9.2 | 7.2 | 1.2 | 5.7 | 12.5 to 13.2 |
+| 1,044 | dense | 11.2 | 9.2 | 1.3 | 7.5 | 14.6 |
+| 4,168 | dense | 13.4 | 11.4 | 1.2 | 9.7 | 17.4 |
+| 108 | sparse | 11.0 | 6.5 | 2.9 to 3.9 | 4.0 | 11.0 |
+| 4,168 | sparse | 41.2 to 41.6 | 15.0 | 5.1 to 5.6 | 9.7 | 17.4 |
+
+- The lookup has the same time with a full cache and with an empty
+  one. Its cost is the chain of dependent reads of the search.
+- In the dense shape the growth of the mark (6.1 ns) is the growth
+  of the lookup (6.0 ns).
+- In the sparse shape the search gives 8.6 ns of the growth and the
+  state read 2 to 5 ns. The mark loop has about 21 ns more at 4,168
+  chunks than a loop of lookup and state read with no work list.
+- Each word that is no block has the same cost: 0, a small integer,
+  a pointer outside the arena, the bits of a float.
+- A chunk comes from `alloc_zeroed` with an alignment of 16. Most
+  bases had an alignment of 64 KiB (4,126 of 4,168; 53 of 108), which
+  the allocator does not promise.
+
+Prototypes, at 108 and 4,168 chunks.
+
+| Variant | Lookup | Mark, dense | Mark, sparse | A word that is no block, one large record, at 4,168 | Chunk creation, ns |
+|---|---|---|---|---|---|
+| Pin | 5.4 and 11.4 | 7.3 and 13.4 | 11 and 41 | 17.4 | 1,040 to 1,180 |
+| A table from the 64 KiB page of an address to a chunk, chunks not aligned | 2.1 and 2.1 | | | | |
+| The address hasher on the large map | as the pin | 6.8 and 13.0 | 10.4 and 38.3 | 10.0 | 1,179 |
+| The page table and the address hasher | 2.1 and 2.1 | 3.3 and 4.4 | 7.0 and 20.9 | 1.7 | 1,067 |
+| Those and a prefetch of the word 8 places ahead | 2.1 | 3.5 and 4.4 | 5.4 and 13.1 | 1.8 | 1,024 |
+| Chunks with an alignment of 64 KiB, a hash of the page, the address hasher | 1.6 and 1.8 | 3.2 and 4.2 | 7.4 and 20.1 | 1.4 | 836 |
+| A search over the keys only, with no branch | 4.1 and 8.2 | 6.1 and 10.4 | 10.2 and 35.6 | 13.7 | 1,150 |
+| A cache of the last chunk | 1.3 and 1.4 (6.1 sparse) | 3.7 and 4.8 | 7.6 and 26.9 | as the pin | 1,194 |
+| A range test before the search | 6.1 and 12.1 | 8.5 and 14.6 | 12.7 and 45.6 | 7.6; 18.9 inside the range | 1,107 |
+
+The page table and the address hasher, against the pin:
+
+| Item | Pin | With the two changes |
+|---|---|---|
+| `perf-gate --gate`, `collect`, ship tier, two runs | 36.689 and 36.741 ms (1.16x and 1.17x) | 30.291 and 30.415 ms (0.97x and 0.97x) |
+| The same, `a22` | 5.275 and 5.268 ms | 5.263 and 5.258 ms |
+| A bump allocation; a reuse from a free list | 5.5 to 5.7 ns; 6.0 to 6.2 ns | 5.68 ns; 6.13 ns |
+| Tests of the runtime, release; stress sweep | | pass; pass |
+
+The shapes of G9, ms for one collection (ns for each word). The unit
+test of G9 counts each lookup in an atomic counter of a test build,
+which adds 1 to 3.5 ns for each word; the second column has no
+counter.
+
+| Shape | Live MiB | Pin | With the two changes |
+|---|---|---|---|
+| An array of references to objects | 1 | 1.54 (11.7) | 0.506 (3.86) |
+| | 4 | 7.28 (13.9) | 2.574 (4.91) |
+| | 16 | 39.4 (18.8) | 8.679 (4.14) |
+| | 64 | 181 (21.6) | 34.12 (4.07) |
+| A chain of objects | 1 | 0.756 (5.8) | 0.457 (3.49) |
+| | 4 | 4.01 (7.7) | 1.772 (3.38) |
+| | 16 | 20.9 (10.0) | 8.965 (4.28) |
+| | 64 | 102.8 (12.2) | 29.32 (3.50) |
+
+An object of 32 bytes has six payload words, and five are 0. So the
+array shape reads mostly words that are no block, with a large map
+that holds the array: the default hasher was the larger part there.
+
+Decision: the page table and the address hasher land, as
+`compiler.md` §355. The aligned form is not selected: its gain over
+the page table is small, and the cost of an aligned chunk on Linux
+and Windows is not measured. The prefetch is not selected: it needs
+code for each architecture, and it was measured on arm64 only.
+
+The failed stress run of G10 with prototype D: the pin passed 6 of 6
+runs and prototype D, with its check, passed 6 of 6. Each run was
+alone on the host, after a deletion of the runtime archive. The
+cause of the one failure is not found; in that round the sweeps, a
+control, and the benchmark runs were minutes apart, and the round
+changed patches between runs.
+
+Open.
+
+1. The sparse shape at many chunks stays at 7 to 21 ns for each word:
+   the wait for the state word of a block in a chunk that the cache
+   does not hold. The prefetch reduces it to 5.4 to 13.1 ns.
+2. Why the mark loop overlaps those waits less than a loop with no
+   work list.
