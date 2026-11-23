@@ -25,6 +25,9 @@ stems are unique.
 
 ### 267.1 Rules
 
+§354 replaces the stem with the key of a module, its path: rule 1
+compares keys, and rule 4 does not hold after §354 rule 8.
+
 1. `check_program` rejects two source files that are not ambient and
    have the same stem, with one diagnostic at the second file that
    names the stem and the two file names. No pass runs on such a set.

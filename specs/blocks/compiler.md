@@ -394,3 +394,4 @@ Every section, with its status:
 | §351 | A return into a recursion reaches a poll before it allocates | active | [`s351-a-return-into-a-recursion-reaches-a-poll.md`](compiler/s351-a-return-into-a-recursion-reaches-a-poll.md) |
 | §352 | A generator resume is a call in the poll graph | active | [`s352-a-generator-resume-is-a-call-in-the-poll-graph.md`](compiler/s352-a-generator-resume-is-a-call-in-the-poll-graph.md) |
 | §353 | A host reads the count and the time of collections | active | [`s353-a-host-reads-the-count-and-the-time-of-collections.md`](compiler/s353-a-host-reads-the-count-and-the-time-of-collections.md) |
+| §354 | A module is named by its path | active | [`s354-a-module-is-named-by-its-path.md`](compiler/s354-a-module-is-named-by-its-path.md) |
