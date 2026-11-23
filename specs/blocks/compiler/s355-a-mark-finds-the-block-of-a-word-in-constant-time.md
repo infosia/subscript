@@ -104,3 +104,88 @@ Problem, measured at `b8e593c1` in the ship arena (G11):
    test with a stated cost, or the record states how to build it.
 7. G9 of the tracking note gets the figures without the test-only
    counter.
+
+### 355.4 Phase Review
+
+Form.
+
+- `runtime/src/context/chunk_pages.rs`: `ChunkPages`. An entry is one
+  64-bit word: the low 32 bits of the page in the high half and the
+  chunk index in the low half. The hash is a multiplicative hash of
+  the page part. The first capacity is 64 slots, the load is 1/2 at
+  most, and the table doubles. The table removes no entry, so each
+  entry of a page part is before the first empty slot of its probe
+  sequence.
+- `arena_new_chunk` reserves the room, allocates the chunk, inserts
+  it, and then adds the chunk record. A failure of each step takes
+  the trap of an allocation that fails and leaves the chunks and the
+  table equal.
+- `AddressHasher` rotates the product by 32 bits. A fold of the high
+  half into the low half made the `deep-chains` workload of
+  `async-cost` about 6.5 % slower in three runs; the rotation did
+  not.
+- The prototype of G11 kept the low 16 bits of the page in the
+  compare and did not find a chunk with a base at 2^48 or above. The
+  landed form does not have that limit.
+
+Measured, release build, arm64 macOS. The mark for each word is the
+time of a collection with 23,040 live root words minus the time of
+the same heap with no live block, so it holds the restore of the
+marked blocks in the sweep.
+
+| Item | Pin | After |
+|---|---|---|
+| Mark, ns for each word, 108 chunks, dense; sparse | 9.3 to 9.5; 11.2 to 11.4 | 5.5; 8.3 to 8.9 |
+| The same, 4,168 chunks | 16.3 to 16.8; 48.4 | 8.2 to 8.5; 23.1 to 25.1 |
+| Lookup only, ns for each word, 108 and 4,168 chunks, dense | 7.6 and 12.8 to 13.4 | 1.2 to 4.4 at each count |
+| A bump allocation; a reuse; a chunk creation, ns | 5.61; 6.28; 1,289 to 1,299 | 5.61; 6.25; 1,078 |
+| `perf-gate --gate`, `collect`, ship tier | 36.730 and 36.490 ms (1.17x, 1.16x) | 30.368 and 30.187 ms (0.97x, 0.96x) |
+| The same, `a22` | 5.270 and 5.282 ms | 5.259 and 5.256 ms |
+| A hit in the large map, ns, with 64, 1,024, and 8,192 allocations of 16 KiB | 5.0, 9.5, 88.2 | 3.3 to 3.6 at each count |
+| `async-cost` `deep-chains`, ms | 9.49 to 9.59 | 9.15 to 9.29 |
+| Stress sweep; tests of the runtime, debug and release | | pass; pass |
+
+The curve of G9 without the test counter is in
+`specs/tracking/automatic-collection.md`, G9.
+
+The benchmarks are ignored tests of `runtime/tests/mark_lookup_cost.rs`
+(about 3 s in a release build, 350 MiB at most).
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 7
+MINOR. The review compared the lookup with the search that it
+replaces for each class of address and found no difference; it found
+the load bound, the end of each probe, and the rehash correct, and no
+path that leaves a chunk outside the table.
+
+| Finding | Close |
+|---|---|
+| The address hasher gave one start bucket to page-aligned payloads | measured: a hit took 88 ns with 8,192 allocations; the rotation; rule 5 and a test |
+| An insert with no reserved room returned with no signal | the insert returns an error, and the arena does not keep the chunk; a test |
+| Rule 4 stated an address range that the entry form does not have; rules 6 and 8 left a fact to the round | the rules state the form, the reserved bytes, and the Context kinds |
+| Two memory figures of the benchmark were low | corrected |
+| No test puts a chunk with two pages through the allocator | open item 1 |
+| No test reaches the trap of a table that cannot grow | open item 2 |
+
+`tools/gate.sh full` on the tree before this record:
+
+```text
+gate full baf8ac144b84eceb5ca7d9d5dabe840d8e897eb6 dirty:5 debug 4146/0/10 release 4127/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
+### 355.5 Open
+
+1. The test of rule 2 gets chunks from the allocator of the host,
+   which gives a chunk with two pages in some runs only. The test of
+   rule 1 builds the table state of two chunks in one page directly.
+2. No test reaches the trap of rule 4: it needs 2^32 chunks, or a
+   table allocation that fails.
+3. The stress sweep builds the runtime archive in its first entries
+   if the archive is older than the runtime source. The first ship
+   link can then fail with "library not found". The full gate builds
+   the archive before the sweep. One run of the sweep alone, after an
+   edit of the runtime, failed in this way.
+4. The sparse shape, and the prefetch
+   (`specs/tracking/automatic-collection.md`, G11 open items).
+

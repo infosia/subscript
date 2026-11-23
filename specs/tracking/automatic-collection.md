@@ -616,6 +616,23 @@ of two runs. An object has 32 bytes.
 The measurement is an ignored test of the runtime
 (`the_collection_time_curve_of_the_ship_arena`), about 2 s.
 
+After §355, with no test counter (`runtime/tests/mark_lookup_cost.rs`),
+ms for one collection and ns for each word:
+
+| Shape | Live MiB | At `b8e593c1` | After §355 |
+|---|---|---|---|
+| An array of references to objects | 1 | 1.611 (12.29) | 0.528 (4.03) |
+| | 4 | 7.451 (14.21) | 2.608 (4.97) |
+| | 16 | 40.61 (19.36) | 8.471 (4.04) |
+| | 64 | 185.0 (22.06) | 31.25 (3.72) |
+| A chain of objects | 1 | 0.758 (5.79) | 0.423 (3.23) |
+| | 4 | 4.129 (7.87) | 1.651 (3.15) |
+| | 16 | 21.54 (10.27) | 7.403 (3.53) |
+| | 64 | 104.6 (12.47) | 27.39 (3.27) |
+
+A frame of 16.7 ms holds one collection of about 30 MiB of small
+objects after §355.
+
 ## G10 — the sweep against the slots below the bump marks
 
 Measured 2026-11-23 at `06e4a12d`, release build, arm64 macOS, the
@@ -815,6 +832,11 @@ Decision: the page table and the address hasher land, as
 the page table is small, and the cost of an aligned chunk on Linux
 and Windows is not measured. The prefetch is not selected: it needs
 code for each architecture, and it was measured on arm64 only.
+
+§355 lands the two changes; its record has the figures of the
+landed form. A run of the stress sweep alone after an edit of the
+runtime can fail at its first ship link (§355.5 item 3); that is a
+candidate cause of the failed run of G10.
 
 The failed stress run of G10 with prototype D: the pin passed 6 of 6
 runs and prototype D, with its check, passed 6 of 6. Each run was

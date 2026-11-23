@@ -274,6 +274,22 @@ fn assert_collect_traps_on_array_tail_violation(mut ctx: Box<Context>, tier: &st
     assert!(ctx.is_live(h as usize), "{tier}: collection must not run");
 }
 
+// compiler.md §355 rule 5: the map of the large allocations takes the
+// first bucket from the low bits of the hash. The payloads of page-aligned
+// allocations differ only above bit 12, so the low 10 bits of their hashes
+// must still take many values. Without the rotation of the high half, each of
+// the 4,096 keys below gives one value. Cost: 4,096 hashes, below 1 ms.
+#[test]
+fn the_address_hash_spreads_page_aligned_payloads_over_the_low_bits() {
+    use std::hash::BuildHasher;
+
+    let hasher = BuildHasherDefault::<AddressHasher>::default();
+    let low: HashSet<u64> = (0..4096usize)
+        .map(|i| hasher.hash_one((i << 14) + HEADER_SIZE) & 1023)
+        .collect();
+    assert!(low.len() > 512, "{} values of 1,024", low.len());
+}
+
 #[path = "tests_0.rs"]
 mod tests_0;
 

@@ -692,8 +692,15 @@ impl Hasher for AddressHasher {
 
     fn write_usize(&mut self, value: usize) {
         // Remove the guaranteed alignment zeros, then use the FxHash
-        // multiplier to spread adjacent allocator addresses.
-        self.0 = ((value >> 4) as u64).wrapping_mul(0x517c_c1b7_2722_0a95);
+        // multiplier to spread adjacent allocator addresses. The low bits
+        // of a product depend only on the low bits of the input, and the
+        // map takes its first bucket from the low bits of the hash. The
+        // payloads of page-aligned allocations differ only above bit 12, so
+        // the high half of the product, which depends on each input bit,
+        // rotates into the low half (`compiler.md` §355 rule 5).
+        self.0 = ((value >> 4) as u64)
+            .wrapping_mul(0x517c_c1b7_2722_0a95)
+            .rotate_left(32);
     }
 }
 
@@ -889,9 +896,9 @@ pub struct Context {
     // ----- ship-tier arena state (§8.1b); unused in diagnostic mode -----
     // Every chunk, in creation order.
     chunks: Vec<Chunk>,
-    // (chunk base address, index into `chunks`), sorted by base: the
-    // membership lookup (binary search for the covering chunk).
-    chunk_map: Vec<(usize, usize)>,
+    // The page table from a 64 KiB page to the chunks that have a byte in
+    // it: the membership lookup (`compiler.md` §355 rule 1).
+    chunk_pages: chunk_pages::ChunkPages,
     // Per-class LIFO free list head: a freed payload address, 0 when
     // empty; the next link is the freed payload's first word, and the
     // index of its chunk the second word (`compiler.md` §346 rule 1a).
@@ -899,8 +906,9 @@ pub struct Context {
     // Per-class chunk currently being bump-allocated (index into
     // `chunks`), if any.
     open: [Option<usize>; NUM_CLASSES],
-    // Allocations above LARGEST_BLOCK, keyed by payload address.
-    large: HashMap<usize, LargeAlloc>,
+    // Allocations above LARGEST_BLOCK, keyed by payload address
+    // (`compiler.md` §355 rule 5).
+    large: HashMap<usize, LargeAlloc, BuildHasherDefault<AddressHasher>>,
     #[cfg(test)]
     stats: std::sync::Arc<ArenaStats>,
 }
@@ -989,6 +997,9 @@ mod lifecycle;
 
 #[path = "context/memory.rs"]
 mod memory;
+
+#[path = "context/chunk_pages.rs"]
+mod chunk_pages;
 
 #[path = "context/collection.rs"]
 mod collection;

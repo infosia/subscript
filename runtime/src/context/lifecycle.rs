@@ -94,10 +94,10 @@ impl Context {
             regex: crate::regexops::RegexStore::default(),
             alloc_fail_countdown: None,
             chunks: Vec::new(),
-            chunk_map: Vec::new(),
+            chunk_pages: chunk_pages::ChunkPages::default(),
             free_heads: [0; NUM_CLASSES],
             open: [None; NUM_CLASSES],
-            large: HashMap::new(),
+            large: HashMap::default(),
             #[cfg(test)]
             stats: Default::default(),
         });
@@ -1189,6 +1189,14 @@ impl Context {
             );
             return None;
         };
+        let idx = self.chunks.len();
+        // compiler.md §355 rules 3 and 4: the page table has room for the
+        // entries of the chunk before the chunk exists. A chunk that the
+        // entry form cannot hold takes the trap of a failed allocation.
+        if let Err(error) = self.chunk_pages.reserve(idx) {
+            self.trap_page_table(error, pos_id);
+            return None;
+        }
         // SAFETY: `layout` has non-zero size (CHUNK_SIZE).
         let base = unsafe { alloc_zeroed(layout) };
         if base.is_null() {
@@ -1199,7 +1207,15 @@ impl Context {
             );
             return None;
         }
-        let idx = self.chunks.len();
+        // compiler.md §355 rule 3: `chunks` and the table stay equal, so a
+        // chunk that the table refuses is freed and not kept.
+        if let Err(error) = self.chunk_pages.insert_chunk(base as usize, idx) {
+            // SAFETY: `base`/`layout` came from `alloc_zeroed` above, and no
+            // record holds `base`.
+            unsafe { dealloc(base, layout) };
+            self.trap_page_table(error, pos_id);
+            return None;
+        }
         let block_size = SMALLEST_BLOCK << class;
         self.chunks.push(Chunk {
             base,
@@ -1209,15 +1225,25 @@ impl Context {
             bump: 0,
             requests: vec![0; CHUNK_SIZE / block_size].into_boxed_slice(),
         });
-        // Keep the membership index sorted by base address.
-        let pos = self.chunk_map.partition_point(|&(b, _)| b < base as usize);
-        self.chunk_map.insert(pos, (base as usize, idx));
         self.open[class] = Some(idx);
         #[cfg(test)]
         self.stats
             .chunks
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Some(idx)
+    }
+
+    /// The allocation-failure trap of a chunk that the page table cannot
+    /// hold (`compiler.md` §355 rule 4).
+    fn trap_page_table(&mut self, error: chunk_pages::ReserveError, pos_id: u32) {
+        let message = match error {
+            chunk_pages::ReserveError::ChunkIndex => {
+                "arena chunk count is not representable in the page table"
+            }
+            chunk_pages::ReserveError::Allocation => "arena page table allocation failed",
+            chunk_pages::ReserveError::NotReserved => "arena page table has no room for a chunk",
+        };
+        self.trap(TrapKind::AllocationFailure, message, pos_id);
     }
 
     /// Large-allocation path: an individual system allocation recorded in
@@ -1270,16 +1296,15 @@ impl Context {
         self.stats
             .membership_lookups
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let i = self.chunk_map.partition_point(|&(b, _)| b <= addr);
-        if i == 0 {
-            return None;
-        }
-        let (cbase, ci) = self.chunk_map[i - 1];
-        if addr < cbase + HEADER_SIZE || addr >= cbase + CHUNK_SIZE {
-            return None;
-        }
+        // compiler.md §355 rules 1 and 2: the chunk whose range holds
+        // `addr`, from the page table.
+        let ci = self
+            .chunk_pages
+            .find(addr, |ci| self.chunks.get(ci).map(|c| c.base as usize))?;
         let chunk = &self.chunks[ci];
-        let off = addr - cbase - HEADER_SIZE;
+        let off = addr
+            .wrapping_sub(chunk.base as usize)
+            .checked_sub(HEADER_SIZE)?;
         // Block sizes are powers of two: mask/shift are the grid checks.
         if off & (chunk.block_size - 1) != 0 {
             return None;
