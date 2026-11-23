@@ -1854,3 +1854,21 @@ test binary of the stress sweep passed its three tests in 21.10 s.
 The sixth ignored test is
 `the_collection_time_curve_of_the_ship_arena`, a measurement of §353
 that a person runs in a release build.
+
+## Gate state at `ddc0f0e2`, 2026-11-23
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §354.
+
+```text
+gate full ddc0f0e2e524b442c503f05c9b373821042ee323 clean debug 4031/0/6 release 4013/0/6 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 15, build 132, debug 483, release 356, clippy
+16, tsc 1, hygiene 3.
+
+The two debug skips and the six ignored tests are those of `31e14f1c`.
+In the release step the test binary of the stress sweep passed its
+three tests in 21.73 s. The module path tests of §354
+(`cli/tests/module_paths.rs`, `compiler/tests/duplicate_module_key.rs`,
+`a510`, `r563`) pass with the `\` separator of this host.
