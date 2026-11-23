@@ -852,3 +852,100 @@ Open.
    does not hold. The prefetch reduces it to 5.4 to 13.1 ns.
 2. Why the mark loop overlaps those waits less than a loop with no
    work list.
+
+## G12 — a sweep that runs at later allocations
+
+Measured 2026-11-23 at `d7ecb78a` (after §355), release build, arm64
+macOS, the ship arena. The round built one prototype and reverted
+each change. It answers open item 2 of G10.
+
+The rule that a landed form works against: none, if no observable
+result changes. The form adds work to the allocation path, which
+`perf-gate` guards, and it changes each reader of a block state.
+
+The prototype.
+
+- A collection marks, sweeps the large allocations, and reads no
+  chunk. It sets each chunk to "pending".
+- The mark word holds an epoch. A block is live if its state is the
+  live word of its chunk or the mark word of the Context. So a mark
+  of a former collection is not a mark of the next one, and no
+  collection sweeps a chunk.
+- Each chunk counts its marked blocks and its free blocks. The live
+  bytes after a collection come from the counts of the mark.
+- The arena sweeps a pending chunk before the first allocation into
+  it, and sweeps pending chunks of a class when the free list of the
+  class is empty. A pending chunk that holds only free blocks is
+  read at no time.
+
+The heaps of G10, median µs. "Cycle" is one pause and the
+allocations up to the next collection.
+
+| H, shape, g | Pause, pin | Pause, prototype | Cycle, pin | Cycle, prototype | ns for one allocation, pin | The same, prototype |
+|---|---|---|---|---|---|---|
+| 450k dense 0 | 851 to 873 | 151 | 851 to 873 | 151 | | |
+| 450k dense 0.1 | 814 to 844 | 159 to 161 | 1,083 to 1,105 | 482 to 486 | 6.11 to 6.26 | 7.61 |
+| 450k dense 1.0 | 786 to 818 | 181 | 3,546 | 3,644 to 3,651 | 6.38 to 6.45 | 8.12 |
+| 450k sparse 1.0 | 931 to 973 | 437 to 440 | 3,651 to 3,696 | 3,890 to 3,895 | 6.27 to 6.47 | 8.08 |
+| 450k full 0 | 3,151 to 3,220 | 3,111 to 3,118 | | | | |
+| 4M dense 1.0 | 7,344 to 7,376 | 196 | 32,632 to 32,956 | 33,312 | 6.35 to 6.44 | 8.33 |
+| 4M full 0 | 36,818 | 31,067 to 31,168 | | | | |
+
+A cycle of the downstream form: 1.5 MiB live, 16 MiB of headroom,
+the automatic trigger, frames of 2,000 allocations of about 50
+bytes, about 175 frames for each collection, 20 collections.
+
+| Item | Pin | Prototype |
+|---|---|---|
+| Pause, median µs | 524 to 530 | 195 to 199 |
+| Pause, max µs | 797 to 828 | 235 to 267 |
+| The allocations of one frame, median µs | 12.7 to 13.2 | 15.6 to 15.7 |
+| The same, p99 and max | 18.2 and 20.8 to 43.3 | 20.4 to 22.5 and 40.6 to 45.3 |
+| One sweep of a chunk, median, p99, and max µs | | 1.2, 2.0 to 2.3, 11 to 25 |
+| Work of one cycle | about 2.8 ms | about 170 µs more |
+
+| Item | Pin | Prototype |
+|---|---|---|
+| A bump allocation with no chunk pending, ns | 6.03 to 6.05 | 6.26 to 6.28 |
+| A reuse from a free list with no chunk pending, ns | 6.27 to 6.53 | 6.61 to 6.63 |
+| The mark | | about 1 ns more for each marked block; 5 to 17 % by shape |
+| `perf-gate --gate`, `collect`, ship tier, ms | 29.722 and 29.391 | 30.714 and 30.749; each criterion met |
+| The same, `a22` | 5.125 and 5.253 | 5.278 and 5.278 |
+| Tests of the runtime | | two tests fail, each on a fact that the form changes |
+| Stress sweep, two runs | | pass |
+
+- The sweep leaves the pause. The pause is the roots and the mark.
+- The work of a cycle grows by 1 to 6 % where each slot was
+  allocated after the last collection, and falls by 40 to 80 % where
+  most free blocks stay free.
+- The two tests: one reads the state word of a live block after a
+  collection, which is a mark word until the sweep of its chunk. One
+  is the control of the check that compares the live-byte counter
+  with a walk at a collection; the prototype sets the counter at each
+  collection, so the check cannot fail. A landed form needs that
+  check before the mark.
+- A temporary check compared the counter with a walk at each lazy
+  sweep and at each collection; two controls that break the form
+  fail it.
+- The form changes: the time of §353 does not hold the sweep of the
+  chunks; the order of a free list; the state word of a live block in
+  a pending chunk. The live bytes, the trigger, the words read, the
+  reserved bytes, and the output of a program do not change.
+
+Decision: not landed. The owner decides.
+
+- The gain is the sweep of one cycle of garbage, which follows the
+  headroom: about 0.33 ms for each collection at 16 MiB. A host can
+  reduce it with the headroom. At a large live heap the mark is the
+  larger part of the pause, and this form does not reduce it.
+- The cost is on each allocation (about 4 % of a bump allocation and
+  of the `collect` workload), on the mark, and in the form: each
+  reader of a block state must use one test, the mark word wraps
+  after 2^32 collections, and the drift check moves.
+
+A landed form needs: one accessor for the live test and a check that
+no other reader exists; the drift check before the mark, with a
+control; a test of the epoch wrap; tests of a word that points to
+garbage in a pending chunk, of `Context.free` in a pending chunk, of
+a pending chunk over many collections, and of a chunk that is read
+at no time.
