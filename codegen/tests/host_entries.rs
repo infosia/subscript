@@ -405,6 +405,36 @@ fn directory_reader_requires_exact_main_file() {
     std::fs::remove_dir_all(directory).unwrap();
 }
 
+// compiler.md §354 rule 10: a `.ts` file in a subdirectory that no import
+// reaches fails the entry. Cost: two directory reads and two parses; no
+// compile.
+#[test]
+fn directory_reader_rejects_an_unreachable_file_in_a_subdirectory() {
+    #[allow(dead_code)]
+    #[path = "corpus/directory_entry.rs"]
+    mod directory_entry;
+    let directory = std::env::temp_dir().join(format!("s354-unreachable-{}", std::process::id()));
+    let sub = directory.join("sub");
+    std::fs::create_dir_all(&sub).unwrap();
+    std::fs::write(sub.join("x.ts"), "export const x: i32 = 1;\n").unwrap();
+    std::fs::write(
+        directory.join("main.ts"),
+        "import { x } from './sub/x';\nexport function main(): void {}\n",
+    )
+    .unwrap();
+    // Control: with each file reached, the entry loads.
+    let loaded = directory_entry::load(&directory);
+    std::fs::write(sub.join("orphan.ts"), "export const y: i32 = 2;\n").unwrap();
+    let unreachable = directory_entry::load(&directory);
+    std::fs::remove_dir_all(&directory).unwrap();
+    let names: Vec<String> = loaded.unwrap().into_iter().map(|file| file.name).collect();
+    assert_eq!(names, ["main.ts", "sub/x.ts"]);
+    assert_eq!(
+        unreachable.err().as_deref(),
+        Some("unreachable corpus source sub/orphan.ts")
+    );
+}
+
 #[test]
 fn reload_runner_kicks_roots_pumps_and_uses_the_current_generation() {
     let source = "export function main(): void { print('main'); } export async function work(): Promise<void> { print('before'); }";

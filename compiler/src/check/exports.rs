@@ -134,15 +134,15 @@ impl<'p> Checker<'p> {
         }
         let missing_source = !unsupported_form
             && standard_source.is_none()
-            && export.src.as_ref().is_some_and(|source| {
-                let stem = normalize_module_specifier(&source.value);
-                !self.prog.files.iter().any(|file| file.stem == stem)
-            });
+            && export
+                .src
+                .as_ref()
+                .is_some_and(|source| self.prog.import_target(file, &source.value).is_none());
         if missing_source {
             if let Some(source) = &export.src {
                 if !self
                     .poison_missing_modules
-                    .contains(&normalize_module_specifier(&source.value))
+                    .contains(&poison_key(&self.prog.files[file].name, &source.value))
                 {
                     self.resolution_error(
                         RejectionSite::ExportSourceModuleMissing,
@@ -214,7 +214,7 @@ impl<'p> Checker<'p> {
         }
     }
 
-    pub(super) fn record_discovery_export(&mut self, export: NamedExport<'_, '_>) {
+    pub(super) fn record_discovery_export(&mut self, file: usize, export: NamedExport<'_, '_>) {
         if export.type_only || export.specifiers.iter().any(unsupported_export_specifier) {
             return;
         }
@@ -222,9 +222,10 @@ impl<'p> Checker<'p> {
             return;
         };
         let module = source.value.to_string();
-        let stem = normalize_module_specifier(&module);
-        if !self.poison_missing_modules.contains(&stem)
-            || self.prog.files.iter().any(|file| file.stem == stem)
+        if !self
+            .poison_missing_modules
+            .contains(&poison_key(&self.prog.files[file].name, &module))
+            || self.prog.import_target(file, &module).is_some()
         {
             return;
         }
@@ -347,7 +348,9 @@ impl<'p> Checker<'p> {
                 } else if let Some(binding) = self.file_scopes[*file].get(local) {
                     binding.item.clone()
                 } else if let Some((module, imported)) = imports.get(&(*file, local.clone())) {
-                    self.resolve_export_source(module, imported, imports, path, resolved, None)
+                    self.resolve_export_source(
+                        *file, module, imported, imports, path, resolved, None,
+                    )
                 } else {
                     resolved.fail(
                         *file,
@@ -363,6 +366,7 @@ impl<'p> Checker<'p> {
                 }
             }
             ExportTarget::Remote { module, name } => self.resolve_export_source(
+                *file,
                 module,
                 name,
                 imports,
@@ -376,8 +380,10 @@ impl<'p> Checker<'p> {
         result
     }
 
+    #[allow(clippy::too_many_arguments)] // Each argument is one fact of the resolution step.
     fn resolve_export_source(
         &mut self,
+        importer: usize,
         module: &str,
         name: &str,
         imports: &ImportTargets,
@@ -385,14 +391,13 @@ impl<'p> Checker<'p> {
         resolved: &mut ExportResolution,
         origin: Option<(usize, &Pos)>,
     ) -> ScopeItem {
-        let stem = normalize_module_specifier(module);
-        let Some(file) = self.prog.files.iter().position(|file| file.stem == stem) else {
+        let Some(file) = self.prog.import_target(importer, module) else {
             // Missing module statements own their diagnostics, including imports.
             return ScopeItem::Poisoned;
         };
         if self
             .rejected_module_exports
-            .get(&stem)
+            .get(&self.prog.files[file].key)
             .is_some_and(|names| names.contains(name))
         {
             return ScopeItem::Poisoned;

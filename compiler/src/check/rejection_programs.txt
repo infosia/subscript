@@ -2700,19 +2700,19 @@ FILE	N	target/s154/forms/type-only-namespace-import/other.ts
 export const x:i32=1;
 END FILE
 END PROGRAM
-PROGRAM	namespace-import-target-missing		missing,s154_external_213,s154_external_234	0
+PROGRAM	namespace-import-target-missing		./target/s154/forms/namespace-import-target-missing/missing,s154_external_213,s154_external_234	0
 FILE	E	target/s154/forms/namespace-import-target-missing/main.ts
 import "./missing";
 export function main(): void {  }
 END FILE
 END PROGRAM
-PROGRAM	poisoned-relative-default-import	TS2307	missing,s154_external_213,s154_external_234	0
+PROGRAM	poisoned-relative-default-import	TS2307	./target/s154/forms/poisoned-relative-default-import/missing,s154_external_213,s154_external_234	0
 FILE	E	target/s154/forms/poisoned-relative-default-import/main.ts
 import def from "./missing";
 export function main(): void {  }
 END FILE
 END PROGRAM
-PROGRAM	poisoned-default-import		missing,s154_external_213,s154_external_234	0
+PROGRAM	poisoned-default-import		./target/s154/forms/poisoned-default-import/missing,s154_external_213,s154_external_234	0
 FILE	E	target/s154/forms/poisoned-default-import/main.ts
 import def from "s154_external_234";
 export function main(): void {  }

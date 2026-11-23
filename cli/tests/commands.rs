@@ -455,8 +455,27 @@ fn missing_import_is_a_positioned_checker_diagnostic() -> Result<(), String> {
     Ok(())
 }
 
+fn loaded_parse_error_output(name: &str) -> Vec<u8> {
+    format!(
+        concat!(
+            "error[S100]: parse error: Expected `}}` but found `EOF`\n",
+            " --> {0}:1:9\n",
+            "  |\n",
+            "1 | import {{\n",
+            "  |         ^\n",
+            "  = rule: Constructs outside the decided language surface are rejected.\n",
+            "error: 1 error(s)\n",
+        ),
+        name
+    )
+    .into_bytes()
+}
+
+// compiler.md §354 rule 8: the loader follows `../x`, and the diagnostic
+// names the file by its path from the root of the names, which the `..`
+// moves up to the parent of `program/`. Cost: one `check` command.
 #[test]
-fn parent_import_is_not_loaded_and_renders_the_checker_diagnostic() -> Result<(), String> {
+fn parent_import_is_loaded_and_named_from_the_root() -> Result<(), String> {
     let directory = TestDir::new()?;
     directory.write("x.ts", b"import {")?;
     directory.write(
@@ -476,12 +495,14 @@ fn parent_import_is_not_loaded_and_renders_the_checker_diagnostic() -> Result<()
     )?;
     assert_code(&checked, 1);
     assert!(checked.stdout.is_empty());
-    assert_eq!(checked.stderr, unresolved_import_output("../x"));
+    assert_eq!(checked.stderr, loaded_parse_error_output("x.ts"));
     Ok(())
 }
 
+// compiler.md §354 rule 8: the loader follows `./sub/x`. Cost: one `check`
+// command.
 #[test]
-fn nested_import_is_not_loaded_and_renders_the_checker_diagnostic() -> Result<(), String> {
+fn nested_import_is_loaded_and_named_by_its_path() -> Result<(), String> {
     let directory = TestDir::new()?;
     directory.write("program/sub/x.ts", b"import {")?;
     directory.write(
@@ -501,7 +522,7 @@ fn nested_import_is_not_loaded_and_renders_the_checker_diagnostic() -> Result<()
     )?;
     assert_code(&checked, 1);
     assert!(checked.stdout.is_empty());
-    assert_eq!(checked.stderr, unresolved_import_output("./sub/x"));
+    assert_eq!(checked.stderr, loaded_parse_error_output("sub/x.ts"));
     Ok(())
 }
 

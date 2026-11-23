@@ -1,0 +1,9 @@
+a/util init 10
+b/util init 20
+a/inner init a b
+main init
+a b b
+8 12 20
+2 6 5 5
+10 20
+a10 b

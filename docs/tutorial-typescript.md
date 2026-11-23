@@ -34,7 +34,7 @@ program type-checks under stock `tsc --strict`.
 | `Worker` with structured clone | `Worker.spawn` with copied, typed messages |
 | A program with a top level | Exported entry points the host calls |
 | `string` of UTF-16 units | `string` of UTF-8 bytes |
-| npm | Sibling `./file` imports only |
+| npm | Relative `./` and `../` imports of program files only |
 
 ## Setup
 
@@ -1717,13 +1717,25 @@ t(5)=15
 ```
 
 The surface is narrower than TypeScript's: named imports and
-namespace imports (`import * as math from "./math"`) from
-same-directory siblings (`./name`). A namespace is a static
-qualifier: `math.triangular(5)` resolves at compile time, and `math`
-alone is not a value. There are no parent paths, no
-nested paths, no packages, and no default imports. The CLI follows
-the imports from the entry file, so `subscript check main.ts` loads
-the whole program.
+namespace imports (`import * as math from "./math"`) of program
+files. A namespace is a static qualifier: `math.triangular(5)`
+resolves at compile time, and `math` alone is not a value.
+
+A relative specifier resolves against the directory of the
+importing file. `./sub/x` in `main.ts` names `sub/x.ts`, `./x` in
+`sub/a.ts` names `sub/x.ts`, and `../sub/x` in `other/up.ts` names
+`sub/x.ts`. A module is named by its path, so `a/util.ts` and
+`b/util.ts` are two modules. A bare specifier such as `"x"` names no
+file of the program. There is no directory import (`./sub` for
+`./sub/index.ts`), no path alias, no package lookup, and no default
+import. The CLI follows the imports from the entry file, so
+`subscript check main.ts` loads the whole program. A diagnostic names
+each file by its path from the root of the program, spelled as the
+import spells it. The root is the directory of the entry. If the path
+of an imported file from the directory of the entry starts with `../`
+segments, the root is that many directories higher. Thus, when
+`sub/m.ts` is the entry and imports `../sub/x`, the names are
+`sub/m.ts` and `sub/x.ts`.
 
 ## Diagnostics
 

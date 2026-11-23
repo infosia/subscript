@@ -302,7 +302,7 @@ fn run_with_effects(
         poison_missing_modules: options
             .poison_missing_modules
             .iter()
-            .map(|specifier| normalize_module_specifier(specifier))
+            .map(|specifier| crate::module_key(specifier))
             .collect(),
         poisoned_imports: Vec::new(),
         type_only_value_uses: Default::default(),
@@ -368,10 +368,11 @@ fn run_with_effects(
             let ast::Statement::TSExternalModuleDeclaration(declaration) = item else {
                 continue;
             };
-            let stem = normalize_module_specifier(&declaration.id.value);
-            ck.poison_missing_modules.insert(stem.clone());
+            // A module declaration names its module as an import in its file does (compiler.md §354 rule 7).
+            let key = poison_key(&source.name, &declaration.id.value);
+            ck.poison_missing_modules.insert(key.clone());
             if let Some(block) = &declaration.body {
-                let names = ck.rejected_module_exports.entry(stem).or_default();
+                let names = ck.rejected_module_exports.entry(key).or_default();
                 for item in &block.body {
                     if let Some(decl) = super::module_decl(item) {
                         names.extend(

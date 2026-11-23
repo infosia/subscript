@@ -875,6 +875,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r513-loop-unstable-local-store.ts", RuleCode::S011, 14),
     ("r514-loop-nullable-field-store.ts", RuleCode::S011, 14),
     ("r515-let-global-lambda-narrowing.ts", RuleCode::S011, 13),
+    ("r563-importer-directory/sub/a.ts", RuleCode::S100, 7),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[
@@ -918,13 +919,10 @@ fn every_reject_entry_fails_with_its_rule_code_at_the_offending_line() {
             "{}: expected first diagnostic {}, got {} ({})",
             file, code, first.code, first.message
         );
+        // compiler.md §354 rule 10: a module is named by its path from the entry directory.
         assert_eq!(
             first.pos.file,
-            std::path::Path::new(file)
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap(),
+            file.split_once('/').map_or(file, |(_, name)| name),
             "{}: diagnostic points at wrong file {}",
             file,
             first.pos.file
@@ -1175,12 +1173,11 @@ fn reject_table_covers_every_corpus_entry() {
         .map(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
             if e.path().is_dir() {
-                let headers: Vec<_> = fs::read_dir(e.path())
+                let headers: Vec<_> = corpus::directory_entry::module_names(&e.path())
                     .expect("read reject modules")
-                    .map(|entry| entry.expect("read module").path())
-                    .filter(|path| path.extension().is_some_and(|ext| ext == "ts"))
-                    .filter(|path| {
-                        fs::read_to_string(path)
+                    .into_iter()
+                    .filter(|module| {
+                        fs::read_to_string(e.path().join(module))
                             .expect("read module")
                             .lines()
                             .any(|line| line.starts_with("// expected-error:"))
@@ -1191,10 +1188,7 @@ fn reject_table_covers_every_corpus_entry() {
                     1,
                     "{name}: one diagnostic header per program"
                 );
-                format!(
-                    "{name}/{}",
-                    headers[0].file_name().unwrap().to_string_lossy()
-                )
+                format!("{name}/{}", headers[0])
             } else {
                 name
             }

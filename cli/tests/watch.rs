@@ -298,8 +298,27 @@ impl TestDir {
 
     fn write(&self, relative: &str, text: &str) -> Result<(), String> {
         let path = self.0.join(relative);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| format!("create {}: {error}", parent.display()))?;
+        }
         std::fs::write(&path, text).map_err(|error| format!("write {}: {error}", path.display()))
     }
+}
+
+/// Copies a corpus directory entry with its subdirectories (compiler.md §354 rule 10).
+fn copy_entry(from: &std::path::Path, to: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(from).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        let target = to.join(path.file_name().ok_or("corpus file name")?);
+        if path.is_dir() {
+            copy_entry(&path, &target)?;
+        } else {
+            std::fs::copy(&path, &target).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 impl Drop for TestDir {
@@ -780,11 +799,7 @@ fn watched_async_corpus_matches_run_and_a_body_edit() -> Result<(), String> {
         let directory = TestDir::new()?;
         let corpus = root.join("corpus/accept");
         if corpus.join(id).is_dir() {
-            for entry in std::fs::read_dir(corpus.join(id)).map_err(|e| e.to_string())? {
-                let path = entry.map_err(|e| e.to_string())?.path();
-                std::fs::copy(&path, directory.0.join(path.file_name().unwrap()))
-                    .map_err(|e| e.to_string())?;
-            }
+            copy_entry(&corpus.join(id), &directory.0)?;
         } else {
             std::fs::copy(corpus.join(format!("{id}.ts")), directory.0.join("main.ts"))
                 .map_err(|e| e.to_string())?;
@@ -842,6 +857,41 @@ fn watched_async_corpus_matches_run_and_a_body_edit() -> Result<(), String> {
         result?;
     }
     Ok(())
+}
+
+// compiler.md §354 rule 11: an edit of a file in a subdirectory reloads.
+// Cost: one watch process, one initial compile, and one reload.
+#[test]
+fn watch_reloads_on_an_edit_in_a_subdirectory() -> Result<(), String> {
+    let directory = TestDir::new()?;
+    directory.write("sub/x.ts", "export function x(): i32 { return 7; }\n")?;
+    directory.write(
+        "main.ts",
+        "import { x } from './sub/x';\nexport function main(): void { print(`${x()}`); }\n",
+    )?;
+    let mut child = ChildGuard(
+        Command::new(env!("CARGO_BIN_EXE_subscript"))
+            .current_dir(&directory.0)
+            .args(["run", "--watch", "main.ts"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?,
+    );
+    let (stdout, out_thread) = Capture::reader(child.0.stdout.take().ok_or("missing stdout")?);
+    let (stderr, err_thread) = Capture::reader(child.0.stderr.take().ok_or("missing stderr")?);
+    let result: Result<(), String> = (|| {
+        stdout.wait_for_count(b"7\n", 1)?;
+        directory.write("sub/x.ts", "export function x(): i32 { return 1234; }\n")?;
+        stderr.wait_for_count(b"watch: swapped\n", 1)?;
+        stdout.wait_for_count(b"1234\n", 1)?;
+        assert_eq!(stdout.bytes()?, b"7\n1234\n");
+        Ok(())
+    })();
+    drop(child);
+    out_thread.join().map_err(|_| "stdout reader")?;
+    err_thread.join().map_err(|_| "stderr reader")?;
+    result
 }
 
 // compiler.md §272 rule 5: watch waits after an initializer trap and retries on an edit.

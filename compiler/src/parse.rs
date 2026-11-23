@@ -120,7 +120,8 @@ mod value {
 /// One parsed source file (compiler.md §341 rules 2 and 3).
 pub(crate) struct ParsedFile<'a> {
     pub name: String,
-    pub stem: String,
+    /// The module key of `name` (compiler.md §354 rule 1).
+    pub key: String,
     pub module: ast::Program<'a>,
     pub dts: bool,
     pub entry: bool,
@@ -206,7 +207,7 @@ impl Clone for ParsedProgram<'_> {
                 .iter()
                 .map(|file| ParsedFile {
                     name: file.name.clone(),
-                    stem: file.stem.clone(),
+                    key: file.key.clone(),
                     module: file.module.clone_in(self.allocator),
                     dts: file.dts,
                     entry: file.entry,
@@ -222,6 +223,15 @@ impl Clone for ParsedProgram<'_> {
 }
 
 impl ParsedProgram<'_> {
+    /// The program module that `specifier` in file `importer` names
+    /// (compiler.md §354 rules 2 and 3). An ambient file has no key.
+    pub fn import_target(&self, importer: usize, specifier: &str) -> Option<usize> {
+        let key = crate::resolve_module_specifier(&self.files[importer].name, specifier)?;
+        self.files
+            .iter()
+            .position(|file| !file.dts && file.key == key)
+    }
+
     // Only a successful checker result exposes these errors (compiler.md §341 rule 4c).
     pub fn syntax_diagnostics(&self) -> Vec<Diagnostic> {
         self.syntax_errors
@@ -289,11 +299,6 @@ fn position(file: &SourcePosition, at: u32) -> Pos {
         line as u32 + 1,
         (offset - start - extra_bytes) as u32 + 1,
     )
-}
-
-pub(crate) fn stem_of(name: &str) -> String {
-    let base = name.rsplit('/').next().unwrap_or(name);
-    base.strip_suffix(".ts").unwrap_or(base).to_owned()
 }
 
 /// Parses static module dependencies in source order.
@@ -443,7 +448,7 @@ pub(crate) fn parse_program<'a>(
                 }
                 program.files.push(ParsedFile {
                     name: source.name.clone(),
-                    stem: stem_of(&source.name),
+                    key: crate::module_key(&source.name),
                     module,
                     dts: source.dts,
                     entry: source.entry,
@@ -599,8 +604,11 @@ mod tests {
         let discover = |entry: SourceFile| {
             discover_module_sources(
                 (entry.name.clone(), entry),
-                |_, specifier| {
-                    let name = format!("{}.ts", specifier.trim_start_matches("./"));
+                |importer: &String, specifier| {
+                    let Some(key) = crate::resolve_module_specifier(importer, specifier) else {
+                        return Ok(None);
+                    };
+                    let name = format!("{key}.ts");
                     Ok(files
                         .iter()
                         .find(|file| file.name == name)
@@ -658,12 +666,6 @@ mod tests {
         use oxc_span::GetSpan;
         let pos = program.pos(item.span());
         assert_eq!((pos.line, pos.col), (1, 1));
-    }
-
-    #[test]
-    fn stems_strip_directories_and_extension() {
-        assert_eq!(stem_of("corpus/accept/a19-modules/math.ts"), "math");
-        assert_eq!(stem_of("math.ts"), "math");
     }
 
     #[test]

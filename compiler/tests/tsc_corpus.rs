@@ -9,6 +9,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use subscript_compiler::repository_relative;
 
+#[path = "../../codegen/tests/corpus/directory_entry.rs"]
+#[allow(dead_code)]
+mod directory_entry;
 #[path = "support/tsc.rs"]
 mod tsc;
 use tsc::{tsc_binary, tsconfig};
@@ -64,6 +67,7 @@ fn is_diagnostic_code(code: &str) -> bool {
 #[derive(Debug)]
 struct Entry {
     relative: String,
+    directory: Option<PathBuf>,
     program_files: Vec<PathBuf>,
     accept: bool,
     external_module: bool,
@@ -146,14 +150,13 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
             .collect();
         paths.sort();
         for path in paths {
+            let directory = path.is_dir().then(|| path.clone());
             let (absolute, program_files) = if path.is_dir() {
-                let mut files: Vec<_> = fs::read_dir(&path)
-                    .map_err(|error| format!("read {}: {error}", path.display()))?
-                    .map(|entry| entry.map(|entry| entry.path()))
-                    .collect::<Result<_, _>>()
-                    .map_err(|error| format!("read module: {error}"))?;
-                files.retain(|path| path.extension().is_some_and(|ext| ext == "ts"));
-                files.sort();
+                // compiler.md §354 rule 10: the modules below the entry directory.
+                let files: Vec<_> = directory_entry::module_names(&path)?
+                    .into_iter()
+                    .map(|name| path.join(name))
+                    .collect();
                 if accept {
                     (path.join("main.ts"), files)
                 } else {
@@ -237,6 +240,7 @@ fn corpus_entries(root: &Path) -> Result<Vec<Entry>, String> {
             });
             entries.push(Entry {
                 relative,
+                directory,
                 program_files,
                 accept,
                 external_module,
@@ -397,7 +401,12 @@ fn every_corpus_tsc_header_matches_measured_tsc() {
                 .iter()
                 .map(|path| {
                     subscript_compiler::SourceFile::new(
-                        path.file_name().unwrap().to_string_lossy(),
+                        // compiler.md §354 rule 10: a name is the path from the entry directory.
+                        match &entry.directory {
+                            Some(directory) => repository_relative(directory, path)
+                                .expect("a module below its entry directory"),
+                            None => path.file_name().unwrap().to_string_lossy().into_owned(),
+                        },
                         fs::read_to_string(path).unwrap(),
                     )
                 })
@@ -883,6 +892,7 @@ fn diagnostic_parser_attributes_codes_and_reports_unowned_errors() {
     let root = Path::new("/workspace");
     let entry = Entry {
         relative: "corpus/reject/r01.ts".to_string(),
+        directory: None,
         program_files: vec![root.join("corpus/reject/r01.ts")],
         accept: false,
         external_module: true,

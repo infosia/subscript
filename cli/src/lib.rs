@@ -792,26 +792,6 @@ impl WatchedFiles {
     }
 }
 
-fn loaded_file_paths(entry: &Path, files: &[SourceFile]) -> Result<Vec<PathBuf>, Failure> {
-    let entry = std::fs::canonicalize(entry)
-        .map_err(|error| Failure::usage(format!("resolve source {}: {error}", entry.display())))?;
-    let directory = entry.parent().map(Path::to_path_buf).ok_or_else(|| {
-        Failure::usage(format!(
-            "source {} has no parent directory",
-            entry.display()
-        ))
-    })?;
-    let mut paths = vec![entry];
-    for file in files.iter().skip(1) {
-        let candidate = directory.join(&file.name);
-        let path = std::fs::canonicalize(&candidate).map_err(|error| {
-            Failure::usage(format!("resolve source {}: {error}", candidate.display()))
-        })?;
-        push_unique(&mut paths, path);
-    }
-    Ok(paths)
-}
-
 /// The files that the first load read, with the stamps taken before
 /// that load, and the load result. A failure watches each attempted path.
 type InitialWatch = (WatchedFiles, Result<LoadedProgram, Failure>);
@@ -888,7 +868,7 @@ fn run_watch_controlled<O: Write, E: Write>(
             let initial_files = loaded.files;
             let initial = session.step(&initial_files);
             if !matches!(initial.outcome, WatchOutcome::WaitingForFix) {
-                watched = watched.after_load(loaded_file_paths(source, &initial_files)?);
+                watched = watched.after_load(loaded.program_paths);
             }
             if let WatchOutcome::Failed { message } = &initial.outcome {
                 if !initial.warnings.is_empty() {
@@ -925,7 +905,7 @@ fn run_watch_controlled<O: Write, E: Write>(
         watched = if matches!(step.outcome, WatchOutcome::WaitingForFix) {
             attempted
         } else {
-            attempted.after_load(loaded_file_paths(source, &files)?)
+            attempted.after_load(loaded.program_paths)
         };
         write_watch_step(&files, step, stdout, stderr)?;
     }

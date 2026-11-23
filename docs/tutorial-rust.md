@@ -58,9 +58,21 @@ builds it with the mirrors first (`cli/src/program_loader.rs`).
 1. `SourceFile::ambient(name, text)` for every `.d.ts` mirror that
    `subscript bind` generated from your C headers. An ambient file
    is visible to every program file without an import.
-2. `SourceFile::new(name, text)` for each `.ts` file. The base name
-   without `.ts` is the module stem that an `import` resolves
-   against.
+2. `SourceFile::new(name, text)` for each `.ts` file. The name is a
+   path with `/` separators. The normalized name without `.ts` is the
+   key of the module (`module_key`). A specifier `./x` or `../x`
+   resolves against the directory of the importer
+   (`resolve_module_specifier`), so `./x` in `sub/a.ts` names
+   `sub/x.ts`, and `../x` in `sub/a.ts` names `x.ts`. Two files with
+   one key are rejected. A bare specifier names no file. There is no
+   directory import, no path alias, and no package lookup.
+
+Give each file its path from one root directory as its `name`. If
+the entry is `main.ts` and another file is `/abs/sub/x.ts`, no
+relative specifier reaches the second file. A host that loads files
+from disk calls `resolve_module_specifier(importer_name, specifier)`
+to get the key of the dependency, and reads `<root>/<key>.ts`. Then
+the host and the checker use one rule.
 
 ```rust
 let files = vec![

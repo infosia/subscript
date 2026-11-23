@@ -258,11 +258,17 @@ impl<'p> Checker<'p> {
             for item in &module.body {
                 match item {
                     ast::Statement::ExportNamedDeclaration(export) => {
-                        self.record_discovery_export(super::exports::NamedExport::local(export));
+                        self.record_discovery_export(
+                            file,
+                            super::exports::NamedExport::local(export),
+                        );
                         continue;
                     }
                     ast::Statement::ExportFromDeclaration(export) => {
-                        self.record_discovery_export(super::exports::NamedExport::remote(export));
+                        self.record_discovery_export(
+                            file,
+                            super::exports::NamedExport::remote(export),
+                        );
                         continue;
                     }
                     _ => {}
@@ -354,12 +360,12 @@ impl<'p> Checker<'p> {
                     self.text_module_import(import, &mut additions);
                     continue;
                 }
-                let stem = normalize_module_specifier(&raw);
-                let Some(target) = self.prog.files.iter().position(|f| f.stem == stem) else {
+                let key = poison_key(&self.prog.files[file].name, &raw);
+                let Some(target) = self.prog.import_target(file, &raw) else {
                     let pos = self.pos(import.source.span);
                     let missing_message =
                         format!("imported module `{raw}` is not among the program's files");
-                    if self.poison_missing_modules.contains(&stem) {
+                    if self.poison_missing_modules.contains(&key) {
                         if import
                             .specifiers
                             .as_ref()
@@ -494,7 +500,7 @@ impl<'p> Checker<'p> {
                         Some(item) => additions.push((local, item.clone(), pos, type_only)),
                         None if self
                             .rejected_module_exports
-                            .get(&stem)
+                            .get(&key)
                             .is_some_and(|names| names.contains(&imported_name)) =>
                         {
                             additions.push((local, ScopeItem::Poisoned, pos, type_only));

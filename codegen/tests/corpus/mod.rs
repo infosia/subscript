@@ -10,6 +10,10 @@
 #[allow(dead_code)]
 pub(crate) mod interop;
 
+#[path = "directory_entry.rs"]
+#[allow(dead_code)]
+pub(crate) mod directory_entry;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -66,47 +70,13 @@ pub fn golden_bytes(accept: &Path, id: &str) -> Vec<u8> {
     fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// Loads the source files of one corpus entry (a multi-file entry is a
-/// directory of `.ts` files).
+/// Loads the source files of one corpus entry. A multi-file entry is a
+/// directory of `.ts` files, and its subdirectories hold modules too
+/// (`specs/blocks/compiler.md` §354 rule 10).
 pub fn entry_sources(accept: &Path, id: &str) -> Vec<SourceFile> {
     let dir = accept.join(id);
     let mut sources: Vec<SourceFile> = if dir.is_dir() {
-        let mut names: Vec<String> = fs::read_dir(&dir)
-            .expect("read entry dir")
-            .filter_map(|e| e.ok())
-            .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| n.ends_with(".ts"))
-            .collect();
-        names.sort();
-        let entry = "main.ts".to_owned();
-        assert!(
-            names.contains(&entry),
-            "{id}: directory entry requires main.ts"
-        );
-        let source = SourceFile::new(
-            &entry,
-            fs::read_to_string(dir.join(&entry)).expect("read entry"),
-        );
-        let discovered = subscript_compiler::discover_module_sources(
-            (entry, source),
-            |_, specifier| {
-                let name = format!("{}.ts", specifier.trim_start_matches("./"));
-                if !names.contains(&name) {
-                    return Ok(None);
-                }
-                let text = fs::read_to_string(dir.join(&name)).expect("read source");
-                Ok(Some((name.clone(), SourceFile::new(name, text))))
-            },
-            |_, diagnostics| diagnostics,
-        )
-        .expect("discover corpus modules");
-        for name in &names {
-            assert!(
-                discovered.iter().any(|source| &source.name == name),
-                "{id}: unreachable corpus source {name}"
-            );
-        }
-        discovered
+        directory_entry::load(&dir).unwrap_or_else(|error| panic!("{id}: {error}"))
     } else {
         let path = accept.join(format!("{id}.ts"));
         let text =

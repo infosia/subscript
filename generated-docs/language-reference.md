@@ -810,7 +810,7 @@ Corpus: [`corpus/accept/a112-worker-echo.ts`](../corpus/accept/a112-worker-echo.
 
 ### Modules
 
-A program may import named exports from sibling source files with a relative `./name` specifier. The entry file and its imported siblings are checked as one program; exports are the host-visible entry surface.
+A program can import named exports from its source files with a relative specifier (`./x`, `./sub/x`, `../x`). A relative specifier resolves against the directory of the importing file, and a module is named by its path, so `a/util.ts` and `b/util.ts` are two modules. A bare specifier names no file of the program; there is no directory import, no path alias, and no package lookup. The entry file and the files that it imports are checked as one program; exports are the host-visible entry surface.
 
 Corpus: [`corpus/accept/a19-modules/main.ts`](../corpus/accept/a19-modules/main.ts), [`corpus/accept/a19-modules/math.ts`](../corpus/accept/a19-modules/math.ts).
 

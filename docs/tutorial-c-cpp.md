@@ -280,16 +280,21 @@ Programs can span files: `import { f } from "./other"` works between
 script files, with the usual `export` on the defining side
 (`corpus/accept/a19-modules/` is the pinned example). The CLI follows
 relative imports from the entry file automatically — `subscript check
-main.ts` loads the whole program. The decided import surface is
-same-directory siblings (`./name`). A parent or nested path is
-rejected:
+main.ts` loads the whole program. A relative specifier (`./` or
+`../`) resolves against the directory of the importing file: `./x` in
+`sub/a.ts` names `sub/x.ts`, and `../math` in `game/child.ts` names
+`math.ts`. A module is named by its path, so `a/util.ts` and
+`b/util.ts` are two modules. A bare specifier names no file of the
+program. There is no directory import, no path alias, and no package
+lookup. An import of a file that does not exist is rejected at the
+specifier:
 
 ```text
-error[S100]: imported module `../math` is not among the program's files
- --> child.ts:1:24
+error[S100]: imported module `./sub/missing` is not among the program's files
+ --> main.ts:1:19
   |
-1 | import { addI32 } from "../math";
-  |                        ^
+1 | import { y } from "./sub/missing";
+  |                   ^
 ```
 
 ## The memory model: the host controls each collection pause

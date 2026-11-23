@@ -1,31 +1,14 @@
 //! Derives the module initializer order from all import dependencies.
 
-use std::collections::HashMap;
-
 use oxc_ast::ast;
 
 use crate::parse::ParsedProgram;
 
-use super::normalize_module_specifier;
-
 pub(super) fn files(prog: &ParsedProgram, entry: Option<usize>) -> Vec<usize> {
-    let stems: HashMap<_, _> = prog
-        .files
-        .iter()
-        .enumerate()
-        .filter(|(_, file)| !file.dts)
-        .map(|(index, file)| (file.stem.as_str(), index))
-        .collect();
     let mut visited = vec![false; prog.files.len()];
     let mut order = Vec::new();
 
-    fn visit(
-        index: usize,
-        prog: &ParsedProgram,
-        stems: &HashMap<&str, usize>,
-        visited: &mut [bool],
-        order: &mut Vec<usize>,
-    ) {
+    fn visit(index: usize, prog: &ParsedProgram, visited: &mut [bool], order: &mut Vec<usize>) {
         if visited[index] {
             return;
         }
@@ -37,23 +20,20 @@ pub(super) fn files(prog: &ParsedProgram, entry: Option<usize>) -> Vec<usize> {
                 ast::Statement::ExportAllDeclaration(export) => Some(export.source.value.as_str()),
                 _ => None,
             };
-            if let Some(next) = source.and_then(|source| {
-                stems
-                    .get(normalize_module_specifier(source).as_str())
-                    .copied()
-            }) {
-                visit(next, prog, stems, visited, order);
+            // The edge names the module that import resolution names (compiler.md §354 rule 6).
+            if let Some(next) = source.and_then(|source| prog.import_target(index, source)) {
+                visit(next, prog, visited, order);
             }
         }
         order.push(index);
     }
 
     if let Some(entry) = entry {
-        visit(entry, prog, &stems, &mut visited, &mut order);
+        visit(entry, prog, &mut visited, &mut order);
     }
     for (index, file) in prog.files.iter().enumerate() {
         if !file.dts {
-            visit(index, prog, &stems, &mut visited, &mut order);
+            visit(index, prog, &mut visited, &mut order);
         }
     }
     order

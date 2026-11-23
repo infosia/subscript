@@ -29,6 +29,7 @@ pub mod types;
 
 mod ambient;
 mod check;
+mod module_path;
 mod parse;
 mod provenance;
 mod raise_sites;
@@ -39,6 +40,7 @@ mod warn;
 pub use check::fallthrough::sequence_can_fall_through;
 pub use diag::{Diagnostic, Pos, RuleCode};
 pub use diag_render::{render_diagnostics, render_warnings, MAX_ITEMS};
+pub use module_path::{module_key, resolve_module_specifier};
 pub use parse::{discover_module_sources, parse_import_specifiers};
 pub use types::{Absence, CallbackLifetime, ClassId, EnumId, FuncType, StringAliasId, Type};
 pub use warn::{check_warnings, WarnCode, Warning};
@@ -69,7 +71,12 @@ pub const STANDARD_MODULES: &[&str] = &["node:fs/promises"];
 pub struct CheckOptions {
     /// Standard module specifiers enabled by this build.
     pub enabled_modules: Vec<String>,
-    /// Import specifiers to bind as poisoned when absent.
+    /// The modules to bind as poisoned when absent (compiler.md §354 rule 7).
+    ///
+    /// An entry is a specifier relative to the root of the names, and the
+    /// compiler normalizes it with [`module_key`]. An import whose resolved
+    /// key is in the list is poisoned. For an importer `sub/a.ts` that
+    /// imports `./p.typegpu`, the entry is `./sub/p.typegpu`.
     pub poison_missing_modules: Vec<String>,
 }
 
@@ -77,9 +84,12 @@ pub struct CheckOptions {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SourceFile {
-    /// File name used in diagnostics and for import resolution (the
-    /// base name without `.ts` is the module stem).
-    /// Non-ambient files must have distinct stems (compiler.md §267 rule 1).
+    /// File name used in diagnostics and for import resolution. The
+    /// normalized name without `.ts` is the key of the module
+    /// ([`module_key`]), and a relative specifier resolves against the
+    /// directory of that key ([`resolve_module_specifier`]). The separator
+    /// is `/`. Files that are not ambient must have distinct keys
+    /// (compiler.md §354 rules 1, 2, and 5).
     pub name: String,
     /// Full source text.
     pub source: String,
@@ -164,15 +174,15 @@ pub fn check_program_with(
             Pos::new(String::new(), 1, 1),
         )]);
     }
-    // Reject duplicate module stems before any pass (compiler.md §267 rule 1).
-    let mut stems = std::collections::HashMap::new();
+    // Reject two files with one module key before any pass (compiler.md §354 rule 5).
+    let mut keys = std::collections::HashMap::new();
     for file in files.iter().filter(|file| !file.dts) {
-        let stem = parse::stem_of(&file.name);
-        if let Some(first) = stems.insert(stem.clone(), &file.name) {
+        let key = module_key(&file.name);
+        if let Some(first) = keys.insert(key.clone(), &file.name) {
             return Err(vec![diagnostic(
-                RejectionSite::DuplicateModuleStem,
+                RejectionSite::DuplicateModuleKey,
                 format!(
-                    "duplicate module stem `{stem}`: `{first}` and `{}`",
+                    "duplicate module key `{key}`: `{first}` and `{}`",
                     file.name
                 ),
                 Pos::new(&file.name, 1, 1),

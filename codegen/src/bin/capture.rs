@@ -15,6 +15,9 @@
 #[allow(dead_code)]
 mod interop;
 
+#[path = "../../tests/corpus/directory_entry.rs"]
+mod directory_entry;
+
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -487,26 +490,7 @@ fn main() -> ExitCode {
 
     let dir = corpus.join(&id);
     let mut sources: Vec<SourceFile> = if dir.is_dir() {
-        let entry = "main.ts".to_owned();
-        let text = match fs::read_to_string(dir.join(&entry)) {
-            Ok(text) => text,
-            Err(error) => {
-                eprintln!("capture: read {id}/{entry}: {error}");
-                return ExitCode::from(2);
-            }
-        };
-        match subscript_compiler::discover_module_sources(
-            (entry.clone(), SourceFile::new(entry, text)),
-            |_, specifier| {
-                let name = format!("{}.ts", specifier.trim_start_matches("./"));
-                match fs::read_to_string(dir.join(&name)) {
-                    Ok(text) => Ok(Some((name.clone(), SourceFile::new(name, text)))),
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                    Err(error) => Err(error.to_string()),
-                }
-            },
-            |_, diagnostics| format!("{diagnostics:?}"),
-        ) {
+        match directory_entry::load(&dir) {
             Ok(sources) => sources,
             Err(error) => {
                 eprintln!("capture: {id}: {error}");

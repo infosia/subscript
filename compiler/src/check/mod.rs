@@ -124,11 +124,13 @@ use crate::provenance;
 use crate::types::{ClassId, EnumId, StringAliasId, Type};
 use crate::CheckOptions;
 
-fn normalize_module_specifier(specifier: &str) -> String {
-    specifier
-        .trim_start_matches("./")
-        .trim_end_matches(".ts")
-        .to_string()
+/// The key that the poison lists hold for `specifier` in the file named
+/// `importer` (compiler.md §354 rule 7). A relative specifier resolves
+/// against the importer. Any other specifier names no file (rule 3), and its
+/// poison key is the specifier normalized by rule 1, as for an option entry.
+fn poison_key(importer: &str, specifier: &str) -> String {
+    crate::resolve_module_specifier(importer, specifier)
+        .unwrap_or_else(|| crate::module_key(specifier))
 }
 
 // Declaration names belong to oxc function and class nodes (compiler.md §341 rule 5).

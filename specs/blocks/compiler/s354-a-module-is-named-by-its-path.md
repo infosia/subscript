@@ -177,3 +177,72 @@ Red first, at the pin, for each item that states it.
    repository has that form.
 5. The `#[cfg(windows)]` test of the names is not compiled on the
    host of this section.
+
+### 354.5 Phase Review
+
+Form.
+
+- `compiler/src/module_path.rs` holds `module_key` and
+  `resolve_module_specifier`. `ParsedProgram::import_target` is the
+  one lookup of the checker, and it does not read an ambient file.
+  The import, the namespace import, the side-effect import, the
+  re-export, the initializer order, and the poison lookup call it or
+  the poison key of rule 7.
+- `DuplicateModuleStem` is `DuplicateModuleKey`.
+- `codegen/tests/corpus/directory_entry.rs` is the loader of a
+  directory entry, for the harnesses and the capture tool. The `tsc`
+  gate and the CLI test helpers read subdirectories.
+- The CLI loader (`cli/src/program_loader.rs`) gives each file a
+  provisional name from the directory of the entry, resolves each
+  specifier with the resolver, and moves each name onto the root at
+  the end. Each name gets one prefix, so the key of a name is the key
+  that rule 2 gives from its importer.
+- An identity symbol holds the name of the file in hex. The C function
+  names and the symbols of the dev JIT come from an index.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| The three probes at the pin | S100 at each specifier |
+| The three probes, `run` and `build --run` | `7`, `8`, `up 7` |
+| `a510` at the pin | S100 (the duplicate stem `util`; with one `util` module removed, each path import) |
+| `a510` | equal in the three tiers and under `node`; `tsc` exits 0; initializer order `a/util`, `b/util`, `a/inner`, `main` |
+| The set of problem 3 | checks at the pin; S100 at `sub/a.ts:1:19` |
+| A bare specifier `x` with `x.ts` in the program | `tsc` TS2307; checks at the pin; S100 |
+| `./x.ts` | `tsc` TS5097; names the key `x` at the pin and after |
+| `r563` | `tsc` TS2307 at `sub/a.ts`; S100 at line 7 |
+| An entry `sub/m.ts` that imports `../sub/x` | `m 7`; names `sub/m.ts` and `sub/x.ts` |
+| `./Util` for a file `util.ts`, on a file system that ignores case | `7` at the pin and after |
+| `../`, `./..`, `./`, and a specifier of a directory | S100 at the specifier |
+| A change of `sub/x.ts` under `run --watch` | the new output |
+| Cost of the tests | `cli/tests/module_paths.rs` 2.23 s in a debug build, with three C compiles; the watch test 0.89 s; each unit test below 0.05 s |
+
+Phase Review (a subagent with no context): no CRITICAL, 1 MAJOR, 7
+MINOR. The review found one resolver, the same edges in the
+initializer order and in the symbol resolution, each loader of a
+directory entry, and the golden of `a510` by hand.
+
+| Finding | Close |
+|---|---|
+| MAJOR: the CLI named a file by its canonical path and resolved by the spelling, so `./Util` for `util.ts` was S100 | the name is the spelling (rule 8); a unit test on each host and a CLI test on a file system that ignores case |
+| A specifier of a directory was a usage error | it loads no file; S100 |
+| The doc of `poison_missing_modules` did not state rule 7 | it states it, with an importer in a subdirectory |
+| One statement of the tutorial on the root was false | corrected |
+| No test failed with the reachability check of a subdirectory removed; no test of the root that cannot move up; two tests with no cost | added; the first fails with the check removed |
+| A comment stated a former behaviour; `may` in the language reference | corrected |
+| `./sub/` names `sub.ts`; a relative `declare module` in a mirror | open items 3 and 4 |
+
+Two results of this section that corrected the contract text: the
+root of rule 8 was the deepest common directory, and an import that
+leaves that directory and comes back was S100; the name was the
+canonical path.
+
+`tools/gate.sh full` on the tree before this record:
+
+```text
+gate full 32e1a4787245cf4f68df6671e451eda3121f8aa7 dirty:35 debug 4140/0/6 release 4121/0/6 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
