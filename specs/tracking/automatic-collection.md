@@ -932,7 +932,8 @@ bytes, about 175 frames for each collection, 20 collections.
   a pending chunk. The live bytes, the trigger, the words read, the
   reserved bytes, and the output of a program do not change.
 
-Decision: not landed. The owner decides.
+Decision: not landed (owner, 2026-11-23). The downstream program
+runs on the form of §355 first.
 
 - The gain is the sweep of one cycle of garbage, which follows the
   headroom: about 0.33 ms for each collection at 16 MiB. A host can
