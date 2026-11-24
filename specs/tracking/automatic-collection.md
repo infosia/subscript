@@ -1053,3 +1053,143 @@ Open, for a later round.
    the cause is not found.
 5. The role of a full collection: the trigger by old growth, the
    releases of §348, the detection collection.
+
+## G14 — a minor collection that does not move a block
+
+Measured 2026-11-24 at `269fe969`, release build, arm64 macOS, the
+ship tier. Origin: an owner decision to measure a minor collection as
+an optional mode (the default stays the full collection). The round
+built a prototype on the barrier of G13, and it reverted each change.
+
+The rules that a landed form works against: each collection is full;
+a store of a reference has no added work.
+
+The prototype.
+
+- A flag byte in the header of a block holds "old" and "remembered".
+  A new block is young. A block that a collection marks becomes old.
+- The allocation appends each new payload to a list of the young
+  blocks.
+- The barrier, after each store of a reference: if the owner is old
+  and not remembered, and the value is a young block, the owner goes
+  to the record. A store with no known owner tests the value first,
+  and the runtime finds the owner. The runtime has the same barrier
+  at `array_push`, at a Map or Set insert, and at the growth of each
+  of these.
+- A minor mark starts from the roots and from each remembered owner.
+  It does not trace into an old block.
+- A minor sweep reads the list of the young blocks only.
+- A collection is major when the live bytes exceed 2.0 times the
+  live bytes after the last major collection. The first collection
+  and each explicit collection are major.
+- The trigger of a collection does not change: the limit is the
+  larger of the live bytes and the headroom.
+
+Workload 1: small objects in an array, each with a `next` link to a
+random object. Each frame makes 2,000 temporaries, changes 2,000
+references between old objects, and stores 12 references to young
+objects into old ones. 350,000 objects (16 MiB) and 1,400,000
+objects (64 MiB). The default headroom (16 MiB). Values in ms, the
+range of 3 runs.
+
+| Case | Kind | Count | Pause, median | Pause, max | Mark, median | Sweep, median | Run, s | Peak reserved, MiB |
+|---|---|---|---|---|---|---|---|---|
+| 16 MiB, full only | full | 25 | 27.9 to 30.2 | 32.4 to 33.4 | 26.5 to 28.8 | 1.37 to 1.39 | 0.97 to 1.22 | 68.1 |
+| 16 MiB, prototype | minor | 23 | 2.40 to 2.44 | 2.59 to 2.95 | 0.30 to 0.32 | 2.07 to 2.10 | 0.45 to 0.74 | 74.1 |
+| 16 MiB, prototype | major | 1 | 15.8 to 32.4 | | 15.3 to 31.9 | 0.43 to 0.49 | | |
+| 64 MiB, full only | full | 25 | 177.5 to 180.4 | 180.0 to 185.6 | 171.3 to 174.2 | 6.21 to 6.24 | 5.20 to 5.44 | 271.1 |
+| 64 MiB, prototype | minor | 22 | 9.95 to 10.15 | 24.6 to 28.0 | 1.49 to 1.66 | 8.21 to 8.30 | 2.56 to 2.84 | 293.1 |
+| 64 MiB, prototype | major | 2 | 126.9 to 133.2 | | 121.3 to 127.5 | 3.63 to 3.69 | | |
+
+With 1 MiB of headroom the medians are the same. The maximum of a
+minor pause is 8.4 to 8.8 ms at 16 MiB and 69.7 to 77.0 ms at
+64 MiB: a minor collection while the program builds the graph marks
+each young block, because each one is live.
+
+The game form of G13, 6,000 frames, 1 MiB of headroom.
+
+| Objects that stay | Kind | Count | Pause, median | Pause, max | Mark, median | Sweep, median | Run, s | Peak reserved, MiB |
+|---|---|---|---|---|---|---|---|---|
+| 20,000, full only | full | 43 | 3.86 to 4.48 | 4.76 to 12.4 | 3.58 to 4.12 | 0.35 to 0.37 | 0.33 to 0.58 | 19.9 |
+| 20,000, prototype | minor | 32 | 1.29 to 1.33 | 2.32 to 2.34 | 0.28 to 0.30 | 0.98 to 1.02 | 0.25 | 36.5 |
+| 20,000, prototype | major | 4 | 5.10 to 5.18 | 6.96 to 7.22 | 4.57 to 4.66 | 0.50 to 0.51 | | |
+| 200,000, full only | full | 65 | 34.9 to 38.8 | 45.8 to 50.7 | 32.9 to 36.8 | 2.03 to 2.05 | 3.17 to 3.36 | 119.8 |
+| 200,000, prototype | minor | 62 | 5.88 to 5.91 | 19.6 to 22.0 | 0.27 to 0.28 | 5.52 to 5.55 | 1.41 to 1.42 | 125.7 |
+| 200,000, prototype | major | 3 | 5.94 to 5.98 | 24.0 to 26.1 | 5.86 to 5.90 | 0.08 to 0.09 | | |
+
+Ordinary code, the mode on and the barrier in the code.
+
+| Item | Full only | Prototype |
+|---|---|---|
+| `perf-gate --gate`, `a22`, ship tier, ms | 5.262 to 5.284 | 5.280 and 5.367 |
+| The same, `collect` | 29.873 to 30.643 | 32.115 and 32.339 |
+| `tree`, s | 0.106 | 0.110 |
+| `callbacks`, s | 0.048 to 0.049 | 0.048 to 0.049 |
+
+`collect` ran no minor collection: each of its collections is
+explicit. Its 5 % is the list of the young blocks, the barrier, and
+the write of the flag in the sweep.
+
+The completeness check (G13) in the measured runs: 0 edges with no
+record in workload 1 (21,428 edges at minor collections, 21,557 at
+major ones) and in the game form (77,877 and 193,956 edges at minor
+collections). Before the barrier at the growth of a Map, the game
+form had 2 edges with no record and the process stopped on a wrong
+address.
+
+The stress sweep, once, each fourth collection major: 610 ship
+entries ran, 585 agree with the golden, 25 fail. Each failed entry
+uses async functions, a Promise, a task group, or a closure capture.
+Those paths have no complete barrier in the prototype: a frame store,
+a save at a suspension, a child handle, a completion value, a result
+array of `Promise.all` or `Promise.race`. No entry without them
+fails. The interpreter ran 500 entries and each agrees.
+
+Result.
+
+- The mark of a minor collection is 1 % of the full mark in
+  workload 1, and it does not grow with the old blocks in the game
+  form (0.28 ms at 20,000 and at 200,000 objects).
+- The run time is about half: 2.6 s against 5.2 s at 64 MiB.
+- The median pause is 12 to 18 times shorter in workload 1, and 3 to
+  6 times shorter in the game form.
+- The largest pause stays. A major collection is a full collection:
+  127 to 133 ms at 64 MiB. The mode makes it rare (2 of 24), not
+  short.
+- The sweep is 80 to 95 % of a minor pause, and it is longer than
+  the full sweep (8.2 ms against 6.2 ms at 64 MiB). The list of the
+  young blocks holds one headroom cycle of allocations, and each
+  entry costs a lookup and a write at a random address.
+- The peak reserved memory is 4 to 8 % higher in workload 1. It is
+  83 % higher in the game form at 20,000 objects (36.5 MiB against
+  19.9 MiB): an old block that is not reachable stays until a major
+  collection.
+- The full mark of workload 1 at 64 MiB is 171 to 174 ms. G9 has
+  31 ms for 64 MiB of objects that only an array holds. The links to
+  random objects are the difference; the cause is not measured.
+
+Not measured: 2,000,000 objects in the game form; the minor
+collection with the sweep of G12; a trigger by the bytes of the young
+blocks; the barrier with no test of the value; a card form.
+
+Void: the runs of the game form before the barrier at the growth of
+a Map; a first run of workload 1 with less than 20 collections.
+
+The session stopped at the end of the round, because the machine had
+no free memory. The cause is not found. In the stress sweep three
+failed entries printed 25 to 58 MB each from released memory, and one
+ran 67 to 88 s before a kill signal. A stress sweep of a prototype
+that has paths with no barrier must not run again without a limit on
+the output and the run time of each entry.
+
+Open, for a later round.
+
+1. A mark in steps (incremental) for the major collection: the next
+   measurement round (G15).
+2. The minor sweep: a list in the order of the addresses, a trigger
+   by the bytes of the young blocks, or the sweep of G12.
+3. The barriers of the async paths, or a class of block that never
+   becomes old (a frame, a Map storage, a result array), so that no
+   barrier is needed there.
+4. The age at which a block becomes old. The prototype uses one
+   collection.
