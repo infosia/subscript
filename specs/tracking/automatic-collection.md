@@ -1344,3 +1344,93 @@ Two forms were measured and replaced before the landing.
 
 Next: the sweep outside the pause (G12), as the second section of
 the owner decision of 2026-11-24.
+
+## G17 — the sweep outside the end pause
+
+Measured 2026-11-24 at `6c889b41` (§356), release build, arm64 macOS,
+the ship tier, a budget of 50,000 words. Origin: after §356 the
+largest pause is the sweep of the end. The round built two
+prototypes of a sweep in steps, and it reverted each change.
+
+The rule that a landed form works against: the releases and the
+sweep follow the mark of the end in the same pause (§356 rule 5).
+
+The two forms. In each, a pause of a cycle runs a part of the sweep
+(a budget in slots) after the end, at the places where a mark step
+runs; the allocation path gets no instruction; no new cycle starts
+before the sweep ends; an exact collection completes a sweep first.
+
+- Form S: the end removes the free lists, and the sweep builds them
+  again. An allocation gets a slot that the sweep passed, or a bump
+  slot.
+- Form E: the end exchanges the meaning of the two header state
+  words. A block that the mark reached keeps its word and is live. A
+  block with the former live word is released when the sweep reaches
+  it. A new block gets the new live word in each position. The free
+  lists stay. The sweep writes nothing for a block that stays.
+
+Values in ms, the range of 3 runs. "4 KiB" and "1 MiB" are the
+requested bytes between two sweep pauses.
+
+| Workload | Form | Slots for a step | Bytes between steps | Largest pause | Sweep steps | Largest sweep step | Reserved at the end, MiB |
+|---|---|---|---|---|---|---|---|
+| Workload 1, 64 MiB | §356 | | | 6.70 to 7.69 | | | 285.9 |
+| | S | 262,144 | 4 KiB | 1.26 to 1.63 | 377 | 0.47 to 0.49 | 286.8 |
+| | S | 262,144 | 1 MiB | 1.50 | 532 | 0.72 | 545.4 |
+| | E | 262,144 | 4 KiB | 1.18 to 1.46 | 377 | 0.45 to 0.46 | 285.9 |
+| | E | 262,144 | 1 MiB | 1.19 to 1.59 | 397 | 0.44 to 0.56 | 298.2 |
+| | E | 1,048,576 | 1 MiB | 1.66 to 1.73 | 112 | 1.66 to 1.73 | 290.0 |
+| The game form, 200,000 objects | §356 | | | 2.76 to 2.83 | | | 129.9 |
+| | S | 262,144 | 1 MiB | 1.05 | 1,329 | | 347.3 |
+| | E | 262,144 | 4 KiB | 0.86 to 0.87 | 646 | 0.25 to 0.26 | 129.9 |
+| | E | 262,144 | 1 MiB | 0.83 to 0.88 | 673 | 0.26 to 0.45 | 134.6 |
+| The island form (1.5 MiB live, 16 MiB of headroom) | §356 | | | 0.72 to 0.75 | | | 31.7 |
+| | S | 262,144 | 1 MiB | 0.69 | 671 | | 211.1 |
+| | E | 262,144 | 4 KiB | 0.40 to 0.41 | 176 | | 31.7 |
+| | E | 262,144 | 1 MiB | 0.40 to 0.47 | 261 | | 33.8 |
+| Workload 1, 16 MiB | §356 | | | 1.58 to 1.61 | | | 75.8 |
+| | E | 262,144 | 4 KiB | 0.74 to 0.76 | | | 75.8 |
+
+Result.
+
+- The end after its mark is 0.003 to 0.05 ms: the releases, the
+  large blocks, the regex values, and the exchange. The sweep costs
+  1.0 to 1.9 ns for each slot, in steps.
+- With 262,144 slots for a step the largest pause is a mark step or
+  a start, not a sweep step.
+- Form S hides the free slots until the sweep reaches them, so an
+  allocation takes new chunks: with 1 MiB between steps the reserved
+  memory grows in each cycle (545, 347, and 211 MiB). With 4 KiB the
+  memory stays, and the sweep pauses come directly after each other.
+- Form E keeps the memory near §356 at 1 MiB between steps (+1 to
+  +7 %).
+- Form E makes a sweep of one pause shorter also: 5.82 to 6.48 ms
+  against 6.70 to 7.69 ms at 64 MiB.
+- The run time and the allocation path do not change in a form: the
+  island form runs 0.47 s in each. `perf-gate --gate` meets each
+  criterion; it runs no sweep in steps (`collect` uses explicit
+  collections).
+- The check at each sweep completion (a walk from the roots, a walk
+  of each slot, the count of the released blocks against a sweep of
+  one pause) gives 0 findings and equal counts, in each workload and
+  in a program with `Context.free`, explicit collections, a Map, and
+  strings.
+- A sweep that the next cycle start reaches before its end completes
+  in one pause. That occurred 0 times in the measured runs, and 4
+  times in a forced run (largest: 57 ms for 7,200,000 slots).
+
+Void: one `perf-gate` pass of form E gave 40.89 ms for `collect`
+with a C baseline of 31.18 ms in the same pass; three other passes
+gave 30.37 to 31.01 ms. The cause is not found.
+
+Not measured: the collection stress sweep; async programs, mode 3,
+and a Worker during a sweep; the time between two sweep pauses; the
+largest mark step as a separate figure. A variant that sweeps before
+a new chunk runs the sweep inside an allocation (§342 rule 5) and
+added 7 % to the island form; it is not a candidate.
+
+A landed form needs: the two state words as a fact of the Context
+(each reader of a header state reads them); a rule for the bytes
+between two sweep pauses; the record of the sweep steps; the meaning
+of the live bytes while a sweep is in progress; a sweep that the
+next cycle reaches with a budget, not in one pause.
