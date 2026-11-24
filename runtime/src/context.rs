@@ -178,14 +178,16 @@ pub const CLASS_ID_OFFSET: i32 = -8;
 pub const POS_ID_OFFSET: i32 = -4;
 
 /// Writes the state, class, and position words of an allocation header.
+/// `state` is [`LIVE_STATE`], or the mark state for a block that the ship
+/// arena allocates during a mark (`compiler.md` §356 rule 4).
 ///
 /// # Safety
 ///
 /// `base` must point to at least [`HEADER_SIZE`] writable bytes.
-unsafe fn write_header(base: *mut u8, class_id: u32, pos_id: u32) {
+unsafe fn write_header(base: *mut u8, state: u64, class_id: u32, pos_id: u32) {
     // SAFETY: the caller supplies a complete writable header.
     unsafe {
-        base.cast::<u64>().write(LIVE_STATE);
+        base.cast::<u64>().write(state);
         base.add((HEADER_SIZE as i32 + CLASS_ID_OFFSET) as usize)
             .cast::<u32>()
             .write(class_id);
@@ -426,11 +428,19 @@ fn class_written_in_full(class_id: u32) -> bool {
 
 // ----- ship-tier arena (§8.1b) -----
 
-// Header state word for a block reached by the current `Context.collect()` mark
-// phase (ship tier only). Lives only between mark and sweep — no script
-// code runs during `Context.collect`, and sweep restores survivors to
-// `LIVE_STATE` — so generated code never observes it.
+// Header state word for a block that the mark of the current collection
+// reached (ship tier only). It lives from the mark to the sweep. A mark in
+// steps (`compiler.md` §356) keeps it across script code between its
+// pauses, so each test of a live block accepts it. Generated code does not
+// read the state word.
 const MARK_STATE: u64 = 0x5355_4253_4D41_524B; // "SUBSMARK"
+
+// Header state word for a live block that has no mark and is in the work
+// list of a mark in steps (`compiler.md` §356 rule 10). Only the barrier
+// sets it, and only during a cycle. A step gives the block the mark. The
+// end empties the work list, so the sweep never reads it. Each test of a
+// live block accepts it.
+const GREY_STATE: u64 = 0x5355_4253_4752_4559; // "SUBSGREY"
 
 // Total block size (header + payload capacity) of the smallest size
 // class: fits the 16-byte header plus a 16-byte payload (the `tree`
@@ -756,6 +766,7 @@ pub struct CallbackBinding {
 /// | 16 | module-global block (`*mut u8`) | global access, ship C and hot reload |
 /// | 24 | host-entry-active flag (`u32`) | ship C host entry wrappers (§223) |
 /// | 28 | collection pending flag (`u8`) | collection polls (§342 rule 9) |
+/// | 29 | mark-in-progress flag (`u8`) | stores of a reference (§356 rule 12) |
 ///
 /// Everything past the prefix is opaque to generated code. The function
 /// table and reload epoch are read only by code lowered in reload mode;
@@ -771,6 +782,9 @@ pub struct Context {
     // compiler.md §342 rule 5: the pending flag. Generated code loads it at
     // `Context::collection_pending_offset()`.
     pub(crate) collection_pending: u8,
+    // compiler.md §356 rule 12: 1 while a mark in steps is in progress.
+    // Generated code loads it at `Context::mark_in_progress_offset()`.
+    pub(crate) mark_in_progress: u8,
     // The ship C tier installs one layout-fixed block here. Reload mode
     // instead points `globals` at storage owned by its ReloadSession and
     // leaves this empty.
@@ -909,6 +923,8 @@ pub struct Context {
     // Allocations above LARGEST_BLOCK, keyed by payload address
     // (`compiler.md` §355 rule 5).
     large: HashMap<usize, LargeAlloc, BuildHasherDefault<AddressHasher>>,
+    // compiler.md §356 rules 1 to 9: the state of a mark in steps.
+    mark_cycle: mark_cycle::MarkCycle,
     #[cfg(test)]
     stats: std::sync::Arc<ArenaStats>,
 }
@@ -1006,6 +1022,17 @@ mod collection;
 
 #[path = "context/collection_stats.rs"]
 mod collection_stats;
+
+#[path = "context/mark_cycle.rs"]
+mod mark_cycle;
+
+#[cfg(test)]
+#[path = "context/mark_cycle_tests.rs"]
+mod mark_cycle_tests;
+
+#[cfg(test)]
+#[path = "context/mark_writer_tests.rs"]
+mod mark_writer_tests;
 pub use collection_stats::CollectionStats;
 
 #[cfg(test)]
@@ -1016,14 +1043,17 @@ mod collection_stats_tests;
 mod operation_root;
 pub(crate) use collection::CollectionSettings;
 pub use collection::{
-    CollectionMode, ExitService, DEFAULT_COLLECTION_MODE, DEFAULT_MIN_HEADROOM_BYTES,
-    MAX_DETECTION_INTERVAL,
+    CollectionMode, ExitService, DEFAULT_COLLECTION_MODE, DEFAULT_COLLECTION_STEP_WORDS,
+    DEFAULT_MIN_HEADROOM_BYTES, MAX_DETECTION_INTERVAL,
 };
 pub(crate) use operation_root::{root_word, OperationRoot};
 
 // compiler.md §342 rule 9: generated code loads the pending flag at a
 // fixed offset of the prefix.
 const _: () = assert!(Context::collection_pending_offset() == 28);
+// compiler.md §356 rule 12: generated code loads the mark-in-progress flag
+// at a fixed offset of the prefix, beside the pending flag.
+const _: () = assert!(Context::mark_in_progress_offset() == 29);
 
 #[cfg(test)]
 #[path = "context/async_all_tests.rs"]

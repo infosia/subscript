@@ -498,7 +498,7 @@ impl Context {
             // SAFETY: an exact allocation lookup proves that the header is
             // readable and writable.
             unsafe {
-                if block.cast::<u64>().read() == LIVE_STATE {
+                if matches!(block.cast::<u64>().read(), LIVE_STATE | GREY_STATE) {
                     block.cast::<u64>().write(MARK_STATE);
                 }
             }

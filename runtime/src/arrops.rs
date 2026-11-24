@@ -724,6 +724,12 @@ pub unsafe fn fill(ctx: *mut Context, h: *mut u8, x: *const u8, start: i32, end:
         // regions cannot overlap.
         unsafe { std::ptr::copy_nonoverlapping(x, p, esz) };
     }
+    // compiler.md §356 rule 14: the filled elements go to the work list.
+    // SAFETY: caller contract; the fill did not move the storage.
+    unsafe {
+        let data = (*ctx).array_data(h);
+        (*ctx).mark_written_elements(h, data, lo, hi);
+    }
 }
 
 /// `reverse()` in place. The receiver is the expression's value.
@@ -752,6 +758,10 @@ pub unsafe fn reverse(ctx: *mut Context, h: *mut u8) {
             std::ptr::copy_nonoverlapping(tmp.as_ptr(), b, esz);
         }
     }
+    // compiler.md §356 rule 14a: the elements moved inside the storage, each
+    // to any position.
+    // SAFETY: caller contract.
+    unsafe { (*ctx).mark_moved_elements(h, 0, n, None) };
 }
 
 /// `concat(other)`: a fresh array holding `a`'s elements then `b`'s.
@@ -875,6 +885,10 @@ pub unsafe fn splice(
     }
     // SAFETY: `count <= n`; this only removes the moved tail suffix.
     unsafe { (*ctx).array_truncate(h, n - count, pos_id) };
+    // compiler.md §356 rule 14a: the tail moved `count` elements toward the
+    // start.
+    // SAFETY: caller contract.
+    unsafe { (*ctx).mark_moved_elements(h, lo, n - count, Some(count)) };
     out
 }
 
@@ -903,6 +917,10 @@ pub unsafe fn shift(ctx: *mut Context, h: *mut u8, dst: *mut u8, pos_id: u32) ->
     unsafe { std::ptr::copy(data.add(esz), data, (n - 1) * esz) };
     // SAFETY: `n > 0`; this removes the copied tail slot.
     unsafe { (*ctx).array_truncate(h, n - 1, pos_id) };
+    // compiler.md §356 rule 14a: the elements moved one element toward the
+    // start.
+    // SAFETY: caller contract.
+    unsafe { (*ctx).mark_moved_elements(h, 0, n - 1, Some(1)) };
     true
 }
 
@@ -935,6 +953,9 @@ pub unsafe fn unshift(ctx: *mut Context, h: *mut u8, x: *const u8, pos_id: u32) 
         std::ptr::copy(data, data.add(esz), n * esz);
         std::ptr::copy_nonoverlapping(value.as_ptr(), data, esz);
     }
+    // compiler.md §356 rules 14 and 14a: `array_push` gave the new value,
+    // or the grown storage. The move is toward the end, so no word of the
+    // part that a divided scan did not read enters the part that it read.
     new_len
 }
 
@@ -965,6 +986,13 @@ pub unsafe fn copy_within(ctx: *mut Context, h: *mut u8, target: i32, start: i32
     let data = unsafe { (*ctx).array_data(h) }.cast_mut();
     unsafe {
         std::ptr::copy(data.add(from * esz), data.add(to * esz), count * esz);
+    }
+    // compiler.md §356 rule 14a: a copy toward the start can bring a word
+    // from the part that a divided scan did not read. A copy toward the end
+    // cannot.
+    if from > to {
+        // SAFETY: caller contract.
+        unsafe { (*ctx).mark_moved_elements(h, to, to + count, Some(from - to)) };
     }
 }
 

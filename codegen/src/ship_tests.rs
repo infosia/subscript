@@ -1618,3 +1618,29 @@ fn aot_missing_main_preserves_diagnostic_details() {
     assert!(matches!(&error, RunError::Rejected(_)), "{error:?}");
     assert!(error.to_string().contains("= rule:"));
 }
+
+/// One build, two runs: the second run adds an environment variable, and
+/// each run gives the stdout of the program. A run with accounting is
+/// refused before the build. Cost: one C compile and link, two runs.
+#[test]
+fn configured_runs_build_once_and_run_each_entry() {
+    let files = [SourceFile::new(
+        "main.ts",
+        "export function main(): void { print(`a`); }",
+    )];
+    let variables: &[(&str, &str)] = &[("SUBSCRIPT_SHIP_TEST_VARIABLE", "1")];
+    let results =
+        run_c_aot_configured_runs(&files, RunConfig::default(), &[&[], variables]).expect("builds");
+    assert_eq!(results.len(), 2);
+    for result in results {
+        assert_eq!(result.expect("runs").stdout, b"a\n");
+    }
+    let config = RunConfig {
+        memory_accounting: true,
+        ..RunConfig::default()
+    };
+    assert!(matches!(
+        run_c_aot_configured_runs(&files, config, &[&[]]),
+        Err(RunError::Internal(_))
+    ));
+}

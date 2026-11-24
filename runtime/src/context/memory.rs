@@ -8,8 +8,13 @@ impl Context {
                 // SAFETY: `bi < bump`, so the header lies in the owned chunk.
                 let base = unsafe { chunk.base.add(bi * chunk.block_size) };
                 // SAFETY: `base` points to a complete initialized header.
-                (unsafe { base.cast::<u64>().read() } == LIVE_STATE)
-                    .then_some((base, chunk.block_size))
+                // compiler.md §356: a block that a mark in progress reached,
+                // or that is in its work list, is live.
+                matches!(
+                    unsafe { base.cast::<u64>().read() },
+                    LIVE_STATE | MARK_STATE | GREY_STATE
+                )
+                .then_some((base, chunk.block_size))
             })
         })
     }
@@ -234,7 +239,8 @@ impl Context {
                         block.add(HEADER_SIZE) as usize,
                     )
                 };
-                if state == LIVE_STATE && is_array_class(class_id) {
+                if matches!(state, LIVE_STATE | MARK_STATE | GREY_STATE) && is_array_class(class_id)
+                {
                     // SAFETY: the live grid state and class id prove that
                     // `handle` is a live array header.
                     unsafe { self.record_array_tail_violation(handle, &mut violations) };
@@ -349,7 +355,10 @@ impl Context {
         if let Some((block, class)) = self.arena_lookup_block(payload) {
             // SAFETY: arena membership proves that the state word is inside
             // an owned block.
-            let live = unsafe { block.cast::<u64>().read() == LIVE_STATE };
+            let live = matches!(
+                unsafe { block.cast::<u64>().read() },
+                LIVE_STATE | MARK_STATE | GREY_STATE
+            );
             return live.then_some((SMALLEST_BLOCK << class) - HEADER_SIZE);
         }
         self.large
@@ -446,6 +455,40 @@ impl Context {
         let mut work: Vec<usize> = Vec::new();
         let mut tracer = trace_target.map(MarkTracer::new);
         let tasks = self.completed_tasks();
+        // compiler.md §356 rules 1, 5, and 8: the end of a cycle reads the
+        // roots again and empties the work list of the steps, which counted
+        // those words. An end whose mark had the budget read them already.
+        let carried = if self.take_end_marked() {
+            0
+        } else {
+            self.push_roots(&mut work, &mut tracer, &tasks);
+            self.take_cycle_work(&mut work)
+        };
+        self.drain_mark(&mut work, &mut tracer, &tasks);
+        self.collection.stats.remove_mark_words(carried);
+        self.close_cycle_mark();
+        self.root_tasks_with_outside_holders(&tasks, &mut work, &mut tracer);
+        let (handles, storage) = self.unreachable_releases();
+        let ending_tasks = self.mark_ending_task_failures(&tasks, late, &mut work, &mut tracer);
+        // compiler.md §356 rule 20: after the mark, before the sweep.
+        self.check_at_cycle_end();
+        CollectionReleases {
+            handles,
+            storage,
+            ending_tasks,
+            trace: tracer.map_or_else(Vec::new, |tracer| tracer.records),
+        }
+    }
+
+    /// Pushes each root of the Context to the work list. The mark of a
+    /// collection, the start of a cycle, and the check of `compiler.md`
+    /// §356 rule 20 read the same roots.
+    pub(super) fn push_roots(
+        &self,
+        work: &mut Vec<usize>,
+        tracer: &mut Option<MarkTracer>,
+        tasks: &CompletedTasks,
+    ) {
         let roots = self
             .roots
             .iter()
@@ -457,7 +500,7 @@ impl Context {
                     (index, word, address)
                 })
             });
-        self.push_root_set(&mut work, &mut tracer, "roots", roots);
+        self.push_root_set(work, tracer, "roots", roots);
         let borrowed = self
             .boundary_borrows
             .iter()
@@ -467,7 +510,7 @@ impl Context {
             })
             .enumerate()
             .map(|(index, value)| (index, 0, value));
-        self.push_root_set(&mut work, &mut tracer, "native_borrows", borrowed);
+        self.push_root_set(work, tracer, "native_borrows", borrowed);
         let shadow = self
             .shadow
             .iter()
@@ -479,22 +522,22 @@ impl Context {
                     (index, word, address)
                 })
             });
-        self.push_root_set(&mut work, &mut tracer, "shadow", shadow);
+        self.push_root_set(work, tracer, "shadow", shadow);
         // compiler.md §115.2 rule 4: a pending exception is a root.
         let pending = self
             .pending_exception
             .iter()
             .map(|pending| (0, 0, pending.object));
-        self.push_root_set(&mut work, &mut tracer, "pending_exception", pending);
+        self.push_root_set(work, tracer, "pending_exception", pending);
         // compiler.md §115.5 rule 8: the park stack is a collection root.
         let parked = self
             .parked_exceptions
             .iter()
             .map(|parked| (0, 0, parked.object));
-        self.push_root_set(&mut work, &mut tracer, "parked_exceptions", parked);
+        self.push_root_set(work, tracer, "parked_exceptions", parked);
         // compiler.md §342 rule 12: a recorded failure keeps its Error object.
         let recorded = self.recorded_failure_objects().map(|object| (0, 0, object));
-        self.push_root_set(&mut work, &mut tracer, "recorded_failures", recorded);
+        self.push_root_set(work, tracer, "recorded_failures", recorded);
         // §94.2: every scheduler state is a collection root. Ready jobs,
         // parked frames, and blocked continuations are named separately, so
         // the enumeration shows each state rather than relying on the
@@ -504,19 +547,19 @@ impl Context {
             .iter()
             .enumerate()
             .map(|(index, job)| (index, 0, job.handle() as usize));
-        self.push_root_set(&mut work, &mut tracer, "async_ready", async_ready);
+        self.push_root_set(work, tracer, "async_ready", async_ready);
         let async_parked = self
             .async_parked
             .iter()
             .enumerate()
             .map(|(index, frame)| (index, 0, *frame as usize));
-        self.push_root_set(&mut work, &mut tracer, "async_parked", async_parked);
+        self.push_root_set(work, tracer, "async_parked", async_parked);
         let async_stopped = self
             .async_stopped
             .iter()
             .enumerate()
             .map(|(index, frame)| (index, 0, *frame as usize));
-        self.push_root_set(&mut work, &mut tracer, "async_stopped", async_stopped);
+        self.push_root_set(work, tracer, "async_stopped", async_stopped);
         let async_blocked = self
             .async_frames
             .values()
@@ -524,19 +567,14 @@ impl Context {
             .copied()
             .enumerate()
             .map(|(index, job)| (index, 0, job.handle() as usize));
-        self.push_root_set(&mut work, &mut tracer, "async_blocked", async_blocked);
+        self.push_root_set(work, tracer, "async_blocked", async_blocked);
         let active_async_frames = self
             .active_async_frames
             .iter()
             .copied()
             .enumerate()
             .map(|(index, address)| (index, 0, address));
-        self.push_root_set(
-            &mut work,
-            &mut tracer,
-            "active_async_frames",
-            active_async_frames,
-        );
+        self.push_root_set(work, tracer, "active_async_frames", active_async_frames);
         // compiler.md §348 rules 1 and 5: each registered frame is a root,
         // except a completed task. The mark reads a completed task when it
         // reaches it (rule 2), and the step after the mark keeps a completed
@@ -549,21 +587,11 @@ impl Context {
             .filter(|frame| !tasks.contains(*frame))
             .enumerate()
             .map(|(index, address)| (index, 0, address));
-        self.push_root_set(&mut work, &mut tracer, "async_frames", async_frames);
+        self.push_root_set(work, tracer, "async_frames", async_frames);
         let group_roots = self.task_group_roots();
-        self.push_root_set(
-            &mut work,
-            &mut tracer,
-            "task_groups",
-            group_roots.into_iter(),
-        );
+        self.push_root_set(work, tracer, "task_groups", group_roots.into_iter());
         let aggregate_roots = self.async_aggregate_roots();
-        self.push_root_set(
-            &mut work,
-            &mut tracer,
-            "async_aggregate",
-            aggregate_roots.into_iter(),
-        );
+        self.push_root_set(work, tracer, "async_aggregate", aggregate_roots.into_iter());
         let completions = self
             .async_frames
             .iter()
@@ -582,7 +610,7 @@ impl Context {
                         (index, word_index, address)
                     })
             });
-        self.push_root_set(&mut work, &mut tracer, "completion", completions);
+        self.push_root_set(work, tracer, "completion", completions);
         // compiler.md §348 rules 1 and 2: the Error object of each frame that
         // is not a completed task is a root. A completed task gives its Error
         // object when the mark reaches it.
@@ -593,26 +621,21 @@ impl Context {
             .filter_map(|(_, meta)| meta.completion.as_ref()?.exception_object())
             .enumerate()
             .map(|(index, address)| (index, 0, address));
-        self.push_root_set(
-            &mut work,
-            &mut tracer,
-            "completion_exception",
-            completion_exceptions,
-        );
+        self.push_root_set(work, tracer, "completion_exception", completion_exceptions);
         let interned = self
             .interned
             .values()
             .copied()
             .enumerate()
             .map(|(index, address)| (index, 0, address));
-        self.push_root_set(&mut work, &mut tracer, "interned", interned);
+        self.push_root_set(work, tracer, "interned", interned);
         let astral = self
             .astral_code_points
             .values()
             .copied()
             .enumerate()
             .map(|(index, address)| (index, 0, address));
-        self.push_root_set(&mut work, &mut tracer, "astral_code_points", astral);
+        self.push_root_set(work, tracer, "astral_code_points", astral);
         let mut callbacks = Vec::new();
         for (index, binding) in self.callbacks.iter().enumerate() {
             for (word, userdata) in [binding.userdata1, binding.userdata2]
@@ -625,27 +648,11 @@ impl Context {
                 }
             }
         }
-        self.push_root_set(&mut work, &mut tracer, "callbacks", callbacks.into_iter());
+        self.push_root_set(work, tracer, "callbacks", callbacks.into_iter());
         // §111 rule 8: the live set of registrations is the second root
         // source of registered userdata.
         let registrations = self.registration_roots();
-        self.push_root_set(
-            &mut work,
-            &mut tracer,
-            "registrations",
-            registrations.into_iter(),
-        );
-
-        self.drain_mark(&mut work, &mut tracer, &tasks);
-        self.root_tasks_with_outside_holders(&tasks, &mut work, &mut tracer);
-        let (handles, storage) = self.unreachable_releases();
-        let ending_tasks = self.mark_ending_task_failures(&tasks, late, &mut work, &mut tracer);
-        CollectionReleases {
-            handles,
-            storage,
-            ending_tasks,
-            trace: tracer.map_or_else(Vec::new, |tracer| tracer.records),
-        }
+        self.push_root_set(work, tracer, "registrations", registrations.into_iter());
     }
 
     /// Marks each allocation that the work list reaches, in the mark of the
@@ -816,7 +823,9 @@ impl Context {
                 // SAFETY: `block` heads a block inside an owned chunk;
                 // the state read stays inside it.
                 let state = unsafe { (block as *const u64).read() };
-                if state != LIVE_STATE {
+                // compiler.md §356 rule 10: a block in the work list of the
+                // steps has no mark yet.
+                if !matches!(state, LIVE_STATE | GREY_STATE) {
                     // Dead, free-listed, or already marked.
                     continue;
                 }
@@ -827,7 +836,7 @@ impl Context {
             } else if let Some(a) = self.large.get(&addr) {
                 // SAFETY: `base` heads an owned large allocation.
                 let state = unsafe { (a.base as *const u64).read() };
-                if state != LIVE_STATE {
+                if !matches!(state, LIVE_STATE | GREY_STATE) {
                     // Already marked.
                     continue;
                 }
@@ -869,8 +878,13 @@ impl Context {
                 // (the free-list link and the chunk index) stay inside it.
                 unsafe {
                     let block = cbase.add(bi * block_size);
-                    match (block as *const u64).read() {
-                        MARK_STATE => (block as *mut u64).write(LIVE_STATE),
+                    let state = (block as *const u64).read();
+                    // compiler.md §356 rule 10: the end emptied the work
+                    // list, so no block is in it.
+                    debug_assert_ne!(state, GREY_STATE, "a block in the work list at the sweep");
+                    match state {
+                        // A release build keeps a block in the work list.
+                        MARK_STATE | GREY_STATE => (block as *mut u64).write(LIVE_STATE),
                         LIVE_STATE => {
                             (block as *mut u64).write(DEAD_STATE);
                             let payload = block.add(HEADER_SIZE);
@@ -895,8 +909,10 @@ impl Context {
         for (&addr, a) in &self.large {
             // SAFETY: `base` heads an owned large allocation.
             unsafe {
-                match (a.base as *const u64).read() {
-                    MARK_STATE => (a.base as *mut u64).write(LIVE_STATE),
+                let state = (a.base as *const u64).read();
+                debug_assert_ne!(state, GREY_STATE, "a block in the work list at the sweep");
+                match state {
+                    MARK_STATE | GREY_STATE => (a.base as *mut u64).write(LIVE_STATE),
                     _ => freed.push(addr),
                 }
             }
@@ -1406,9 +1422,41 @@ impl Context {
     /// `handle` must be an array payload owned by this context; `src`
     /// must be readable for the array's element size.
     pub unsafe fn array_push(&mut self, handle: *mut u8, src: *const u8, pos_id: u32) -> i32 {
-        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
-            return -1;
+        // SAFETY: forwarded caller contract.
+        let (len, grew) = unsafe { self.array_push_unmarked(handle, src, pos_id) };
+        if len > 0 {
+            // compiler.md §356 rule 14: the new element, or the new storage
+            // of a growth, goes to the work list during a mark.
+            // SAFETY: the push proved a live array payload.
+            unsafe {
+                let data = if grew {
+                    std::ptr::null()
+                } else {
+                    self.array_data(handle)
+                };
+                self.mark_written_elements(handle, data, len as usize - 1, len as usize);
+            }
         }
+        len
+    }
+
+    /// [`Context::array_push`] with no work of `compiler.md` §356 rule 14.
+    /// Returns the new length, or -1 after a trap, and true if the storage
+    /// grew.
+    ///
+    /// # Safety
+    ///
+    /// The contract of [`Context::array_push`].
+    pub(super) unsafe fn array_push_unmarked(
+        &mut self,
+        handle: *mut u8,
+        src: *const u8,
+        pos_id: u32,
+    ) -> (i32, bool) {
+        if handle.is_null() || !self.require_live_handle(handle as usize, pos_id) {
+            return (-1, false);
+        }
+        let mut grew = false;
         // SAFETY: caller guarantees an array payload.
         let h = unsafe { &mut *(handle as *mut ArrayHeader) };
         if h.len == h.cap {
@@ -1418,8 +1466,9 @@ impl Context {
                     TrapKind::ArrayStorageBorrowed.message(None),
                     pos_id,
                 );
-                return -1;
+                return (-1, false);
             }
+            grew = true;
             let new_cap = if h.cap == 0 { 4 } else { h.cap * 2 };
             let elem = h.elem_size as usize;
             // compiler.md §344 rule 4: growth keeps the fact of the array.
@@ -1428,7 +1477,7 @@ impl Context {
             let data_class = array_data_class(unsafe { header_class_id(handle.sub(HEADER_SIZE)) });
             let new_data = self.alloc(new_cap as usize * elem, data_class, pos_id);
             if new_data.is_null() {
-                return -1;
+                return (-1, false);
             }
             // Re-borrow after alloc (`self` was mutably borrowed).
             // SAFETY: as above.
@@ -1456,7 +1505,7 @@ impl Context {
                                 "array growth found a non-array storage allocation",
                                 pos_id,
                             );
-                            return -1;
+                            return (-1, false);
                         }
                         None => {
                             self.trap(
@@ -1464,7 +1513,7 @@ impl Context {
                                 "array storage disappeared while growing it",
                                 pos_id,
                             );
-                            return -1;
+                            return (-1, false);
                         }
                     }
                 }
@@ -1483,7 +1532,7 @@ impl Context {
             std::ptr::copy_nonoverlapping(src, h.data.add(h.len as usize * elem), elem);
         }
         h.len += 1;
-        h.len as i32
+        (h.len as i32, grew)
     }
 
     /// Removes the last element, copying it to `dst`. Traps on empty.
@@ -1587,15 +1636,33 @@ impl Context {
         }
         // SAFETY: the receiver follows this function's contract.
         let width = unsafe { self.array_elem_size(handle) };
+        // SAFETY: the receiver is live.
+        let first = unsafe { self.array_len(handle) }.max(0) as usize;
+        let mut grew = false;
+        let mut complete = true;
         for index in 0..count {
             // SAFETY: the caller supplies `count` consecutive elements.
             let element = unsafe { src.add(index * width) };
             // SAFETY: forwarded receiver and element contracts.
-            if unsafe { self.array_push(handle, element, pos_id) } < 0 {
-                return false;
+            let (len, grown) = unsafe { self.array_push_unmarked(handle, element, pos_id) };
+            grew |= grown;
+            if len < 0 {
+                complete = false;
+                break;
             }
         }
-        true
+        // compiler.md §356 rule 14: one test of the flag for the extension.
+        // SAFETY: the receiver is live.
+        unsafe {
+            let data = if grew {
+                std::ptr::null()
+            } else {
+                self.array_data(handle)
+            };
+            let len = self.array_len(handle).max(0) as usize;
+            self.mark_written_elements(handle, data, first, len);
+        }
+        complete
     }
 
     /// Shrinks an array to `new_len` without copying removed elements.
@@ -1691,6 +1758,8 @@ impl Context {
         }
         if self.uses_ship_arena() {
             self.arena_sweep();
+            // compiler.md §356 rule 5: the sweep ends the cycle.
+            self.clear_mark_cycle();
         } else {
             let retiring = if self.freed_handle_diagnostics
                 && self.freed_handle_diagnostics_max_retained_bytes == usize::MAX
@@ -1713,6 +1782,8 @@ impl Context {
     ) -> Vec<String> {
         if self.allocations.is_empty() && self.chunks.is_empty() && self.large.is_empty() {
             self.sweep_regex_values();
+            // compiler.md §356 rule 5: with no block, the end has no sweep.
+            self.clear_mark_cycle();
             return Vec::new();
         }
         let mut plan = self.prepare_collection(trace_target, &[]);

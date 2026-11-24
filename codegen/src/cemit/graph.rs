@@ -322,7 +322,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 if local == operands[0] {
                     Ok(())
                 } else {
-                    self.assign(out, Some(local), &operands[0])
+                    self.assign(out, Some(local.clone()), &operands[0])?;
+                    self.emit_store_barrier(out, instruction, &local, &operand_types)
                 }
             }
             l::InstructionKind::AddressOfLocal(local) => {
@@ -384,6 +385,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     .ok_or_else(|| internal("AddressOfValue has no result"))?;
                 if self.coroutine && self.stable_values.contains(&id) {
                     let _ = writeln!(out, "    frame->stable_v{} = {};", id.0, operands[0]);
+                    let slot = format!("frame->stable_v{}", id.0);
+                    self.emit_store_barrier(out, instruction, &slot, &operand_types)?;
                     self.assign(out, result, &format!("&frame->stable_v{}", id.0))
                 } else {
                     let temporary = self.fresh();
@@ -427,7 +430,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     }
                     _ => format!("*({})", operands[0]),
                 };
-                self.assign(out, Some(destination), &operands[1])
+                self.assign(out, Some(destination.clone()), &operands[1])?;
+                self.emit_store_barrier(out, instruction, &destination, &operand_types)
             }
             l::InstructionKind::LoadField(field) => {
                 self.emit_load_field(out, instruction, *field, &operands, &operand_types, result)
@@ -473,7 +477,18 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 self.emit_closure(out, instruction, *function, &operands, result)
             }
             l::InstructionKind::Call(target) => {
-                self.emit_call(out, instruction, target, &operands, &operand_types, result)
+                self.emit_call(out, instruction, target, &operands, &operand_types, result)?;
+                if self.block_store(instruction)
+                    == crate::lir::block_store::BlockStore::ThroughAddresses
+                {
+                    self.emit_address_operand_barriers(
+                        out,
+                        instruction,
+                        &operands,
+                        &operand_types,
+                    )?;
+                }
+                Ok(())
             }
             l::InstructionKind::TaskGroup(operation) => {
                 let position = self.emitter.pos_id(&instruction.pos);

@@ -89,6 +89,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     block.id.0,
                     self.value(*handle)
                 );
+                self.emit_suspend_barrier(
+                    out,
+                    &block.terminator,
+                    &[(
+                        format!("frame->b{}_child", block.id.0),
+                        Type::AsyncHandle(Box::new(Type::Void)),
+                    )],
+                )?;
                 self.emit_async_handle_stale_check(out, block)?;
                 self.emit_await_registration(out, block, state)?;
             }
@@ -119,6 +127,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             return Err(internal("save arguments on non-suspend"));
         };
         let destination = &self.function.blocks[successor.0 as usize];
+        let mut stores = Vec::new();
+        let mut cursors = Vec::new();
         for (argument, parameter) in arguments.iter().zip(
             destination
                 .parameters
@@ -131,6 +141,22 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 "    frame->b{}_v{} = {value};",
                 block.id.0, parameter.0
             );
+            let lvalue = format!("frame->b{}_v{}", block.id.0, parameter.0);
+            match self.value_type(*parameter)? {
+                l::ValueType::Data(ty) => stores.push((lvalue, ty.clone())),
+                // compiler.md §356 rule 10: a cursor holds its source, so
+                // its whole range goes.
+                l::ValueType::Iterator(_) => cursors.push(lvalue),
+                // An address names a word inside a block or a root, and the
+                // block of that word has its own reference.
+                l::ValueType::Address(_) => {}
+            }
+        }
+        self.emit_suspend_barrier(out, &block.terminator, &stores)?;
+        if crate::lir::block_store::terminator_block_store(&block.terminator) {
+            for cursor in cursors {
+                self.emit_mark_range_barrier(out, &cursor);
+            }
         }
         Ok(())
     }
@@ -203,6 +229,14 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             function.0,
             args.join(", ")
         );
+        self.emit_suspend_barrier(
+            out,
+            &block.terminator,
+            &[(
+                format!("frame->b{}_child", block.id.0),
+                Type::AsyncHandle(Box::new(Type::Void)),
+            )],
+        )?;
         if let Some(trap) = traps.iter().find(|trap| trap.kind == l::TrapKind::Call) {
             self.consume(trap);
             self.emit_pending_check(out);

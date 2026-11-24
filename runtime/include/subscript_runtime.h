@@ -251,11 +251,19 @@ typedef struct subscript_rt_async_step_report {
  * start of the record or from the last reset. `max_ns` and
  * `max_words_read` are each the largest of one collection in that span.
  * Before the first collection each field is zero.
+ *
+ * A collection whose mark runs in steps is a cycle of pauses: the start,
+ * the mark steps, and the end (`compiler.md` §356 rule 17). For a cycle,
+ * `last_ns` and `max_ns` are of one pause, and `total_ns` is the sum of
+ * the pauses. `automatic_collections` counts the cycles that ended.
+ * `last_words_read` and `max_words_read` are of one whole cycle. The dev
+ * tier and the interpreter run each collection in one pause, so there
+ * `mark_steps` and `forced_ends` stay zero.
  */
 typedef struct subscript_rt_collection_stats {
     /**
      * The automatic collections: at a poll, at an outermost exit, and the
-     * detection collection.
+     * detection collection. A cycle in steps counts when it ends.
      */
     uint64_t automatic_collections;
     /**
@@ -264,15 +272,18 @@ typedef struct subscript_rt_collection_stats {
      */
     uint64_t explicit_collections;
     /**
-     * The sum of the times of the collections, in nanoseconds.
+     * The sum of the times of the collections, in nanoseconds. For a cycle
+     * in steps, the sum of its pauses.
      */
     uint64_t total_ns;
     /**
-     * The largest time of one collection, in nanoseconds.
+     * The largest time of one collection, in nanoseconds. For a cycle in
+     * steps, the time of one pause.
      */
     uint64_t max_ns;
     /**
-     * The time of the last collection, in nanoseconds.
+     * The time of the last collection, in nanoseconds. For a cycle in
+     * steps, the time of the last pause.
      */
     uint64_t last_ns;
     /**
@@ -289,6 +300,23 @@ typedef struct subscript_rt_collection_stats {
      * The live bytes after the last collection.
      */
     uint64_t last_live_bytes_after;
+    /**
+     * The mark steps of the cycles in steps: each pause that is not the
+     * start or the end of a cycle.
+     */
+    uint64_t mark_steps;
+    /**
+     * The cycles that became late: the bytes requested since the start of
+     * the cycle exceeded one limit, and from there each poll and each
+     * outermost exit ran one step with the budget (`compiler.md` §356 rule
+     * 7).
+     */
+    uint64_t forced_ends;
+    /**
+     * The largest count of words that one pause read. A collection with no
+     * steps is one pause.
+     */
+    uint64_t max_pause_words_read;
 } subscript_rt_collection_stats;
 
 /* Registered task record (compiler.md §169). */
@@ -478,6 +506,41 @@ int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
  */
 void subscript_rt_ctx_collect(subscript_rt_context* ctx);
 /**
+ * Runs one host-timed pause of a collection in steps (compiler.md §356
+ * rule 18).
+ *
+ * If no collection in steps is in progress, the call starts one. If its
+ * work list is not empty, the call runs one step of `budget_words` words.
+ * If the work list is empty, or the last step left it empty, the call
+ * runs the end. The mark of the end has the budget (compiler.md §356
+ * rule 5): if mark work is left after the budget, the call is a step and
+ * returns 1, and the next call tries the end again. So the end can take
+ * more than one call. Each call after the start that returns 1 marks
+ * blocks that had no mark, so a loop of calls ends. Returns 1 if a collection in steps is in progress
+ * after the call, and 0 if the call ended it. The call is valid in mode 0
+ * and in mode 1. A host of the host-timed level calls it at each frame
+ * until it returns 0. The host must end each collection that it starts:
+ * until the end, the memory that the program drops stays, and the work
+ * list holds at most one word for each block (compiler.md §356 rule 10).
+ * In the dev tier, in the interpreter, and in a ship subscript_rt_context that is
+ * created while `SUBSCRIPT_MARK_TRACE` is set, the call runs one whole
+ * collection and returns 0. Returns -1, with no work, while a script call
+ * is live, for a budget of 0, or in mode 2 or mode 3.
+ *
+ * ```c
+ * int32_t cycle = 0;
+ * // At the end of each frame, outside the script bracket:
+ * if (cycle == 1 || frame % 60 == 0) {
+ *     cycle = subscript_rt_ctx_collect_step(ctx, 50000);
+ * }
+ * ```
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
+int32_t subscript_rt_ctx_collect_step(subscript_rt_context* ctx, uint64_t budget_words);
+/**
  * Writes the statistics of the collections of `ctx` to `out`
  * (compiler.md §353 rules 2 and 3).
  *
@@ -485,6 +548,10 @@ void subscript_rt_ctx_collect(subscript_rt_context* ctx);
  * an outermost exit, and the detection collection), the count of the
  * explicit collections, the times in nanoseconds on a monotonic clock, the
  * words that the mark read, and the live bytes after the last collection.
+ * Three fields are of the collections whose mark runs in steps
+ * (compiler.md §356 rule 17): `mark_steps`, `forced_ends`, and
+ * `max_pause_words_read`. For such a collection, `last_ns` and `max_ns`
+ * are of one pause, and `total_ns` is the sum of the pauses.
  * Each field is for the span from the start of `ctx` or from the last
  * `subscript_rt_ctx_reset_collection_stats`. `max_ns` and `max_words_read`
  * are each the largest of one collection in that span, and they can come
@@ -593,8 +660,13 @@ void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint
  * A collection runs only inside a call into this subscript_rt_context, on the thread of
  * that call. The host selects one of three levels. Automatic is mode 1:
  * polls and `subscript_rt_ctx_exit_script` collect. Host-timed is mode 0
- * with `subscript_rt_ctx_collect` at a point the host selects. Manual is
+ * with `subscript_rt_ctx_collect`, or with the steps of
+ * `subscript_rt_ctx_collect_step`, at a point the host selects. Manual is
  * mode 0 with `subscript_rt_context.free` in script code, and no collection.
+ *
+ * A change to mode 0 during a collection in steps keeps that collection.
+ * No poll serves it. The host ends it with `subscript_rt_ctx_collect_step`
+ * or `subscript_rt_ctx_collect`.
  *
  * Mode 0 is off: no allocation starts a collection, and the outermost exit
  * runs no detection collection. Mode 1 is automatic, and is the mode of a
@@ -608,7 +680,11 @@ void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint
  * allocation of the block requested. This call keeps the bytes allocated
  * since the last collection.
  * Mode 2 makes each poll and each outermost exit
- * collect; it is for tests. A `min_headroom_bytes` of 0 keeps the default of
+ * collect; it is for tests. Mode 3 is the step stress mode, for tests: each
+ * poll and each outermost exit runs one pause of a collection in steps with
+ * the budget of `subscript_rt_ctx_set_collection_step`, and each end of a
+ * collection checks the mark and stops the process with a message if the
+ * check fails. A `min_headroom_bytes` of 0 keeps the default of
  * 16 MiB. A worker subscript_rt_context takes the mode and the headroom of its parent at
  * the spawn.
  *
@@ -620,6 +696,43 @@ void subscript_rt_ctx_set_binding_count_advisory(subscript_rt_context* ctx, uint
  * `ctx` follows the exclusive subscript_rt_context contract.
  */
 int32_t subscript_rt_ctx_set_collection(subscript_rt_context* ctx, int32_t mode, uint64_t min_headroom_bytes);
+/**
+ * Sets the budget of one mark step of this subscript_rt_context, in words
+ * (compiler.md §356 rule 16).
+ *
+ * With a budget above 0, the mark of an automatic collection runs in
+ * steps: a start, mark steps, and an end, and each of the three is a
+ * pause. Script code runs between two pauses. In mode 1 the steps follow
+ * the allocation and the stores of references. A step reads about
+ * `budget_words` words. The unit is the word of 8 bytes that the mark
+ * tests (compiler.md §353 rule 5). The default is 50,000 words. A budget
+ * of 0 makes each collection one pause. If a collection in steps is in
+ * progress, the new budget applies to its next step, and a budget of 0
+ * ends it at the next poll. A worker subscript_rt_context takes the budget of its
+ * parent at the spawn.
+ *
+ * The end of a collection in steps reads the roots again and marks with
+ * the budget. If mark work is left after the budget, the pause is a step,
+ * and the next pause tries the end again. If no mark work is left, the
+ * releases and the sweep follow in the same pause.
+ *
+ * An explicit collection, the failed-task check of the outermost exit
+ * (compiler.md §342 rule 14), and each collection of mode 2 are one pause
+ * at each budget. If a collection in steps is in progress, each of them
+ * ends it first, with no budget, and then runs one whole collection. The
+ * dev tier and the interpreter run each collection in one pause, and the
+ * budget has no effect there. A ship subscript_rt_context that is created while
+ * `SUBSCRIPT_MARK_TRACE` is set also runs each collection in one pause,
+ * because the trace records the path to each block in one whole mark.
+ *
+ * Returns 0 when the setting was applied. Returns -1, with no change,
+ * while a script call is live (`script_depth != 0`).
+ *
+ * # Safety
+ *
+ * `ctx` follows the exclusive subscript_rt_context contract.
+ */
+int32_t subscript_rt_ctx_set_collection_step(subscript_rt_context* ctx, uint64_t budget_words);
 /**
  * Installs the observation-only callback invoked for optional runtime
  * diagnostics advisories. Passing a null `observer` clears it.

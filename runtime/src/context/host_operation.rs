@@ -342,6 +342,8 @@ impl Context {
         let failed = matches!(completion, Completion::Exception(_));
         meta.completion = Some(completion);
         self.async_ready.extend(std::mem::take(&mut meta.waiters));
+        // compiler.md §356 rule 14: the completion goes to the work list.
+        self.mark_written_completion(handle);
         // compiler.md §342 rule 14b.
         if failed {
             self.note_task_failure();

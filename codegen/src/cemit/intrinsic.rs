@@ -33,6 +33,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         "    (({element_type}*){header}->data)[{header}->len] = {};",
                         operands[1]
                     );
+                    let slot = format!("(({element_type}*){header}->data)[{header}->len]");
+                    self.emit_store_barrier(out, instruction, &slot, operand_types)?;
                     let _ = writeln!(out, "    {header}->len += 1u;");
                     return self.assign(out, result, &format!("(int32_t)({header}->len)"));
                 }
@@ -42,6 +44,8 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     "        (({element_type}*){header}->data)[{header}->len] = {};",
                     operands[1]
                 );
+                let slot = format!("(({element_type}*){header}->data)[{header}->len]");
+                self.emit_store_barrier(out, instruction, &slot, operand_types)?;
                 let _ = writeln!(out, "        {header}->len += 1u;\n    }} else {{");
                 let pointer = self.materialize(out, &operands[1], element)?;
                 let pos = self.emitter.pos_id(&instruction.pos);

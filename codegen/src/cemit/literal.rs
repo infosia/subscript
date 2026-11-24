@@ -560,12 +560,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             .ok_or_else(|| internal("closure has no id"))?;
         let environment = self.closure_environment(result_id);
         let _ = writeln!(out, "    memset({environment}, 0, sizeof(SubEnvStorage));");
-        for ((capture, operand), _) in captures.iter().zip(operands).zip(0..) {
-            let _ = writeln!(
-                out,
-                "    ((SubEnv{}*){environment})->c{} = {operand};",
-                function.0, capture.0
-            );
+        let mut stores = Vec::new();
+        for ((capture, operand), source) in captures.iter().zip(operands).zip(&instruction.operands)
+        {
+            let slot = format!("((SubEnv{}*){environment})->c{}", function.0, capture.0);
+            let _ = writeln!(out, "    {slot} = {operand};");
+            if let l::ValueType::Data(ty) = self.operand_type(source)? {
+                stores.push((slot, ty));
+            }
+        }
+        // compiler.md §356 rule 10: in a coroutine the environment is in
+        // the frame.
+        if self.block_store(instruction) == crate::lir::block_store::BlockStore::EachOperand {
+            self.emit_mark_barriers(out, &stores)?;
         }
         let _ = writeln!(
             out,

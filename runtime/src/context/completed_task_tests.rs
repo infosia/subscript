@@ -8,8 +8,14 @@ use std::sync::atomic::Ordering;
 use super::*;
 
 /// The two allocator tiers: the dev allocator and the ship arena.
+/// The tests read one automatic collection as one pause: a budget of 0
+/// (`compiler.md` §356 rule 16).
 fn contexts() -> [Box<Context>; 2] {
-    [Context::new(), Context::new_releasing()]
+    let mut contexts = [Context::new(), Context::new_releasing()];
+    for ctx in &mut contexts {
+        assert!(ctx.set_collection_step(0));
+    }
+    contexts
 }
 
 /// One counted handle field at offset 0 (`compiler.md` §171).

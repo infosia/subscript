@@ -144,7 +144,19 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
         self.assign(out, Some(destination.clone()), &call)?;
         self.emit_pending_check(out);
         let _ = writeln!(out, "    *(({class_name}*)({destination})) = {operand};");
-        Ok(())
+        let operand_type = instruction
+            .operands
+            .first()
+            .map(|operand| self.operand_type(operand))
+            .transpose()?
+            .into_iter()
+            .collect::<Vec<_>>();
+        self.emit_store_barrier(
+            out,
+            instruction,
+            &format!("*(({class_name}*)({destination}))"),
+            &operand_type,
+        )
     }
 
     pub(super) fn emit_field_address(

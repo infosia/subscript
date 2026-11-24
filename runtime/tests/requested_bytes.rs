@@ -5,12 +5,16 @@ use subscript_runtime::context::{ArrayElements, CollectionMode, DEFAULT_MIN_HEAD
 use subscript_runtime::ffi::{subscript_rt_map_new, subscript_rt_map_set};
 use subscript_runtime::Context;
 
+/// A Context of the dev kind or of the ship arena. The tests read each
+/// collection as one pause: a budget of 0 (`compiler.md` §356 rule 16).
 fn context(ship: bool) -> Box<Context> {
-    if ship {
+    let mut ctx = if ship {
         Context::new_releasing()
     } else {
         Context::new()
-    }
+    };
+    assert!(ctx.set_collection_step(0));
+    ctx
 }
 
 /// One root word. Setting it to zero makes its object unreachable.

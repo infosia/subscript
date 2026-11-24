@@ -504,6 +504,8 @@ impl Context {
         // runnable, in registration order, at the queue's tail.
         let waiters = std::mem::take(&mut meta.waiters);
         self.async_ready.extend(waiters);
+        // compiler.md §356 rule 14: the completion value goes to the work list.
+        self.mark_written_completion(frame as usize);
     }
 
     /// Copies a cached fulfilled representation without acquiring an owner.
@@ -954,6 +956,9 @@ impl Context {
                         let destination = data.add(index * elem_size);
                         if result_size == elem_size {
                             std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination, result_size);
+                            // compiler.md §356 rule 14: the element of the
+                            // result array goes to the work list.
+                            self.mark_written_elements(result, data, index, index + 1);
                         } else {
                             destination.cast::<i32>().write(i32::from(bytes[0] != 0));
                         }

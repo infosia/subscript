@@ -255,6 +255,12 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
             out,
             "    if ({temporary}.env != NULL && sub_borrowed_environment({temporary})) {{ memcpy({environment}, {temporary}.env, sizeof(SubEnvStorage)); {temporary}.env = {environment}; }} else {{ memset({environment}, 0, sizeof(SubEnvStorage)); }}"
         );
+        if self.coroutine {
+            // compiler.md §356 rule 10: the copied environment is in the
+            // coroutine frame.
+            let slot = format!("*(SubEnvStorage*)({environment})");
+            self.emit_mark_range_barrier(out, &slot);
+        }
         self.assign(out, Some(self.value(id)), &temporary)
     }
 

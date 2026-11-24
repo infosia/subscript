@@ -131,6 +131,15 @@ impl Context {
                 );
             }
         }
+        // compiler.md §356 rules 14 and 14a: the fill wrote a value, which
+        // goes to the work list. The copy is a move: only a copy toward the
+        // start can bring a word from the part that a divided scan did not
+        // read.
+        if operation == 1 {
+            unsafe { self.mark_written_elements(array, data, to, to + count) };
+        } else if from > to {
+            unsafe { self.mark_moved_elements(array, to, to + count, Some(from - to)) };
+        }
         for index in 0..count {
             unsafe {
                 self.counted_value(replaced.as_ptr().add(index * size), description, true, pos)

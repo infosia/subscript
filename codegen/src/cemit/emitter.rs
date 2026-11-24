@@ -1178,6 +1178,21 @@ impl<'m> Emitter<'m> {
                 );
             }
         }
+        if crate::lir::block_store::entry_block_store(function) {
+            // compiler.md §356 rule 10: the parameters are in the new frame,
+            // so a step reads the frame again.
+            let call = self.runtime_call(
+                "void",
+                "subscript_rt_mark_block",
+                &["void*".into(), "void*".into()],
+                &["ctx".into(), "(void*)frame".into()],
+            );
+            let _ = writeln!(
+                out,
+                "    if (SUBSCRIPT_UNLIKELY(*((const uint8_t*)ctx + {}u) != 0u)) {{\n        {call};\n    }}",
+                subscript_runtime::Context::mark_in_progress_offset()
+            );
+        }
         if function.is_generator {
             out.push_str("    frame->holders = 1u;\n");
             let slots = function

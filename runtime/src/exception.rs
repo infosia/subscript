@@ -266,6 +266,9 @@ impl Context {
             self.async_ready.extend(waiters);
             // compiler.md §342 rule 14b.
             self.note_task_failure();
+            // compiler.md §356 rule 14: the exception object leaves the
+            // pending root for the completion, so it goes to the work list.
+            self.mark_written_completion(frame as usize);
         }
     }
 

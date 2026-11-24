@@ -757,6 +757,8 @@ fn async_ship(shape: &Shape) -> (Vec<ShipFigures>, u64, u64) {
              uint64_t subscript_rt_automatic_collection_count(const subscript_rt_context* ctx);\n\
              void subscript_test_return_path_setup(subscript_rt_context* ctx) {{\n\
                if (subscript_rt_ctx_set_collection(ctx, 1, {HEADROOM}u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
+               /* The bounds are of collections of one pause: compiler.md section 356 rule 16. */\n\
+               if (subscript_rt_ctx_set_collection_step(ctx, 0u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
              }}\n\
              static uint64_t most_frame;\n\
              static uint64_t most_object;\n\

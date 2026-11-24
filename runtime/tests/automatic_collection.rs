@@ -7,12 +7,16 @@ use subscript_runtime::context::{
 };
 use subscript_runtime::{ffi::*, Context, TrapKind};
 
+/// A Context of the dev kind or of the ship arena. The tests read each
+/// collection as one pause: a budget of 0 (`compiler.md` §356 rule 16).
 fn context(ship: bool) -> Box<Context> {
-    if ship {
+    let mut ctx = if ship {
         Context::new_releasing()
     } else {
         Context::new()
-    }
+    };
+    assert!(ctx.set_collection_step(0));
+    ctx
 }
 
 /// Allocates `count` garbage objects of `size` bytes that no root reaches.
@@ -452,7 +456,8 @@ fn the_host_setter_checks_its_arguments() {
     let mut ctx = Context::new();
     // SAFETY: the Context is live and exclusive in each call.
     unsafe {
-        assert_eq!(subscript_rt_ctx_set_collection(&mut *ctx, 3, 0), -1);
+        // compiler.md §356 rule 19: mode 3 exists, and 4 is unknown.
+        assert_eq!(subscript_rt_ctx_set_collection(&mut *ctx, 4, 0), -1);
         assert_eq!(subscript_rt_ctx_set_collection(&mut *ctx, -1, 0), -1);
         ctx.enter_script();
         assert_eq!(subscript_rt_ctx_set_collection(&mut *ctx, 1, 4096), -1);

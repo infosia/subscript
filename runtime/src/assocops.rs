@@ -564,6 +564,12 @@ unsafe fn ensure_capacity(ctx: &mut Context, handle: *mut u8, pos_id: u32) -> bo
     if h.order_len == h.order_cap && h.iteration_depth == 0 && h.len < h.order_len {
         // SAFETY: the container is live and no iteration is active.
         let _ = unsafe { compact_entries(handle) };
+        // compiler.md §356 rule 14a: the compaction moved the entries toward
+        // the start inside the storage.
+        // SAFETY: container remains live.
+        let h = unsafe { &*handle.cast::<AssocHeader>() };
+        let bytes = (h.order_len as usize).saturating_mul(h.entry_stride as usize);
+        ctx.mark_moved_words(h.entries as usize, 0, bytes, None);
     }
     // Re-borrow after possible compaction.
     // SAFETY: container remains live.
@@ -662,12 +668,16 @@ pub(crate) unsafe fn insert(
                     h.value_size as usize,
                 );
             }
+            // compiler.md §356 rule 14: the stored value goes to the work list.
+            // SAFETY: the context is live, and the entry value is readable.
+            unsafe { (*ctx).mark_written_words(entry_value(h, entry), h.value_size as usize) };
             if !description.is_null() {
                 unsafe { (*ctx).counted_value(old.as_ptr(), description, true, pos_id) };
             }
         }
         return handle;
     }
+    let entries_before = h.entries;
     // SAFETY: container is live; only this path allocates.
     if !unsafe { ensure_capacity(&mut *ctx, handle, pos_id) } {
         return handle;
@@ -696,6 +706,17 @@ pub(crate) unsafe fn insert(
     }
     h.order_len += 1;
     h.len += 1;
+    // compiler.md §356 rule 14: a growth filled a new entry storage, which
+    // has the mark and was never read, so it goes to the work list. Else the
+    // words of the new entry do. `ensure_capacity` gave the moves of a
+    // compaction (rule 14a).
+    // SAFETY: the context is live.
+    let ctx = unsafe { &mut *ctx };
+    if h.entries != entries_before {
+        ctx.mark_written_block(h.entries);
+    } else {
+        ctx.mark_written_words(ep, h.entry_stride as usize);
+    }
     handle
 }
 

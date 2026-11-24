@@ -92,6 +92,8 @@ fn park_jobs(ctx: &mut Context) -> usize {
 fn a_drain_collects_between_two_jobs() {
     for mut ctx in [Context::new(), Context::new_releasing()] {
         assert!(ctx.set_collection(CollectionMode::Automatic, HEADROOM));
+        // The bound is of collections of one pause (`compiler.md` §356 rule 16).
+        assert!(ctx.set_collection_step(0));
         let frames = park_jobs(&mut ctx);
         assert_eq!(ctx.async_parked_len(), JOBS);
         MOST_LIVE.with(|most| most.set(0));

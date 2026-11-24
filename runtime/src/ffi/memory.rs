@@ -53,6 +53,50 @@ pub unsafe extern "C" fn subscript_rt_collect_poll(ctx: *mut Context) {
     unsafe { &mut *ctx }.collect_poll();
 }
 
+/// The barrier of a store of a reference (`compiler.md` §356 rule 10):
+/// generated code calls it after it stores the word `value` into a block,
+/// when the flag at `Context::mark_in_progress_offset()` is set. The word
+/// goes to the work list of the mark. The host header does not declare
+/// this entry.
+///
+/// # Safety
+///
+/// Shared contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_mark_store(ctx: *mut Context, value: usize) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.mark_store(value);
+}
+
+/// The barrier of a store of an aggregate (`compiler.md` §356 rule 10):
+/// generated code calls it after it stores `bytes` bytes at `at` inside a
+/// block, when the flag at `Context::mark_in_progress_offset()` is set.
+/// Each whole aligned word of the range goes to the work list of the mark.
+/// The host header does not declare this entry.
+///
+/// # Safety
+///
+/// Shared contract; `at` is null or the start of `bytes` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_mark_range(ctx: *mut Context, at: *const u8, bytes: u64) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.mark_written_words(at, bytes as usize);
+}
+
+/// The barrier of a block (`compiler.md` §356 rule 14): after the runtime
+/// or generated code writes references into the block at `payload` during
+/// a mark, the block goes to the work list again. The host header does not
+/// declare this entry.
+///
+/// # Safety
+///
+/// Shared contract; `payload` is null or a payload address.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_mark_block(ctx: *mut Context, payload: *mut u8) {
+    // SAFETY: shared contract.
+    unsafe { &mut *ctx }.mark_block_again(payload as usize);
+}
+
 /// The count of outermost exits of the Context (`compiler.md` §345 rule 4).
 /// A test host reads it after the last script exit and before it releases
 /// the Context. The host header does not declare this entry.

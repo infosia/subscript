@@ -9,6 +9,28 @@
 //! entry (`cemit.rs`, with the expectations of `support/trap_corpus.rs`).
 //! [`exclusion`] is the one table of runs that the sweep does not make.
 //!
+//! The ship tier runs each entry again on the same executable, with no
+//! second compile and no second link (`compiler.md` §356.2 item 4): the
+//! pre-init hook reads [`STEP_BUDGET_ENV`] and sets mode 3, the step stress
+//! mode, one run for each budget of [`STEP_BUDGETS`] in words. After each
+//! step and before each end the runtime runs the check of a pause, and at
+//! each end the check of the mark. A finding stops the process with its
+//! message (§356 rules 20 and 20a). The sweep compares each run with the
+//! golden and prints, for each budget, the count of the cycles that ended,
+//! of the runs that ended no cycle, and of the runs that gave no count. A
+//! cycle of mode 3 has at most 8 steps (rule 19). Measured with 610 runs
+//! for each budget: the budgets 64, 16, and 4 end 10,426 to 10,430, 7,448
+//! to 7,449, and 3,967 to 3,968 cycles; 5, 22, and 77 runs end no cycle;
+//! 113 runs give no count.
+//! Measured with no barrier in the emitted code and in the runtime: rule
+//! 20a stops 22, 25, and 23 entries at the budgets 64, 16, and 4, and 40
+//! together. Rule 20 then stops none, because the check of a pause of rule
+//! 20a runs before each end and stops the run first. So that figure is not
+//! a measure of rule 20. Measured with no barrier, with the check of a
+//! pause off, and with no step limit in mode 3: rule 20 alone stops 7
+//! entries. `mark_barrier_points.rs` holds the programs for the barrier
+//! points that no entry reaches during a mark.
+//!
 //! Each run is a child process of this binary with a time limit
 //! ([`CHILD_LIMIT`]), so one slow entry cannot hold the sweep, and a run
 //! that stops the process stops only its child. The dev JIT run with a
@@ -17,6 +39,9 @@
 //! Cost: one child for each run, on the worker pool of the standing sweeps
 //! (`support/pool.rs`). Measured on an arm64 macOS host with 594 entries
 //! and 1,666 runs: 68 s in a debug build, 36 to 45 s in a release build.
+//! The three mode 3 runs of the ship tier, with the check of each pause,
+//! add 0 to 5 s: with 615 entries the release sweep took 45.4 s with no
+//! mode 3 run, and 47 to 48 s with the three.
 //! The slowest run is one ship-tier entry at 12 s (debug). The parent also
 //! checks and lowers each entry that names `Worker`, once
 //! ([`calls_worker_receive`]). The sweep runs
@@ -30,7 +55,9 @@ use std::time::{Duration, Instant};
 
 use subscript_codegen::interpreter::{interpret_with_collection, InterpretError};
 use subscript_codegen::lir::lower_module;
-use subscript_codegen::{run_c_aot_configured, run_jit_configured, NativeLibrary, RunConfig};
+use subscript_codegen::{
+    run_c_aot_configured, run_c_aot_configured_runs, run_jit_configured, NativeLibrary, RunConfig,
+};
 use subscript_codegen::{EntryArg, ReloadSession, RunError, TrapReport};
 use subscript_compiler::{lir, SourceFile};
 use subscript_runtime::context::CollectionMode;
@@ -72,6 +99,22 @@ const EXIT_REPORT_HOOK: &str = "subscript_stress_exit_report";
 /// The file in the child scratch directory where [`EXIT_REPORT_HOOK`]
 /// writes the count. The script stdout does not carry it.
 const EXIT_COUNT_FILE: &str = "exit-count";
+/// The environment variable that the second ship-tier run sets: the
+/// pre-init hook then sets mode 3 with this budget in words
+/// (`compiler.md` §356 rule 19).
+const STEP_BUDGET_ENV: &str = "SUBSCRIPT_STRESS_STEP_BUDGET";
+/// The budgets of the mode 3 runs, in words. Each budget reaches other
+/// stores during a mark: the control of the module doc stops 22 to 25
+/// entries at one budget, and 40 entries at the three budgets together.
+const STEP_BUDGETS: [&str; 3] = ["64", "16", "4"];
+/// The file where [`EXIT_REPORT_HOOK`] writes the count of the cycles that
+/// ended in each mode 3 run, one line of `<budget> <count>` for each run.
+const STEP_CYCLES_FILE: &str = "step-cycles";
+/// The prefix of the files where the child writes the outcome of each
+/// mode 3 run, in the order of [`STEP_BUDGETS`].
+const STEP_OUTCOME_FILE: &str = "outcome-step";
+/// The most bytes of the stderr of a mode 3 run that a failure keeps.
+const STDERR_LIMIT: usize = 4096;
 /// The ship-tier hook of the scratch file provider (`support/files.rs`).
 const FILES_SETUP_HOOK: &str = "subscript_test_files_setup";
 /// The file-provider line of a corpus entry.
@@ -454,20 +497,36 @@ fn setup_hook_library(
         None => String::new(),
     };
     let count_path = c_string(&scratch.join(EXIT_COUNT_FILE));
+    let cycles_path = c_string(&scratch.join(STEP_CYCLES_FILE));
     std::fs::write(
         &source,
         format!(
             "#include <stdint.h>\n\
              #include <stdio.h>\n\
+             #include <stdlib.h>\n\
              #include \"subscript_runtime.h\"\n\
              uint64_t subscript_rt_outermost_exit_count(const subscript_rt_context* ctx);\n\
              {declaration}\
              void {SETUP_HOOK}(subscript_rt_context* ctx) {{\n\
              {call}\
-               if (subscript_rt_ctx_set_collection(ctx, 2, 0u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
+               const char* step = getenv(\"{STEP_BUDGET_ENV}\");\n\
+               if (step != NULL) {{\n\
+                 if (subscript_rt_ctx_set_collection_step(ctx, strtoull(step, NULL, 10)) != 0\n\
+                     || subscript_rt_ctx_set_collection(ctx, 3, 0u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
+               }} else if (subscript_rt_ctx_set_collection(ctx, 2, 0u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
              }}\n\
              void {EXIT_REPORT_HOOK}(subscript_rt_context* ctx) {{\n\
              {post_call}\
+               if (getenv(\"{STEP_BUDGET_ENV}\") != NULL) {{\n\
+                 subscript_rt_collection_stats stats;\n\
+                 subscript_rt_ctx_collection_stats(ctx, &stats);\n\
+                 FILE* cycles = fopen({cycles_path}, \"a\");\n\
+                 if (cycles != NULL) {{\n\
+                   fprintf(cycles, \"%s %llu\\n\", getenv(\"{STEP_BUDGET_ENV}\"), (unsigned long long)stats.automatic_collections);\n\
+                   fclose(cycles);\n\
+                 }}\n\
+                 return;\n\
+               }}\n\
                FILE* out = fopen({count_path}, \"w\");\n\
                if (out != NULL) {{\n\
                  fprintf(out, \"%llu\\n\", (unsigned long long)subscript_rt_outermost_exit_count(ctx));\n\
@@ -587,8 +646,11 @@ fn dev_host_run(entry: &Entry, sources: &[SourceFile], libraries: &[NativeLibrar
     }
 }
 
-/// The ship-tier run of one entry with mode 2, set by the pre-init hook.
-fn ship_run(entry: &Entry, sources: &[SourceFile], scratch: &Path) -> Outcome {
+/// The ship-tier runs of one entry: mode 2, then mode 3 with
+/// each budget of [`STEP_BUDGETS`] (`compiler.md` §356.2 item 4), each set
+/// by the pre-init hook, on one build. Returns the outcome of the mode 2
+/// run and of each mode 3 run.
+fn ship_run(entry: &Entry, sources: &[SourceFile], scratch: &Path) -> (Outcome, Vec<Outcome>) {
     let file_provider = uses_file_provider(sources);
     let fixture = file_provider.then(file_fixture::Fixture::new);
     let mut libraries = if file_provider {
@@ -619,13 +681,70 @@ fn ship_run(entry: &Entry, sources: &[SourceFile], scratch: &Path) -> Outcome {
         config.freed_handle_diagnostics = trap_corpus::callback_userdata_diagnostic(&entry.id);
     }
     let _ = std::fs::remove_file(scratch.join(EXIT_COUNT_FILE));
-    match run_result(run_c_aot_configured(sources, config)) {
+    let _ = std::fs::remove_file(scratch.join(STEP_CYCLES_FILE));
+    let variables: Vec<[(&str, &str); 1]> = STEP_BUDGETS
+        .iter()
+        .map(|budget| [(STEP_BUDGET_ENV, *budget)])
+        .collect();
+    let mut runs: Vec<&[(&str, &str)]> = vec![&[]];
+    runs.extend(variables.iter().map(|variables| variables.as_slice()));
+    let mut results = match run_c_aot_configured_runs(sources, config, &runs) {
+        Ok(results) => results.into_iter(),
+        Err(error) => {
+            let outcome = run_result(Err(error));
+            return (outcome.clone(), vec![outcome; STEP_BUDGETS.len()]);
+        }
+    };
+    let mut next = || {
+        results
+            .next()
+            .unwrap_or_else(|| Err(RunError::Internal("a run is missing".into())))
+    };
+    let first = match run_result(next()) {
         Outcome::Complete { stdout, .. } => Outcome::Complete {
             stdout,
             exits: reported_exit_count(scratch),
             collections: None,
         },
         other => other,
+    };
+    let cycles = std::fs::read_to_string(scratch.join(STEP_CYCLES_FILE)).unwrap_or_default();
+    let steps = STEP_BUDGETS
+        .iter()
+        .map(|budget| step_outcome(next(), &cycles, budget))
+        .collect();
+    (first, steps)
+}
+
+/// The outcome of one mode 3 run, with the count of the cycles that ended
+/// from the line of its budget in `cycles`.
+fn step_outcome(
+    result: Result<subscript_codegen::RunOutput, RunError>,
+    cycles: &str,
+    budget: &str,
+) -> Outcome {
+    match result {
+        Ok(output) => Outcome::Complete {
+            stdout: output.stdout,
+            exits: None,
+            collections: cycles.lines().find_map(|line| {
+                let (name, count) = line.split_once(' ')?;
+                (name == budget)
+                    .then(|| count.trim().parse().ok())
+                    .flatten()
+            }),
+        },
+        // A finding of the check of the mark stops the process with its
+        // message on stderr (`compiler.md` §356 rule 20).
+        Err(RunError::AbnormalTermination(termination)) => {
+            let stderr = String::from_utf8_lossy(&termination.stderr);
+            let start = stderr.len().saturating_sub(STDERR_LIMIT);
+            let start = (start..stderr.len())
+                .find(|index| stderr.is_char_boundary(*index))
+                .unwrap_or(stderr.len());
+            Outcome::Failed(format!("{}: {}", termination.status, &stderr[start..]))
+        }
+        Err(error) => run_result(Err(error)),
     }
 }
 
@@ -695,7 +814,17 @@ fn child_main(spec: &str) {
     let sources = entry.sources();
     let outcome = match Tier::from_name(tier) {
         Tier::Dev => dev_run(&entry, &sources),
-        Tier::Ship => ship_run(&entry, &sources, &scratch),
+        Tier::Ship => {
+            let (outcome, steps) = ship_run(&entry, &sources, &scratch);
+            for (index, step) in steps.iter().enumerate() {
+                std::fs::write(
+                    scratch.join(format!("{STEP_OUTCOME_FILE}-{index}")),
+                    step.encode(),
+                )
+                .expect("write the step outcome");
+            }
+            outcome
+        }
         Tier::Interpreter => interpreter_run(&sources),
     };
     std::fs::write(&result, outcome.encode()).expect("write the outcome");
@@ -714,8 +843,9 @@ fn stop(child: &mut std::process::Child) {
 }
 
 /// The parent side: runs one entry in one tier in a child of this binary
-/// and returns its outcome and wall time.
-fn run_in_child(entry: &Entry, tier: Tier, slot: usize) -> (Outcome, Duration) {
+/// and returns its outcome, the outcome of the mode 3 run of the ship tier,
+/// and the wall time.
+fn run_in_child(entry: &Entry, tier: Tier, slot: usize) -> (Outcome, Vec<Outcome>, Duration) {
     let started = Instant::now();
     let scratch = std::env::temp_dir().join(format!(
         "subscript-collection-stress-{}-{slot}",
@@ -767,8 +897,21 @@ fn run_in_child(entry: &Entry, tier: Tier, slot: usize) -> (Outcome, Duration) {
             ))
         }
     };
+    let step = if tier == Tier::Ship {
+        (0..STEP_BUDGETS.len())
+            .map(|index| {
+                std::fs::read_to_string(scratch.join(format!("{STEP_OUTCOME_FILE}-{index}")))
+                    .map_or_else(
+                        |_| Outcome::Failed("the child wrote no mode 3 outcome".to_string()),
+                        |text| Outcome::decode(&text),
+                    )
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     let _ = std::fs::remove_dir_all(&scratch);
-    (outcome, started.elapsed())
+    (outcome, step, started.elapsed())
 }
 
 /// The golden of one entry.
@@ -940,7 +1083,10 @@ fn collection_stress_sweep() {
     let mut slowest = (Duration::ZERO, String::new());
     let mut per_tier_collections = [0u64; 3];
     let mut ship_without_count = Vec::new();
-    for ((index, tier), (outcome, elapsed)) in runs.iter().zip(&outcomes) {
+    // Per budget of [`STEP_BUDGETS`]: runs, equal runs, cycles that ended,
+    // runs that ended no cycle, and runs that gave no count.
+    let mut step_counts = [(0usize, 0usize, 0u64, 0usize, 0usize); STEP_BUDGETS.len()];
+    for ((index, tier), (outcome, step, elapsed)) in runs.iter().zip(&outcomes) {
         let entry = &entries[*index];
         let column = TIERS.iter().position(|t| t == tier).expect("a tier");
         if let (Category::Trap, Outcome::Unsupported(reason)) = (entry.category, outcome) {
@@ -961,6 +1107,28 @@ fn collection_stress_sweep() {
         match compare(&entry.id, *tier, &golden(entry), outcome) {
             Some(difference) => differences.push(difference),
             None => per_tier[column].1 += 1,
+        }
+        // `compiler.md` §356.2 item 4: the mode 3 runs of the same build.
+        for ((step, budget), counts) in step.iter().zip(STEP_BUDGETS).zip(&mut step_counts) {
+            counts.0 += 1;
+            match compare(&entry.id, *tier, &golden(entry), step) {
+                Some(difference) => {
+                    differences.push(format!("mode 3, budget {budget}: {difference}"));
+                }
+                None => counts.1 += 1,
+            }
+            match step {
+                Outcome::Complete {
+                    collections: Some(cycles),
+                    ..
+                } => {
+                    counts.2 += cycles;
+                    if *cycles == 0 {
+                        counts.3 += 1;
+                    }
+                }
+                _ => counts.4 += 1,
+            }
         }
         if let Outcome::Complete {
             exits: count,
@@ -1051,6 +1219,11 @@ fn collection_stress_sweep() {
             per_tier_collections[column]
         );
     }
+    for (budget, (run, equal, cycles, none, without)) in STEP_BUDGETS.iter().zip(step_counts) {
+        eprintln!(
+            "collection stress ship-C-AOT mode 3, budget {budget} words: {run} run, {equal} equal, {cycles} cycles ended, {none} runs ended no cycle, {without} runs gave no count"
+        );
+    }
     eprintln!(
         "collection stress: {} entries, {exit_compared} exit counts compared, {exit_compared_three} of them in three tiers, {exit_not_compared_receive} not compared: {RECEIVE_REASON}, slowest run {} in {:.1} s, {:.1} s",
         entries.len(),
@@ -1065,6 +1238,13 @@ fn collection_stress_sweep() {
     for (column, tier) in TIERS.iter().enumerate() {
         if *tier != Tier::Ship && per_tier_collections[column] == 0 {
             failures.push(format!("{}: no automatic collection ran", tier.name()));
+        }
+    }
+    for (budget, (_, _, cycles, _, _)) in STEP_BUDGETS.iter().zip(step_counts) {
+        if cycles == 0 {
+            failures.push(format!(
+                "ship-C-AOT mode 3, budget {budget}: no cycle ended"
+            ));
         }
     }
     failures.extend(ship_mode_control());
@@ -1238,7 +1418,7 @@ fn ship_exit_count_control() -> Option<String> {
 fn the_sweep_comparison_reports_a_changed_golden() {
     let entry = Entry::accept("a01-hello");
     let expected = golden(&entry);
-    let (outcome, _) = run_in_child(&entry, Tier::Dev, usize::MAX);
+    let (outcome, _, _) = run_in_child(&entry, Tier::Dev, usize::MAX);
     assert_eq!(compare(&entry.id, Tier::Dev, &expected, &outcome), None);
     assert!(
         matches!(outcome, Outcome::Complete { exits: Some(3), .. }),
@@ -1252,7 +1432,7 @@ fn the_sweep_comparison_reports_a_changed_golden() {
 
     let entry = Entry::trap("t08-div-zero-expression");
     let expected = golden(&entry);
-    let (outcome, _) = run_in_child(&entry, Tier::Interpreter, usize::MAX - 1);
+    let (outcome, _, _) = run_in_child(&entry, Tier::Interpreter, usize::MAX - 1);
     assert_eq!(
         compare(&entry.id, Tier::Interpreter, &expected, &outcome),
         None

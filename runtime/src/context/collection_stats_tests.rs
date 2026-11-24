@@ -11,9 +11,15 @@ use crate::ffi::{
     subscript_rt_ctx_reset_collection_stats,
 };
 
-/// Both kinds of Context: the dev kind and the ship arena.
+/// Both kinds of Context: the dev kind and the ship arena. The tests count
+/// the collections of one pause: a budget of 0 (`compiler.md` §356 rule
+/// 16).
 fn kinds() -> [Box<Context>; 2] {
-    [Context::new(), Context::new_releasing()]
+    let mut kinds = [Context::new(), Context::new_releasing()];
+    for ctx in &mut kinds {
+        assert!(ctx.set_collection_step(0));
+    }
+    kinds
 }
 
 /// The size of one small object of the tests, in bytes.

@@ -290,6 +290,83 @@ Each item names the result that fails the section.
 | 3 | Rule 13, the C emission, the header; acceptance 4 and 5. |
 | 4 | The default budget of 50,000; the documents; acceptance 6 to 12. |
 
+### 356.4a Phase Review
+
+Form.
+
+- `runtime/src/context/mark_cycle.rs` holds the cycle: the work
+  list, the divided scan, the start, the step, the try of the end,
+  the late state, the entries of the barrier, and the checks of
+  rules 20 and 20a. The flag byte is at offset 29 of the Context
+  prefix. A header has a state "in the work list" beside the live
+  state and the mark.
+- The allocation path has no added branch: the test of §346 reads a
+  value that moves in parts during a cycle.
+- `codegen/src/lir/block_store.rs` is the fact of rule 13, as an
+  analysis. The LIR text does not carry it. `codegen/src/cemit/
+  barrier.rs` emits the test of the flag in the form of the poll.
+- The step sweep is a second run of each ship executable of the
+  mode 2 sweep, at budgets of 64, 16, and 4 words.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| Step sweep, mode 3, 610 ship entries | each equal at each budget; 10,426, 7,448, and 3,967 cycles ended; no message of rule 20 or 20a |
+| Mode 2 sweep | dev JIT 612 of 612, ship 610 of 610, interpreter 500 of 500 |
+| Cost of the sweep | 46.9 s in a release build, against 45.4 s with no mode 3 run |
+| Control: no barrier in the emitted C and in the runtime | rule 20a stops 22, 25, and 23 entries at the three budgets, 40 together; each uses async functions or a Promise. Rule 20 alone, before the step limit of mode 3: 7 entries |
+| Control: one point off | each emission point and each runtime writer that §356.5 items 6 to 8 do not name stops a corpus entry, a program of `mark_barrier_points.rs`, or a runtime test |
+| Acceptance 1 | budget 50,000: `max_pause_words_read` under 60,000; budget 0: one pause above 1,000,000 words |
+| Workload 1, 16 MiB, largest pause | 1.57 to 1.59 ms, against 29.4 to 32.4 ms with a budget of 0 |
+| Workload 1, 64 MiB, largest pause | 6.73 to 6.89 ms, against 181.5 to 183.4 ms |
+| The game form, 200,000 objects, largest pause | 2.78 to 2.97 ms, against 45.3 to 46.3 ms |
+| The largest count of words of one pause, the three workloads | 50,004 |
+| Run time against a budget of 0 | 0.95 to 0.98 s against 0.93 to 0.94 s; 5.42 to 5.45 s against 5.18 to 5.20 s; 3.14 to 3.36 s against 3.05 to 3.06 s |
+| `perf-gate --gate` | each criterion met; `a22` ship 1.33x, `collect` ship 0.97x (30.6 to 30.9 ms; 29.9 to 30.6 ms before the section) |
+| Goldens | none moved |
+
+The figures of the workloads are in
+`specs/tracking/automatic-collection.md`, G16.
+
+Defects that the rounds found and closed, each with a test that
+failed first.
+
+| Defect | Close |
+|---|---|
+| The end check alone stops 7 entries with no barrier | rule 20a |
+| One cycle of mode 3 lasted for the whole program, so no store was tested | rule 19: 8 steps |
+| A cursor of `for…of` saved at a suspension had no barrier (`a353`, found by the sweep) | the range barrier; a total match on the value kind |
+| A program that stores one reference between two pauses did not reach the end | rule 6a |
+| The work list grew with each store | rule 10 |
+| A cycle with stores and no allocation did not end | rule 6b |
+| A step with no budget read 910,720 words | rule 7: a late cycle keeps the budget |
+
+Phase Review (a subagent with no context, on the staged diff): no
+CRITICAL, 1 MAJOR, 6 MINOR. A second review of the fix: no CRITICAL,
+no MAJOR, 4 MINOR.
+
+| Finding | Close |
+|---|---|
+| MAJOR, realistic: a move inside a large array started its scan again, so a loop of `shift` kept the cycle open | rule 14a; three tests that do not end with the former form |
+| Related: the end read a large payload or a graph at a root in one pause | rule 5: the mark of the end has the budget; two tests that fail with no budget (4,002 and 8,193 words) |
+| MINOR, contrived: a barrier between the mark of the end and the sweep | the flag clears before the releases (rule 5) |
+| MINOR, realistic: the mark trace saw the end only | rule 20b |
+| MINOR: two runtime entries had no direct test | one test of the range entry and of the written-words helper |
+| MINOR: the documents did not state the failed-task check during a cycle | the header and the C tutorial |
+| MINOR: two control figures with no conditions; a comment that named former behaviour | corrected |
+| MINOR, contrived (second review): the write-back of `sort` was a move | rule 14a; a test that fails with the former call |
+| MINOR, contrived (second review): a compaction of a Map before a failed growth gave nothing | the call is at the compaction |
+| MINOR (second review): a cycle that became late in the tries of the end had no count | counted; a test |
+| MINOR, realistic (second review): an operation root of the size of the data | §356.5 item 5 |
+| MINOR, contrived (second review): an end after an internal error in a debug build | §356.5 item 9 |
+
+`tools/hygiene.sh`: exit 0.
+
+`tools/gate.sh full` on the tree before this record: exit 0, debug
+4223 passed, release 4204 passed, 0 failed, 10 ignored in each. No
+golden moved.
+
 ### 356.5 Open
 
 1. The end is the sweep: 6.4 ms at 64 MiB (G15). A sweep outside the

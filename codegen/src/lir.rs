@@ -17,6 +17,7 @@ mod address_taken;
 pub mod allocation;
 mod array_ownership;
 mod async_defaults;
+pub mod block_store;
 mod builder;
 mod call;
 pub mod collection_poll;

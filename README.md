@@ -193,6 +193,13 @@ The host selects one of three levels:
 
 `Context.free` and `Context.collect()` are valid at each level.
 
+In the ship tier, the mark of an automatic collection runs in steps of
+a budget of words, 50,000 by default, so a large live set does not make
+one long pause. The host sets the budget with
+`subscript_rt_ctx_set_collection_step`. At the host-timed level,
+`subscript_rt_ctx_collect_step` runs one pause at a point that the host
+selects.
+
 These facts hold at each level:
 
 - No object moves, so a pointer that C holds keeps its address while

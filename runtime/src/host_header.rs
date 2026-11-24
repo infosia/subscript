@@ -15,7 +15,7 @@ const COLLECTION_STATS_SOURCE: &str = include_str!("context/collection_stats.rs"
 
 /// The fields of `subscript_rt_collection_stats`, in the sequence of
 /// `compiler.md` §353 rule 2. Each field is `uint64_t`.
-const COLLECTION_STATS_FIELDS: [&str; 8] = [
+const COLLECTION_STATS_FIELDS: [&str; 11] = [
     "automatic_collections",
     "explicit_collections",
     "total_ns",
@@ -24,13 +24,17 @@ const COLLECTION_STATS_FIELDS: [&str; 8] = [
     "last_words_read",
     "max_words_read",
     "last_live_bytes_after",
+    "mark_steps",
+    "forced_ends",
+    "max_pause_words_read",
 ];
 
 /// Context functions whose `ffi.rs` documentation the header carries: the
 /// bracket of the outermost exit, the explicit collection, the memory
-/// metrics, and the statistics of the collections (`compiler.md` §342 rules
-/// 8a, 13, and 20, and §353 rule 3).
-const DOCUMENTED_CONTEXT_FUNCTIONS: [&str; 7] = [
+/// metrics, the statistics of the collections, and the mark in steps
+/// (`compiler.md` §342 rules 8a, 13, and 20, §353 rule 3, and §356 rules 16
+/// and 18).
+const DOCUMENTED_CONTEXT_FUNCTIONS: [&str; 9] = [
     "subscript_rt_ctx_enter_script",
     "subscript_rt_ctx_exit_script",
     "subscript_rt_ctx_collect",
@@ -38,6 +42,8 @@ const DOCUMENTED_CONTEXT_FUNCTIONS: [&str; 7] = [
     "subscript_rt_ctx_live_bytes",
     "subscript_rt_ctx_collection_stats",
     "subscript_rt_ctx_reset_collection_stats",
+    "subscript_rt_ctx_set_collection_step",
+    "subscript_rt_ctx_collect_step",
 ];
 
 #[derive(Debug)]
@@ -761,9 +767,11 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
         let header = render().expect("render host header");
         let lines: Vec<&str> = header.lines().collect();
         for name in DOCUMENTED_CONTEXT_FUNCTIONS {
+            // A declaration is a line outside a comment; a comment can quote
+            // a call.
             let index = lines
                 .iter()
-                .position(|line| line.contains(&format!(" {name}(")))
+                .position(|line| !line.starts_with(" *") && line.contains(&format!(" {name}(")))
                 .unwrap_or_else(|| panic!("{name} is declared"));
             assert_eq!(lines[index - 1], " */", "{name} carries its documentation");
         }
@@ -916,6 +924,9 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
             core::mem::offset_of!(CollectionStats, last_words_read),
             core::mem::offset_of!(CollectionStats, max_words_read),
             core::mem::offset_of!(CollectionStats, last_live_bytes_after),
+            core::mem::offset_of!(CollectionStats, mark_steps),
+            core::mem::offset_of!(CollectionStats, forced_ends),
+            core::mem::offset_of!(CollectionStats, max_pause_words_read),
         ];
         // The C offset of field `index` of a struct of `uint64_t` fields
         // with no padding is `8 * index`.
@@ -929,6 +940,16 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
         ));
         assert!(header
             .contains("void subscript_rt_ctx_reset_collection_stats(subscript_rt_context* ctx);"));
+        // compiler.md §356 acceptance 6: the record has 11 fields, and the
+        // header declares the two functions of the mark in steps.
+        assert_eq!(core::mem::size_of::<CollectionStats>(), 88);
+        assert!(header.contains(
+            "int32_t subscript_rt_ctx_set_collection_step(subscript_rt_context* ctx, \
+             uint64_t budget_words);"
+        ));
+        assert!(header.contains(
+            "int32_t subscript_rt_ctx_collect_step(subscript_rt_context* ctx, uint64_t budget_words);"
+        ));
     }
 
     #[test]

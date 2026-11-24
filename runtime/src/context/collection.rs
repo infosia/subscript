@@ -18,6 +18,13 @@ pub enum CollectionMode {
     Automatic = 1,
     /// Each poll and each outermost exit collects. This mode is for tests.
     EachPoll = 2,
+    /// The step stress mode, for tests (`compiler.md` §356 rule 19). Each
+    /// poll and each outermost exit runs one pause of a cycle with the
+    /// budget that the host set, and a new cycle starts when one ends. Each
+    /// end runs the check of the mark and stops the process with a message
+    /// if the check fails. A Context with no step form, or a budget of 0,
+    /// collects at each poll as in mode 2.
+    StepStress = 3,
 }
 
 impl CollectionMode {
@@ -28,6 +35,7 @@ impl CollectionMode {
             0 => Some(Self::Off),
             1 => Some(Self::Automatic),
             2 => Some(Self::EachPoll),
+            3 => Some(Self::StepStress),
             _ => None,
         }
     }
@@ -39,6 +47,10 @@ pub const DEFAULT_COLLECTION_MODE: CollectionMode = CollectionMode::Automatic;
 /// The default minimum headroom in bytes (`compiler.md` §346 rule 2).
 pub const DEFAULT_MIN_HEADROOM_BYTES: usize = 16 << 20;
 
+/// The step budget in words of a new Context (`compiler.md` §356 rule
+/// 16). A budget of 0 makes each collection one pause.
+pub const DEFAULT_COLLECTION_STEP_WORDS: usize = 50_000;
+
 // The smallest prune limit of the observed race inputs (§350 rule 5).
 const OBSERVED_INPUTS_MIN_LIMIT: usize = 16;
 
@@ -46,12 +58,15 @@ const OBSERVED_INPUTS_MIN_LIMIT: usize = 16;
 /// rule 15).
 pub const MAX_DETECTION_INTERVAL: u32 = 1024;
 
-/// The mode and the minimum headroom. A worker Context takes the values of
-/// its parent at the spawn (`compiler.md` §342 rule 18).
+/// The mode, the minimum headroom, and the step budget. A worker Context
+/// takes the values of its parent at the spawn (`compiler.md` §342 rule 18
+/// and §356 rule 16).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CollectionSettings {
     pub(crate) mode: CollectionMode,
     pub(crate) min_headroom: usize,
+    // compiler.md §356 rule 16: the budget of one mark step in words.
+    pub(crate) step_budget: usize,
 }
 
 /// One failure of an unobserved task that an automatic collection
@@ -65,7 +80,7 @@ struct RecordedFailure {
 /// The kind of a collection, for the counters that tests read and for the
 /// class of `compiler.md` §353 rule 1.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CollectionKind {
+pub(super) enum CollectionKind {
     Explicit,
     Automatic,
     Detection,
@@ -75,14 +90,19 @@ enum CollectionKind {
 /// in the fixed prefix of [`Context`], because generated code reads it.
 #[derive(Debug)]
 pub(crate) struct CollectionState {
-    settings: CollectionSettings,
+    pub(super) settings: CollectionSettings,
     // The live bytes after the last collection, 0 for a new Context. The
     // limit is computed from it (`compiler.md` §346 rules 2 and 3).
     base: usize,
-    limit: usize,
+    pub(super) limit: usize,
+    // The requested bytes above which an allocation sets the pending flag.
+    // It is the limit, except in the step form of `compiler.md` §356: the
+    // start of a cycle before the limit (rule 7), and each part of the
+    // headroom during a cycle (rule 6).
+    pub(super) pending_at: usize,
     // The bytes that allocations requested since the last collection,
     // less the explicit releases (`compiler.md` §346 rule 1).
-    requested: usize,
+    pub(super) requested: usize,
     // True while a collection runs. A released failed task is then
     // recorded, not trapped.
     recording: bool,
@@ -110,11 +130,16 @@ impl CollectionState {
         let settings = CollectionSettings {
             mode: DEFAULT_COLLECTION_MODE,
             min_headroom: DEFAULT_MIN_HEADROOM_BYTES,
+            step_budget: DEFAULT_COLLECTION_STEP_WORDS,
         };
         Self {
             settings,
             base: 0,
             limit: limit_for(0, settings.min_headroom),
+            // A new Context has no arena yet, so its threshold is the limit;
+            // the first change of the settings or the first collection sets
+            // the threshold of the step form.
+            pending_at: limit_for(0, settings.min_headroom),
             requested: 0,
             recording: false,
             recorded: Vec::new(),
@@ -133,7 +158,10 @@ impl CollectionState {
 
     /// The initial value of the pending flag for the default mode.
     pub(crate) fn initial_pending() -> u8 {
-        u8::from(DEFAULT_COLLECTION_MODE == CollectionMode::EachPoll)
+        u8::from(matches!(
+            DEFAULT_COLLECTION_MODE,
+            CollectionMode::EachPoll | CollectionMode::StepStress
+        ))
     }
 }
 
@@ -267,7 +295,11 @@ impl Context {
         } else {
             min_headroom_bytes
         };
-        self.apply_collection_settings(CollectionSettings { mode, min_headroom });
+        self.apply_collection_settings(CollectionSettings {
+            mode,
+            min_headroom,
+            step_budget: self.collection.settings.step_budget,
+        });
         true
     }
 
@@ -278,15 +310,21 @@ impl Context {
     /// `compiler.md` §346 rule 3: the call runs no collection, so the limit
     /// keeps its base and the requested bytes stay. In mode 1 the flag is
     /// set if the requested bytes exceed the new limit.
+    ///
+    /// `compiler.md` §356 rules 6 and 16: during a cycle in mode 1 the flag
+    /// is set, so that the next poll serves the cycle with the new values.
     pub(crate) fn apply_collection_settings(&mut self, settings: CollectionSettings) {
         self.collection.settings = settings;
         self.collection.limit = limit_for(self.collection.base, settings.min_headroom);
+        if !self.mark_cycle_active() {
+            self.collection.pending_at = self.cycle_start_threshold();
+        }
         self.collection_pending = match settings.mode {
             CollectionMode::Off => 0,
-            CollectionMode::Automatic => {
-                u8::from(self.collection.requested > self.collection.limit)
-            }
-            CollectionMode::EachPoll => 1,
+            CollectionMode::Automatic => u8::from(
+                self.mark_cycle_active() || self.collection.requested > self.collection.pending_at,
+            ),
+            CollectionMode::EachPoll | CollectionMode::StepStress => 1,
         };
     }
 
@@ -299,7 +337,7 @@ impl Context {
         self.collection.allocations = self.collection.allocations.wrapping_add(1);
         self.collection.requested = self.collection.requested.saturating_add(requested);
         if self.collection.settings.mode != CollectionMode::Off
-            && self.collection.requested > self.collection.limit
+            && self.collection.requested > self.collection.pending_at
         {
             self.collection_pending = 1;
         }
@@ -315,7 +353,7 @@ impl Context {
 
     /// `compiler.md` §346 rules 1 and 2, and §342 rule 7: after each
     /// collection the requested bytes are zero, the limit follows the live
-    /// set, and the flag clears. In mode 2 the flag stays set.
+    /// set, and the flag clears. In mode 2 and mode 3 the flag stays set.
     fn after_collection(&mut self, kind: CollectionKind) {
         match kind {
             CollectionKind::Explicit => {}
@@ -326,8 +364,11 @@ impl Context {
         self.collection.limit =
             limit_for(self.collection.base, self.collection.settings.min_headroom);
         self.collection.requested = 0;
-        self.collection_pending =
-            u8::from(self.collection.settings.mode == CollectionMode::EachPoll);
+        self.collection.pending_at = self.cycle_start_threshold();
+        self.collection_pending = u8::from(matches!(
+            self.collection.settings.mode,
+            CollectionMode::EachPoll | CollectionMode::StepStress
+        ));
     }
 
     /// Runs `collect` with the failure record active, then sets the
@@ -418,11 +459,41 @@ impl Context {
     /// One collection of the class `kind` of the roots that the Context
     /// holds. Returns true when it runs inside another collection.
     ///
+    /// `compiler.md` §356: an automatic collection of the step form runs one
+    /// pause of a cycle (rule 6). Another collection ends a cycle in
+    /// progress first (rule 8), and then runs one collection with no step.
+    /// A poll with a budget of 0 only ends the cycle (rule 16).
+    pub(super) fn run_own_collection(&mut self, kind: CollectionKind) -> bool {
+        if self.collection.recording {
+            return self.run_whole_collection(kind);
+        }
+        let mode = self.collection.settings.mode;
+        if kind == CollectionKind::Automatic
+            && self.has_poll_step_form()
+            && matches!(mode, CollectionMode::Automatic | CollectionMode::StepStress)
+        {
+            let budget = self.collection.settings.step_budget;
+            self.run_cycle_pause(budget);
+            return false;
+        }
+        if self.mark_cycle_active() {
+            self.run_whole_collection(CollectionKind::Automatic);
+            if kind == CollectionKind::Automatic && mode != CollectionMode::EachPoll {
+                return false;
+            }
+        }
+        self.run_whole_collection(kind)
+    }
+
+    /// One collection of the class `kind` in one pause. Returns true when
+    /// it runs inside another collection. If a cycle is in progress, it is
+    /// the end of that cycle (`compiler.md` §356 rule 5).
+    ///
     /// `compiler.md` §353 rule 4: a debug build checks the array tails
     /// before the time starts, and the live bytes after the record is
     /// finished. A violation of the tails traps, and the collection then
     /// does no work.
-    fn run_own_collection(&mut self, kind: CollectionKind) -> bool {
+    pub(super) fn run_whole_collection(&mut self, kind: CollectionKind) -> bool {
         #[cfg(debug_assertions)]
         {
             let violations = self.array_tail_violations();

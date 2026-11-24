@@ -124,5 +124,14 @@ pub unsafe fn sort(ctx: *mut Context, h: *mut u8, code: *const u8, env: *const u
             // SAFETY: as above; `size_of::<T>() == esz` by dispatch.
             unsafe { p.cast::<T>().write_unaligned(*v) };
         }
+        // compiler.md §356 rule 14: the write-back copies each element from
+        // the scratch buffers, which a comparator can make the only holder
+        // of a value, so the written elements go to the work list. The
+        // scratch roots end with this block.
+        // SAFETY: caller contract; the write-back did not move the storage.
+        unsafe {
+            let data = (*ctx).array_data(h);
+            (*ctx).mark_written_elements(h, data, 0, n);
+        }
     });
 }

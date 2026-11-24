@@ -191,6 +191,11 @@ unsafe fn receive(
             return std::ptr::null_mut();
         }
     }
+    // compiler.md §356 rule 14: a retained input slot copies a reference
+    // into the new storage, which has the mark and was never read, so the
+    // storage goes to the work list.
+    // SAFETY: `array` is the live array that this call allocated.
+    unsafe { ctx.mark_new_elements(array) };
     array
 }
 

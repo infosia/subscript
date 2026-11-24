@@ -1064,10 +1064,52 @@ struct LinkedProgram {
 
 fn execute_c_aot(files: &[SourceFile], config: RunConfig<'_>) -> Result<Vec<u8>, RunError> {
     let program = build_c_aot(files, config)?;
+    let result = run_linked(&program, &[]);
+    drop(program.directory);
+    result
+}
+
+/// Compiles and links `files` once, then runs the executable one time for
+/// each entry of `runs`. Each entry names the environment variables that
+/// that run adds to the environment of this process. A test of the ship
+/// tier uses it to run one build in several configurations that a pre-init
+/// hook reads (`compiler.md` §356.2 item 4).
+///
+/// # Errors
+///
+/// The outer error is a failure of the build, with the variants of
+/// [`run_c_aot_configured`]. Each inner result is one run, with the
+/// variants of [`run_c_aot_configured`] for a run.
+pub fn run_c_aot_configured_runs(
+    files: &[SourceFile],
+    config: RunConfig<'_>,
+    runs: &[&[(&str, &str)]],
+) -> Result<Vec<Result<RunOutput, RunError>>, RunError> {
+    if config.memory_accounting || config.collection.is_some() {
+        return Err(RunError::Internal(internal(
+            "the shipping tier has no accounting and sets the collection mode in a hook",
+        )));
+    }
+    let program = build_c_aot(files, config)?;
+    let results = runs
+        .iter()
+        .map(|variables| {
+            run_linked(&program, variables).map(|stdout| RunOutput {
+                stdout,
+                memory_accounting: None,
+            })
+        })
+        .collect();
+    drop(program.directory);
+    Ok(results)
+}
+
+/// Runs a linked program with the added environment variables.
+fn run_linked(program: &LinkedProgram, variables: &[(&str, &str)]) -> Result<Vec<u8>, RunError> {
     let run = Command::new(&program.executable)
+        .envs(variables.iter().copied())
         .output()
         .map_err(|e| RunError::Internal(internal(format!("run linked program: {e}"))))?;
-    drop(program.directory);
     if run.status.success() {
         return Ok(run.stdout);
     }

@@ -11,6 +11,8 @@ use std::thread::JoinHandle;
 use crate::context::{CollectionSettings, Context};
 use crate::trap::{TrapKind, TrapRecord};
 
+#[cfg(test)]
+mod collection_tests;
 mod receive;
 #[cfg(test)]
 mod receive_tests;

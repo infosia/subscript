@@ -29,6 +29,7 @@ mod analysis;
 mod arith;
 mod async_callable;
 mod async_count;
+mod barrier;
 mod body;
 mod call;
 mod collection;

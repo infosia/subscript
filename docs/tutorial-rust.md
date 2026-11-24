@@ -146,8 +146,22 @@ it. An automatic collection inside an export call is in the record. A hot
 reload keeps the Context, so the record continues across the reload. For
 one program, the word counts of the dev tier and the ship tier are not
 equal: the ship tier reads the payload of a size class. A debug build of
-the runtime is slower, so read times from a release build. This loop
-reads the longest pause of each frame:
+the runtime is slower, so read times from a release build.
+
+The record has three fields of the collections in steps (§356 rule 17):
+`mark_steps`, `forced_ends`, and `max_pause_words_read`. In the ship
+tier, the mark of an automatic collection runs in steps with a budget of
+50,000 words by default: a start, mark steps, and an end, each one pause.
+For such a cycle, `last_ns` and `max_ns` are of one pause, and `total_ns`
+is the sum of the pauses. The session runs the dev tier, which runs each
+collection in one pause. So in the record of a session, `mark_steps` and
+`forced_ends` stay zero, and `max_pause_words_read` is the largest count
+of words of one collection. The
+[C/C++ tutorial](tutorial-c-cpp.md#a-collection-in-steps) gives the
+budget, `subscript_rt_ctx_set_collection_step`, and the host-timed step,
+`subscript_rt_ctx_collect_step`, of the ship tier.
+
+This loop reads the longest pause of each frame:
 
 ```rust
 for _ in 0..3 {
@@ -681,6 +695,12 @@ path is hard-coded:
 - `unreferenced_code_removal_arguments(style)` — the flag that removes
   unreferenced code (`specs/blocks/compiler.md` §192). Add it after
   `add_executable_output`: the MSVC `/OPT:REF` must follow `-link`.
+
+A ship-tier host sets the step budget of the mark with
+`subscript_rt_ctx_set_collection_step` and runs host-timed pauses with
+`subscript_rt_ctx_collect_step`
+([A collection in steps](tutorial-c-cpp.md#a-collection-in-steps)).
+The default budget is 50,000 words.
 
 `host_c_compiler()` returns the compiler this repository selects,
 including MSVC discovery on Windows. `CCompilerStyle` says which

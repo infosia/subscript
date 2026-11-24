@@ -5,8 +5,14 @@
 use super::*;
 
 /// The two allocator tiers: the dev allocator and the ship arena.
+/// The tests read one automatic collection as one pause: a budget of 0
+/// (`compiler.md` §356 rule 16).
 fn contexts() -> [Box<Context>; 2] {
-    [Context::new(), Context::new_releasing()]
+    let mut contexts = [Context::new(), Context::new_releasing()];
+    for ctx in &mut contexts {
+        assert!(ctx.set_collection_step(0));
+    }
+    contexts
 }
 
 /// A registered input frame with a count of one and no completion.

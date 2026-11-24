@@ -734,8 +734,13 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_binding_count_advisory(
 /// A collection runs only inside a call into this Context, on the thread of
 /// that call. The host selects one of three levels. Automatic is mode 1:
 /// polls and `subscript_rt_ctx_exit_script` collect. Host-timed is mode 0
-/// with `subscript_rt_ctx_collect` at a point the host selects. Manual is
+/// with `subscript_rt_ctx_collect`, or with the steps of
+/// `subscript_rt_ctx_collect_step`, at a point the host selects. Manual is
 /// mode 0 with `Context.free` in script code, and no collection.
+///
+/// A change to mode 0 during a collection in steps keeps that collection.
+/// No poll serves it. The host ends it with `subscript_rt_ctx_collect_step`
+/// or `subscript_rt_ctx_collect`.
 ///
 /// Mode 0 is off: no allocation starts a collection, and the outermost exit
 /// runs no detection collection. Mode 1 is automatic, and is the mode of a
@@ -749,7 +754,11 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_binding_count_advisory(
 /// allocation of the block requested. This call keeps the bytes allocated
 /// since the last collection.
 /// Mode 2 makes each poll and each outermost exit
-/// collect; it is for tests. A `min_headroom_bytes` of 0 keeps the default of
+/// collect; it is for tests. Mode 3 is the step stress mode, for tests: each
+/// poll and each outermost exit runs one pause of a collection in steps with
+/// the budget of `subscript_rt_ctx_set_collection_step`, and each end of a
+/// collection checks the mark and stops the process with a message if the
+/// check fails. A `min_headroom_bytes` of 0 keeps the default of
 /// 16 MiB. A worker Context takes the mode and the headroom of its parent at
 /// the spawn.
 ///
@@ -1030,6 +1039,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_collect(ctx: *mut Context) {
 /// an outermost exit, and the detection collection), the count of the
 /// explicit collections, the times in nanoseconds on a monotonic clock, the
 /// words that the mark read, and the live bytes after the last collection.
+/// Three fields are of the collections whose mark runs in steps
+/// (compiler.md §356 rule 17): `mark_steps`, `forced_ends`, and
+/// `max_pause_words_read`. For such a collection, `last_ns` and `max_ns`
+/// are of one pause, and `total_ns` is the sum of the pauses.
 /// Each field is for the span from the start of `ctx` or from the last
 /// `subscript_rt_ctx_reset_collection_stats`. `max_ns` and `max_words_read`
 /// are each the largest of one collection in that span, and they can come
@@ -1070,6 +1083,96 @@ pub unsafe extern "C" fn subscript_rt_ctx_reset_collection_stats(ctx: *mut Conte
     }
     // SAFETY: exclusive Context contract.
     unsafe { &mut *ctx }.reset_collection_stats();
+}
+
+/// Sets the budget of one mark step of this Context, in words
+/// (compiler.md §356 rule 16).
+///
+/// With a budget above 0, the mark of an automatic collection runs in
+/// steps: a start, mark steps, and an end, and each of the three is a
+/// pause. Script code runs between two pauses. In mode 1 the steps follow
+/// the allocation and the stores of references. A step reads about
+/// `budget_words` words. The unit is the word of 8 bytes that the mark
+/// tests (compiler.md §353 rule 5). The default is 50,000 words. A budget
+/// of 0 makes each collection one pause. If a collection in steps is in
+/// progress, the new budget applies to its next step, and a budget of 0
+/// ends it at the next poll. A worker Context takes the budget of its
+/// parent at the spawn.
+///
+/// The end of a collection in steps reads the roots again and marks with
+/// the budget. If mark work is left after the budget, the pause is a step,
+/// and the next pause tries the end again. If no mark work is left, the
+/// releases and the sweep follow in the same pause.
+///
+/// An explicit collection, the failed-task check of the outermost exit
+/// (compiler.md §342 rule 14), and each collection of mode 2 are one pause
+/// at each budget. If a collection in steps is in progress, each of them
+/// ends it first, with no budget, and then runs one whole collection. The
+/// dev tier and the interpreter run each collection in one pause, and the
+/// budget has no effect there. A ship Context that is created while
+/// `SUBSCRIPT_MARK_TRACE` is set also runs each collection in one pause,
+/// because the trace records the path to each block in one whole mark.
+///
+/// Returns 0 when the setting was applied. Returns -1, with no change,
+/// while a script call is live (`script_depth != 0`).
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_set_collection_step(
+    ctx: *mut Context,
+    budget_words: u64,
+) -> i32 {
+    let budget_words = usize::try_from(budget_words).unwrap_or(usize::MAX);
+    // SAFETY: exclusive Context contract.
+    if unsafe { &mut *ctx }.set_collection_step(budget_words) {
+        0
+    } else {
+        -1
+    }
+}
+
+/// Runs one host-timed pause of a collection in steps (compiler.md §356
+/// rule 18).
+///
+/// If no collection in steps is in progress, the call starts one. If its
+/// work list is not empty, the call runs one step of `budget_words` words.
+/// If the work list is empty, or the last step left it empty, the call
+/// runs the end. The mark of the end has the budget (compiler.md §356
+/// rule 5): if mark work is left after the budget, the call is a step and
+/// returns 1, and the next call tries the end again. So the end can take
+/// more than one call. Each call after the start that returns 1 marks
+/// blocks that had no mark, so a loop of calls ends. Returns 1 if a collection in steps is in progress
+/// after the call, and 0 if the call ended it. The call is valid in mode 0
+/// and in mode 1. A host of the host-timed level calls it at each frame
+/// until it returns 0. The host must end each collection that it starts:
+/// until the end, the memory that the program drops stays, and the work
+/// list holds at most one word for each block (compiler.md §356 rule 10).
+/// In the dev tier, in the interpreter, and in a ship Context that is
+/// created while `SUBSCRIPT_MARK_TRACE` is set, the call runs one whole
+/// collection and returns 0. Returns -1, with no work, while a script call
+/// is live, for a budget of 0, or in mode 2 or mode 3.
+///
+/// ```c
+/// int32_t cycle = 0;
+/// // At the end of each frame, outside the script bracket:
+/// if (cycle == 1 || frame % 60 == 0) {
+///     cycle = subscript_rt_ctx_collect_step(ctx, 50000);
+/// }
+/// ```
+///
+/// # Safety
+///
+/// `ctx` follows the exclusive Context contract.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_ctx_collect_step(
+    ctx: *mut Context,
+    budget_words: u64,
+) -> i32 {
+    let budget_words = usize::try_from(budget_words).unwrap_or(usize::MAX);
+    // SAFETY: exclusive Context contract.
+    unsafe { &mut *ctx }.collect_step(budget_words)
 }
 
 /// Visits each live Context-owned allocation and returns the number visited.

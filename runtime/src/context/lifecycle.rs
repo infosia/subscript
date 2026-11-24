@@ -35,6 +35,7 @@ impl Context {
             globals: std::ptr::null_mut(),
             host_entry_active: 0,
             collection_pending: collection::CollectionState::initial_pending(),
+            mark_in_progress: 0,
             module_globals: None,
             workers: WorkerSet::default(),
             is_worker: false,
@@ -98,6 +99,7 @@ impl Context {
             free_heads: [0; NUM_CLASSES],
             open: [None; NUM_CLASSES],
             large: HashMap::default(),
+            mark_cycle: mark_cycle::MarkCycle::default(),
             #[cfg(test)]
             stats: Default::default(),
         });
@@ -938,8 +940,11 @@ impl Context {
             );
             return None;
         }
+        // compiler.md §356 rule 4: the state is the mark state during a
+        // mark. A dev Context has no mark in steps, so it writes the live
+        // state.
         // SAFETY: `base` is a fresh allocation with a complete header.
-        unsafe { write_header(base, class_id, pos_id) };
+        unsafe { write_header(base, self.mark_cycle.alloc_state, class_id, pos_id) };
         Some((base, layout))
     }
 
@@ -1144,7 +1149,8 @@ impl Context {
                     std::ptr::write_bytes(payload, 0, block_size - HEADER_SIZE);
                 }
                 let base = payload.sub(HEADER_SIZE);
-                write_header(base, class_id, pos_id);
+                // compiler.md §356 rule 4.
+                write_header(base, self.mark_cycle.alloc_state, class_id, pos_id);
             }
             self.live_bytes_counter = self
                 .live_bytes_counter
@@ -1160,6 +1166,8 @@ impl Context {
                 None => return std::ptr::null_mut(),
             },
         };
+        // compiler.md §356 rule 4.
+        let state = self.mark_cycle.alloc_state;
         let chunk = &mut self.chunks[ci];
         chunk.requests[chunk.bump] = request;
         // SAFETY: `bump < blocks_per_chunk`, so the block lies inside the
@@ -1168,7 +1176,7 @@ impl Context {
         // header needs writing.
         let payload = unsafe {
             let base = chunk.base.add(chunk.bump * block_size);
-            write_header(base, class_id, pos_id);
+            write_header(base, state, class_id, pos_id);
             base.add(HEADER_SIZE)
         };
         chunk.bump += 1;
@@ -1399,7 +1407,10 @@ impl Context {
             // SAFETY: `block` heads a block inside an owned chunk; both
             // header reads stay inside it.
             let class_id = unsafe {
-                if !matches!((block as *const u64).read(), LIVE_STATE | MARK_STATE) {
+                if !matches!(
+                    (block as *const u64).read(),
+                    LIVE_STATE | MARK_STATE | GREY_STATE
+                ) {
                     return;
                 }
                 header_class_id(block)
@@ -1433,6 +1444,9 @@ impl Context {
             self.release_class_state(class_id, payload);
             self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
             self.note_release(a.payload_size);
+            // compiler.md §356 rule 9: the mark does not read a payload that
+            // the program released.
+            self.mark_cycle.forget_divided(payload);
             // SAFETY: `base`/`layout` came from `alloc_zeroed` in
             // `arena_alloc_large`; the record was just removed so this
             // frees it exactly once. Container clearing only retired
@@ -1611,7 +1625,7 @@ impl Context {
                 // SAFETY: `block` heads a block inside an owned chunk.
                 return matches!(
                     unsafe { (block as *const u64).read() },
-                    LIVE_STATE | MARK_STATE
+                    LIVE_STATE | MARK_STATE | GREY_STATE
                 );
             }
             return self.large.contains_key(&payload);

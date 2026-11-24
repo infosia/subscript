@@ -309,6 +309,8 @@ fn ship_text(
              }}\n\
              void subscript_test_return_path_setup(subscript_rt_context* ctx) {{\n\
                if (subscript_rt_ctx_set_collection(ctx, 1, {headroom}u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
+               /* The bounds are of collections of one pause: compiler.md section 356 rule 16. */\n\
+               if (subscript_rt_ctx_set_collection_step(ctx, 0u) != 0) {{ printf(\"setup-refused\\n\"); }}\n\
              }}\n\
              static void sample(subscript_rt_context* ctx, int depth, const char* tag) {{\n\
                printf(\"%d %s %llu %llu\\n\", depth, tag,\n\
