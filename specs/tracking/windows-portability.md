@@ -1891,3 +1891,25 @@ from 6 to 10: the four new tests are the hand-run measurements of
 In the release step the test binary of the stress sweep passed its
 three tests in 19.81 s. The unit tests of `context::chunk_pages` pass
 on this host.
+
+## Gate state at `3fc8fc4a`, 2026-11-24
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §356 and §357. The commits after §357 change
+`specs/tracking/` only.
+
+```text
+gate full 3fc8fc4a71875bdf45eb9064779873ae1f08ac9b clean debug 4129/0/10 release 4111/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 14, build 88, debug 503, release 320, clippy
+22, tsc 1, hygiene 14.
+
+The two debug skips and the ten ignored tests are those of
+`da511ad8`. In the release step the test binary of the stress sweep
+passed its three tests in 20.92 s. The tests of the mark in steps and
+the sweep in steps pass on this host in each profile:
+`context::mark_cycle`, `context::mark_writer_tests`,
+`context::sweep_steps`, `worker::collection_tests`,
+`lir::block_store`, and the eleven tests of
+`codegen/tests/mark_barrier_points.rs`.
