@@ -1476,3 +1476,118 @@ the record at a frame.
 
 Next: a minor collection as an optional mode (G14), the third
 section of the owner decision of 2026-11-24.
+
+## G19 — a minor collection as an optional mode, on the collector of §357
+
+Measured 2026-11-24 at `809d7e0b`, release build, arm64 macOS, the
+ship tier, the default budget. Origin: the third section of the
+owner decision of 2026-11-24. G14 measured a minor collection on the
+collector of one pause; this round built a prototype on the cycle in
+steps, and it reverted each change.
+
+The rules that a landed form works against: each cycle marks each
+live block (§356 rule 1); a store of a reference has work only while
+a mark is in progress (§356 rule 12).
+
+The prototype.
+
+- The mode is selected for a Context at run time. A second bit of
+  the flag byte of §356 rule 12 is set while the mode is on, so the
+  emitted test of today calls the runtime at each store of a
+  reference. With the mode off the emitted code is the code of
+  today, with one more argument at the call (the address of the
+  slot).
+- An old block has a header state word of its own (two words, which
+  a major cycle exchanges). A new block is young. The allocation
+  path does not change in a mode.
+- The record: at a store of a young block, the runtime finds the
+  owner from the address of the slot. An old owner goes into a set.
+  The runtime writers record their block.
+- A minor cycle uses the cycle of §356 and the sweep of §357: the
+  start takes the roots and the record, the mark does not trace into
+  an old block, a young block that the mark reaches becomes old
+  (age 1) or old at its second minor cycle (age 2). The sweep reads
+  each slot, as the sweep of today.
+- A major cycle is the cycle of today. It runs when the bytes that
+  became old exceed the live bytes after the last major sweep (a
+  factor of 2.0), and for each exact collection.
+
+The check (each edge from an old block to a young block has its
+owner in the record; no dangling edge after a minor mark; the check
+of §357 rule 15): 0 findings in each measured workload, at age 1 and
+at age 2.
+
+Values of 3 runs. "Off" is the collector of §357.
+
+| Case | Mode | Run, s | Collection, ms | Minor + major cycles | Mark steps | Words of the marks | Largest pause, ms | Reserved at the end, MiB |
+|---|---|---|---|---|---|---|---|---|
+| Workload 1, 16 MiB | off | 0.96 to 0.99 | 688 to 724 | 24 | 1,525 | 62.7M | 0.76 to 0.85 | 77.9 |
+| | on, age 1 | 0.74 | 99 to 102 | 26 + 1 | 143 | 5.7M | 0.63 to 0.70 | 77.9 |
+| | on, age 2 | 0.82 | 174 to 181 | 26 + 1 | 282 | 10.9M | 1.48 to 1.51 | 77.9 |
+| Workload 1, 64 MiB | off | 5.37 to 5.49 | 4,104 to 4,209 | 24 | 5,878 | 242.9M | 1.16 to 1.46 | 292.5 |
+| | on, age 1 | 4.25 to 4.39 | 622 to 694 | 25 + 2 | 840 | 33.9M | 1.38 to 1.62 | 290.9 |
+| | on, age 2 | 4.86 to 4.92 | 1,075 to 1,118 | 25 + 2 | 1,295 | 51.6M | 3.49 to 3.60 | 293.3 |
+| The game form, 20,000 objects | off | 0.33 to 0.36 | 170 to 183 | 42 | 617 | 24.7M | 0.41 to 0.99 | 21.5 |
+| | on, age 1 | 0.32 to 0.33 | 57 to 63 | 36 + 4 | 115 | 4.2M | 0.52 to 0.61 | 35.2 |
+| | on, age 2 | 0.38 | 105 to 111 | 36 + 3 | 177 | 7.3M | 0.71 to 0.77 | 32.7 |
+| The game form, 200,000 objects | off | 3.14 to 3.36 | 2,238 to 2,472 | 61 | 6,671 | 231.4M | 0.87 to 1.23 | 131.2 |
+| | on, age 1 | 1.40 to 1.45 | 304 to 374 | 68 + 4 | 474 to 495 | 15.5M to 16.1M | 0.97 to 1.10 | 123.6 |
+| | on, age 2 | 1.60 to 1.62 | 509 to 523 | 68 + 3 | 795 | 27.7M | 1.11 to 1.21 | 118.2 |
+| The island form | off | 0.48 to 0.51 | 158 to 166 | 88 | 352 | 15.5M | 0.40 to 1.09 | 33.5 |
+| | on, age 1 | 0.54 to 0.60 | 150 to 172 | 70 + 18 | 231 | 9.3M | 0.57 to 0.68 | 34.5 |
+| | on, age 2 | 0.61 to 0.62 | 182 to 189 | 76 + 12 | 288 | 11.0M | 0.56 to 0.65 | 34.9 |
+
+`perf-gate --gate`, ship tier, 3 passes, ms. Each pass meets each
+criterion.
+
+| | `a22` | `collect` |
+|---|---|---|
+| §357 | 5.256 to 5.469 | 30.365 to 30.492 |
+| The prototype, the mode off | 5.259 to 5.269 | 30.940 to 31.100 |
+| The prototype, the mode on | 5.259 to 5.474 | 36.019 to 36.122 |
+
+Result.
+
+- The words that the marks read fall to 7 to 14 % in workload 1 and
+  in the game form. The collection time falls to 14 to 17 % (a third
+  in the game form at 20,000 objects).
+- The run time is 20 to 23 % shorter in workload 1, and 55 to 57 %
+  shorter in the game form at 200,000 objects. It does not change at
+  20,000 objects. The island form is 5 to 15 % longer, and the cause
+  is not found: the collection time is equal, and the program
+  outside the collections is 50 to 65 ms slower.
+- The largest pause does not change: about 1 ms. At 64 MiB the
+  largest pause of the mode is the start of a minor cycle, which
+  takes the whole record (603,000 owners, 1.4 to 1.6 ms).
+- The reserved memory is equal in workload 1, +3 % in the island
+  form, and +64 % in the game form at 20,000 objects (35.2 against
+  21.5 MiB): 223,500 blocks became old and were not reachable at the
+  next major cycle. A factor of 1.25 gives +13 % there, with 9 major
+  cycles against 4.
+- Age 2 is slower in each workload: an owner stays in the record
+  while its referent is young, so the record is 3 to 9 times larger.
+  In the island form 92 % of the blocks that become old at age 1 are
+  not reachable at the next major cycle, and 96 % at age 2.
+- With the mode off, `collect` is 1.5 to 2.4 % slower than §357: its
+  explicit collections run a mark that tests the new words. With the
+  mode on, `collect` is 18 % slower: each store of a reference calls
+  the runtime (12 to 62 million calls in the workloads).
+- A block that is allocated during a minor cycle must get the mark
+  (§356 rule 4). A form without that rule stopped the game form on a
+  wrong address: the rehash of a Map writes its new storage pointer
+  with no barrier.
+
+Not measured: an async program; a card or an inline test of the
+owner in place of the call; a trigger by the bytes of the young
+blocks; a minor sweep of the chunks that hold young blocks only; the
+collection stress sweep.
+
+A landed form needs: the old words and the work-list words as facts
+of the Context, in each reader and in the checks of mode 3; a
+barrier that does not call the runtime at each store; a barrier or a
+class "never old" for each runtime path that the prototype did not
+read (frame stores of captures, result arrays, task groups, Worker
+messages, host operations); an index for the owner of an address in
+a large block; the record taken in steps at the start of a minor
+cycle; a host function for the mode and the factor; the record
+fields of the two kinds of cycle.
