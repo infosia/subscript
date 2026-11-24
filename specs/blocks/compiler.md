@@ -27,7 +27,7 @@ The stages of the current form and the sections that hold their rules:
 | dev tier (Cranelift JIT, hot reload) | §7, §8, §12.3a, §70, §117, §119 |
 | ship tier (C emission, the platform C compiler) | §11, §11b, §11c, §66, §86, §89, §210, §214, §254 |
 | reference interpreter | §68.7 |
-| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344, §345, §346, §347, §348, §351, §352, §353 |
+| runtime Context, allocation, traps, collection | §18, §19 (history), §21, §22, §80, §84, §223, §224, §342, §344, §345, §346, §347, §348, §351, §352, §353, §355, §356 |
 | interop and bindgen (C headers, boundary structs, handles) | §12, §13, §14, §23, §33, §44, §52, §56–§65 |
 | workers | §38–§40, §84, §152, §349 |
 | the gate, the corpus, the inventory | §2, §3, §8.3, §85, §88, §100, §213, §222, §225, §226 |
@@ -396,3 +396,4 @@ Every section, with its status:
 | §353 | A host reads the count and the time of collections | active | [`s353-a-host-reads-the-count-and-the-time-of-collections.md`](compiler/s353-a-host-reads-the-count-and-the-time-of-collections.md) |
 | §354 | A module is named by its path | active | [`s354-a-module-is-named-by-its-path.md`](compiler/s354-a-module-is-named-by-its-path.md) |
 | §355 | A mark finds the block of a word in constant time | active | [`s355-a-mark-finds-the-block-of-a-word-in-constant-time.md`](compiler/s355-a-mark-finds-the-block-of-a-word-in-constant-time.md) |
+| §356 | The mark of a collection runs in steps | active | [`s356-the-mark-of-a-collection-runs-in-steps.md`](compiler/s356-the-mark-of-a-collection-runs-in-steps.md) |
