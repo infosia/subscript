@@ -1193,3 +1193,119 @@ Open, for a later round.
    barrier is needed there.
 4. The age at which a block becomes old. The prototype uses one
    collection.
+
+## G15 — a mark in steps
+
+Measured 2026-11-24 at `b1d35082`, release build, arm64 macOS, the
+ship tier. Origin: G14 leaves the pause of a major collection as it
+is. The round built a prototype of a full collection whose mark runs
+in steps at the polls, on the thread of the program, and it reverted
+each change. The workloads are those of G14.
+
+The rules that a landed form works against: one collection runs from
+start to end inside one poll or one host boundary; a store of a
+reference has no added work.
+
+The prototype.
+
+- The barrier is an insertion barrier: after a store of a reference,
+  the stored value goes to the work list if a mark is in progress.
+  The code tests one flag byte; if the flag is 0, that is the whole
+  cost. The stack, the root slots, and the module variables get no
+  barrier.
+- The runtime has the barrier at `array_push`, at a Map or Set
+  insert, and at the growth of each of these.
+- A cycle starts at 7/8 of the limit of today. During a cycle the
+  limit moves in small steps, so that the allocation path of today
+  sets the pending flag and the next poll runs one step. The
+  allocation path gets no code.
+- One step pops a budget of words from the work list: 50,000 or
+  200,000.
+- A block allocated during a mark is live for that cycle.
+- The end of a cycle is one pause: the roots again, the rest of the
+  work list, and the sweep of today.
+- If the allocation passes one more limit before the mark ends, the
+  mark ends in one step (a fallback).
+
+Workload 1, the default headroom. Values in ms, the range of 3 runs.
+The rows "full only" are one run; each is in the range of G14.
+
+| Case | Cycles | Steps | Step, median | Step, p99 | Step, max | End, median | End, max | Run, s | Peak reserved, MiB |
+|---|---|---|---|---|---|---|---|---|---|
+| 16 MiB, full only | 25 | | | | | 27.8 | 33.4 | 1.21 | 68.1 |
+| 16 MiB, 50,000 | 25 | 1,350 | 0.50 to 0.51 | 1.57 to 1.60 | 1.69 to 1.80 | 1.48 to 1.49 | 2.15 to 3.04 | 1.01 to 1.02 | 73.3 |
+| 16 MiB, 200,000 | 25 | 350 | 2.07 to 2.16 | 2.95 to 3.44 | 3.08 to 3.65 | 1.47 | 2.15 to 2.87 | 1.01 to 1.03 | 72.8 |
+| 64 MiB, full only | 25 | | | | | 177.5 | 180.3 | 5.42 | 271.1 |
+| 64 MiB, 50,000 | 25 | 5,151 | 0.84 to 0.85 | 1.18 to 1.21 | 5.92 to 6.08 | 6.37 to 6.39 | 7.16 to 9.62 | 5.57 to 5.91 | 276.6 |
+| 64 MiB, 200,000 | 25 | 1,300 | 3.32 to 3.37 | 5.89 to 6.05 | 6.26 to 6.52 | 6.36 to 6.39 | 7.22 to 10.2 | 5.57 to 5.63 | 276.4 |
+
+The game form, 1 MiB of headroom, 6,000 frames.
+
+| Case | Cycles | Steps | Step, median | Step, p99 | Step, max | End, median | End, max | Run, s | Peak reserved, MiB |
+|---|---|---|---|---|---|---|---|---|---|
+| 20,000, full only | 43 | | | | | 4.19 | 5.76 | | 19.9 |
+| 20,000, 50,000 | 44 | 552 | 0.29 to 0.32 | 0.48 to 0.73 | 0.55 to 1.53 | 0.37 to 0.38 | 0.49 to 0.52 | 0.33 | 20.3 |
+| 20,000, 200,000 | 45 | 157 | 1.18 to 1.20 | 1.36 to 1.53 | 1.37 to 1.63 | 0.37 to 0.38 | 0.48 to 0.51 | 0.34 to 0.35 | 20.0 |
+| 200,000, full only | 65 | | | | | 36.2 | 46.3 | 3.38 | 119.8 |
+| 200,000, 50,000 | 66 | 5,010 | 0.46 to 0.47 | 2.63 to 2.66 | 2.96 to 3.66 | 2.10 to 2.14 | 2.52 to 4.91 | 3.49 to 3.79 | 122.7 |
+| 200,000, 200,000 | 67 | 1,298 | 1.84 to 1.99 | 3.14 to 3.53 | 4.60 to 5.74 | 2.11 to 2.12 | 2.54 to 3.19 | 3.34 to 3.62 | 122.7 |
+
+No fallback occurred in a run.
+
+Ordinary code.
+
+| Item | No barrier | The barrier in the code, the mode off | The mode on |
+|---|---|---|---|
+| `perf-gate --gate`, `a22`, ship tier, ms | 5.273 | 5.272 and 5.273 | 5.284 and 5.291 |
+| The same, `collect` | 30.424 | 31.772 and 32.402 | 32.498 and 32.505 |
+| `tree`, s | 0.107 | 0.107 | 0.107 to 0.108 |
+| `callbacks`, s | 0.050 to 0.053 | 0.050 to 0.051 | 0.049 to 0.050 |
+
+The soundness check: at the end of each cycle, before the sweep, a
+separate walk from the roots counts each reachable block with no
+mark. Workload 1 and the game form give 0, and they give 0 with the
+barrier off also: they do not move an unmarked reference into a
+marked block. A variant of workload 1 that moves references
+(`a.next = c.next; c.next = b`) gives 0 with the barrier and 631
+with the barrier off, in 25 cycles.
+
+Result.
+
+- The largest pause at 64 MiB is 6.3 to 10.2 ms, against 177.5 to
+  180.3 ms. At 16 MiB it is 2.2 to 3.7 ms against 27.8 to 33.4 ms.
+  In the game form at 200,000 objects it is 2.5 to 5.7 ms against
+  36 to 46 ms.
+- The end of a cycle is the sweep: the roots and the rest of the
+  mark take 1 to 4 µs. The sweep is now the largest pause
+  (6.4 ms at 64 MiB).
+- A step can pass its budget: the scan of one payload is not split.
+  The array of 1,400,000 references gives a step of 5.9 to 6.5 ms.
+- The time of a step with one budget follows the heap: 50,000 words
+  take 0.50 ms at 16 MiB and 0.84 ms at 64 MiB.
+- The mark reads 1.2 to 7.1 % more words. The run time is 3 to 9 %
+  longer at 64 MiB; it is not longer at 16 MiB.
+- The peak reserved memory is 0.5 to 7.6 % higher.
+- `collect` is 4.4 to 6.5 % slower with the barrier in the code and
+  the mode off: each constructor store loads the flag. The other
+  programs do not change.
+
+Against G14: the minor collection halves the run time and leaves the
+largest pause (127 to 133 ms at 64 MiB). The mark in steps removes
+the largest pause and does not reduce the work. Each form leaves the
+sweep as the larger part of its pauses. The two forms put their
+barrier at the same stores.
+
+Not measured: a third budget; a step at the allocation path; the two
+forms together. Not built: the scan of a large payload in parts; one
+flag for each Context (the prototype has one for the process); the
+async, generator, and closure paths.
+
+Open, for a later round.
+
+1. The sweep is the largest pause of each form: the sweep of G12, or
+   a sweep in steps.
+2. The cost of the flag test on `collect`: a flag at a fixed offset
+   of the Context, and no barrier on a store into a block that the
+   same function allocated with no poll between.
+3. In one run of the game form a collection ended outside a cycle;
+   the cause is not found.
