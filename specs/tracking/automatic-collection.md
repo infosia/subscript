@@ -1434,3 +1434,45 @@ A landed form needs: the two state words as a fact of the Context
 between two sweep pauses; the record of the sweep steps; the meaning
 of the live bytes while a sweep is in progress; a sweep that the
 next cycle reaches with a budget, not in one pause.
+
+## G18 — the sweep in steps as it landed (§357)
+
+Measured 2026-11-24 on the tree of §357, release build, arm64 macOS,
+the ship tier, the default budget, through the record of §353. Three
+runs each. The headroom is the default; the game form has 1 MiB. The
+sweep ends after 1/8 of the bytes before the next cycle start.
+
+| Case | Cycles | Mark steps | Sweep steps | Late sweeps | Largest pause, ms | Largest words of a pause | Largest slots of a pause | Run, s | Reserved at the end, MiB |
+|---|---|---|---|---|---|---|---|---|---|
+| Workload 1, 16 MiB | 24 | 1,525 | 117 | 0 | 0.75 to 0.83 | 50,004 | 250,000 | 0.94 to 0.97 | 77.9 |
+| Workload 1, 64 MiB | 24 | 5,878 | 398 | 0 | 1.19 to 1.44 | 50,004 | 250,000 | 5.40 to 5.48 | 292.5 |
+| The game form, 200,000 objects | 61 | 6,671 | 680 | 0 | 0.82 to 1.11 | 50,004 | 250,000 | 3.13 to 3.24 | 131.2 |
+| The island form | 88 | 352 | 262 | 0 | 0.40 to 1.08 | 50,000 | 250,000 | 0.48 to 0.52 | 33.5 |
+
+Against §356 (G16): 1.57 to 1.59 ms, 6.73 to 6.89 ms, 2.78 to
+2.97 ms, and 0.72 to 0.75 ms; 75.8, 285.9, 130.2, and 31.7 MiB.
+Against a collection of one pause (a budget of 0): 29.4 to 32.4 ms,
+181.5 to 183.4 ms, 45.3 to 46.3 ms, and 1.9 to 2.2 ms.
+
+The fraction of rule 6, the reserved memory at the end in MiB.
+
+| Case | 1/2 | 1/4 | 1/8 |
+|---|---|---|---|
+| Workload 1, 16 MiB | 84.2 | 80.0 | 77.9 |
+| Workload 1, 64 MiB | 312.0 | 299.1 | 292.5 |
+| The game form | 135.3 | 132.4 | 131.2 |
+| The island form | 36.6 | 34.1 | 33.5 |
+
+The run time with 1/8 is not above the run time with 1/2 in a case.
+
+The island form with a budget of 0: 77 cycles, 0.455 to 0.459 s, of
+which 137 to 141 ms is collection. With the default budget: 88
+cycles, 0.482 to 0.517 s, of which 158 to 170 ms is collection. The
+time of the program outside the collections differs by about 5 ms.
+
+Not measured: the count and the time of the pauses inside one frame.
+Each workload runs its frames inside one call, so a host cannot read
+the record at a frame.
+
+Next: a minor collection as an optional mode (G14), the third
+section of the owner decision of 2026-11-24.
