@@ -1309,3 +1309,38 @@ Open, for a later round.
    same function allocated with no poll between.
 3. In one run of the game form a collection ended outside a cycle;
    the cause is not found.
+
+## G16 — the mark in steps as it landed (§356)
+
+Measured 2026-11-24 on the tree of §356, release build, arm64 macOS,
+the ship tier, through the record of §353 with the fields of §356
+rule 17. The workloads are those of G14. Three runs each. Workload 1
+has the default headroom; the game form has 1 MiB.
+
+| Case | Budget | Cycles | Steps | Late cycles | Largest pause, ms | Largest words of one pause | Run, s | Reserved at the end, MiB |
+|---|---|---|---|---|---|---|---|---|
+| Workload 1, 16 MiB | 50,000 | 24 | 1,525 | 0 | 1.57 to 1.59 | 50,004 | 0.95 to 0.98 | 75.8 |
+| Workload 1, 16 MiB | 0 | 25 | 0 | 0 | 29.4 to 32.4 | 2,637,391 | 0.93 to 0.94 | 68.1 |
+| Workload 1, 64 MiB | 50,000 | 24 | 5,878 | 0 | 6.73 to 6.89 | 50,004 | 5.42 to 5.45 | 285.9 |
+| Workload 1, 64 MiB | 0 | 25 | 0 | 0 | 181.5 to 183.4 | 10,548,343 | 5.18 to 5.20 | 271.1 |
+| The game form, 200,000 objects | 50,000 | 58 | 6,618 | 0 | 2.78 to 2.97 | 50,004 | 3.14 to 3.36 | 130.2 |
+| The game form, 200,000 objects | 0 | 65 | 0 | 0 | 45.3 to 46.3 | 4,504,168 | 3.05 to 3.06 | 119.8 |
+
+- The largest pause is 15 to 27 times shorter. At 64 MiB it is the
+  sweep of the end (G15: 6.4 ms).
+- The mean pause of a cycle in steps is 0.35 to 0.73 ms.
+- The run time is 2 to 10 % longer. The reserved memory is 5 to 11 %
+  higher.
+- `perf-gate --gate`: `collect` in the ship tier is 30.6 to 30.9 ms,
+  against 29.9 to 30.6 ms before the section. The prototype of G15
+  read the flag from a process global and gave 31.8 to 32.4 ms.
+
+Two forms were measured and replaced before the landing.
+
+| Form | Measured | Replaced by |
+|---|---|---|
+| A step with no budget when the allocation passes one limit | one pause of 910,720 words (6.6 to 8.7 ms) in the game form; 744,630 such steps at 64 MiB before the end followed it | a late cycle runs a step with the budget at each poll (§356 rule 7) |
+| One word in the work list for each store | 1,000 stores of one reference added 1,000 words | a block is in the work list one time (§356 rule 10) |
+
+Next: the sweep outside the pause (G12), as the second section of
+the owner decision of 2026-11-24.
