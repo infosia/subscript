@@ -1872,3 +1872,22 @@ In the release step the test binary of the stress sweep passed its
 three tests in 21.73 s. The module path tests of §354
 (`cli/tests/module_paths.rs`, `compiler/tests/duplicate_module_key.rs`,
 `a510`, `r563`) pass with the `\` separator of this host.
+
+## Gate state at `da511ad8`, 2026-11-24
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §355. The commits after §355 change `specs/tracking/` only.
+
+```text
+gate full da511ad80b8fed1c60ed44c1ed9edef02e090783 clean debug 4037/0/10 release 4019/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 12, build 128, debug 457, release 359, clippy
+27, tsc 1, hygiene 3.
+
+The two debug skips are those of `31e14f1c`. The ignored count goes
+from 6 to 10: the four new tests are the hand-run measurements of
+`runtime/tests/mark_lookup_cost.rs` (§355 acceptance 6 and rule 5).
+In the release step the test binary of the stress sweep passed its
+three tests in 19.81 s. The unit tests of `context::chunk_pages` pass
+on this host.
