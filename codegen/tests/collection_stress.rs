@@ -14,22 +14,30 @@
 //! pre-init hook reads [`STEP_BUDGET_ENV`] and sets mode 3, the step stress
 //! mode, one run for each budget of [`STEP_BUDGETS`] in words. After each
 //! step and before each end the runtime runs the check of a pause, and at
-//! each end the check of the mark. A finding stops the process with its
-//! message (§356 rules 20 and 20a). The sweep compares each run with the
-//! golden and prints, for each budget, the count of the cycles that ended,
-//! of the runs that ended no cycle, and of the runs that gave no count. A
-//! cycle of mode 3 has at most 8 steps (rule 19). Measured with 610 runs
-//! for each budget: the budgets 64, 16, and 4 end 10,426 to 10,430, 7,448
-//! to 7,449, and 3,967 to 3,968 cycles; 5, 22, and 77 runs end no cycle;
-//! 113 runs give no count.
+//! each end the check of the mark. The sweep of each cycle runs in steps
+//! after the end, and the completion of each sweep runs the check of the
+//! sweep. A finding stops the process with its message (§356 rules 20 and
+//! 20a, §357 rule 15). The sweep compares each run with the golden and
+//! prints, for each budget, the count of the cycles that ended, of the runs
+//! that ended no cycle, of the runs that gave no count, of the sweep steps,
+//! and of the runs that ran no sweep step. A cycle of mode 3 has at most 8
+//! steps (§356 rule 19), and a sweep of mode 3 at most 8 sweep steps (§357
+//! rule 15). Measured with 610 runs for each budget: the budgets 64, 16, and
+//! 4 end 7,993 to 8,000, 6,093 to 6,095, and 3,455 to 3,456 cycles and run
+//! 7,763, 6,009, and 4,733 sweep steps; 5, 22, and 77 runs end no cycle;
+//! 65, 76, and 118 runs run no sweep step; 113 runs give no count. A sweep
+//! that a detection collection completes is not a sweep step.
 //! Measured with no barrier in the emitted code and in the runtime: rule
-//! 20a stops 22, 25, and 23 entries at the budgets 64, 16, and 4, and 40
+//! 20a stops 19, 24, and 25 entries at the budgets 64, 16, and 4, and 39
 //! together. Rule 20 then stops none, because the check of a pause of rule
 //! 20a runs before each end and stops the run first. So that figure is not
 //! a measure of rule 20. Measured with no barrier, with the check of a
 //! pause off, and with no step limit in mode 3: rule 20 alone stops 7
 //! entries. `mark_barrier_points.rs` holds the programs for the barrier
 //! points that no entry reaches during a mark.
+//! Measured with an allocation during a sweep that gets the word of a block
+//! to release: rule 15 stops 263, 253, and 191 runs at the three budgets,
+//! 280 entries together, and no run fails in another form.
 //!
 //! Each run is a child process of this binary with a time limit
 //! ([`CHILD_LIMIT`]), so one slow entry cannot hold the sweep, and a run
@@ -39,9 +47,9 @@
 //! Cost: one child for each run, on the worker pool of the standing sweeps
 //! (`support/pool.rs`). Measured on an arm64 macOS host with 594 entries
 //! and 1,666 runs: 68 s in a debug build, 36 to 45 s in a release build.
-//! The three mode 3 runs of the ship tier, with the check of each pause,
-//! add 0 to 5 s: with 615 entries the release sweep took 45.4 s with no
-//! mode 3 run, and 47 to 48 s with the three.
+//! The three mode 3 runs of the ship tier, with the check of each pause and
+//! of each sweep, add 2 to 5 s: with 615 entries the release sweep took
+//! 45.4 s with no mode 3 run, and 46.5 to 48.9 s with the three.
 //! The slowest run is one ship-tier entry at 12 s (debug). The parent also
 //! checks and lowers each entry that names `Worker`, once
 //! ([`calls_worker_receive`]). The sweep runs
@@ -344,10 +352,13 @@ enum Outcome {
     /// (`compiler.md` §342 rule 16), and `collections` the automatic
     /// collection count (rule 7). The ship tier gives the exit count
     /// through [`EXIT_COUNT_FILE`] (§345 rule 4), and no collection count.
+    /// `sweeps` is the count of the sweep steps of a mode 3 run
+    /// (`compiler.md` §357 rule 13), and `None` for each other run.
     Complete {
         stdout: Vec<u8>,
         exits: Option<u64>,
         collections: Option<u64>,
+        sweeps: Option<u64>,
     },
     /// The run trapped.
     Trap {
@@ -405,13 +416,15 @@ impl Outcome {
                 stdout,
                 exits,
                 collections,
+                sweeps,
             } => {
                 let count = |value: &Option<u64>| value.map_or("-".to_string(), |n| n.to_string());
                 format!(
-                    "complete\n{}\n{}\n{}\n",
+                    "complete\n{}\n{}\n{}\n{}\n",
                     hex(stdout),
                     count(exits),
-                    count(collections)
+                    count(collections),
+                    count(sweeps)
                 )
             }
             Outcome::Trap {
@@ -438,10 +451,11 @@ impl Outcome {
         let fields: Vec<&str> = text.lines().collect();
         let string = |index: usize| String::from_utf8(unhex(fields[index])).expect("utf-8 field");
         match fields.first().copied() {
-            Some("complete") if fields.len() == 4 => Outcome::Complete {
+            Some("complete") if fields.len() == 5 => Outcome::Complete {
                 stdout: unhex(fields[1]),
                 exits: fields[2].parse().ok(),
                 collections: fields[3].parse().ok(),
+                sweeps: fields[4].parse().ok(),
             },
             Some("trap") if fields.len() == 7 => Outcome::Trap {
                 kind: fields[1].to_string(),
@@ -522,7 +536,7 @@ fn setup_hook_library(
                  subscript_rt_ctx_collection_stats(ctx, &stats);\n\
                  FILE* cycles = fopen({cycles_path}, \"a\");\n\
                  if (cycles != NULL) {{\n\
-                   fprintf(cycles, \"%s %llu\\n\", getenv(\"{STEP_BUDGET_ENV}\"), (unsigned long long)stats.automatic_collections);\n\
+                   fprintf(cycles, \"%s %llu %llu\\n\", getenv(\"{STEP_BUDGET_ENV}\"), (unsigned long long)stats.automatic_collections, (unsigned long long)stats.sweep_steps);\n\
                    fclose(cycles);\n\
                  }}\n\
                  return;\n\
@@ -565,6 +579,7 @@ fn run_result(result: Result<subscript_codegen::RunOutput, RunError>) -> Outcome
             collections: output
                 .memory_accounting
                 .map(|accounting| accounting.automatic_collections),
+            sweeps: None,
         },
         Err(RunError::Trap(report)) => Outcome::from_report(report),
         Err(error) => Outcome::Failed(error.to_string()),
@@ -641,6 +656,7 @@ fn dev_host_run(entry: &Entry, sources: &[SourceFile], libraries: &[NativeLibrar
             stdout: session.take_output(),
             exits: None,
             collections: None,
+            sweeps: None,
         },
         Err(error) => run_result(Err(error)),
     }
@@ -705,6 +721,7 @@ fn ship_run(entry: &Entry, sources: &[SourceFile], scratch: &Path) -> (Outcome, 
             stdout,
             exits: reported_exit_count(scratch),
             collections: None,
+            sweeps: None,
         },
         other => other,
     };
@@ -727,12 +744,8 @@ fn step_outcome(
         Ok(output) => Outcome::Complete {
             stdout: output.stdout,
             exits: None,
-            collections: cycles.lines().find_map(|line| {
-                let (name, count) = line.split_once(' ')?;
-                (name == budget)
-                    .then(|| count.trim().parse().ok())
-                    .flatten()
-            }),
+            collections: step_count(cycles, budget, 1),
+            sweeps: step_count(cycles, budget, 2),
         },
         // A finding of the check of the mark stops the process with its
         // message on stderr (`compiler.md` §356 rule 20).
@@ -746,6 +759,17 @@ fn step_outcome(
         }
         Err(error) => run_result(Err(error)),
     }
+}
+
+/// The field `index` of the line of `budget` in `cycles`: 1 for the cycles
+/// that ended, 2 for the sweep steps.
+fn step_count(cycles: &str, budget: &str, index: usize) -> Option<u64> {
+    cycles.lines().find_map(|line| {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        (fields.first() == Some(&budget))
+            .then(|| fields.get(index)?.parse().ok())
+            .flatten()
+    })
 }
 
 /// The interpreter run of one entry with mode 2. An `Internal` trap is the
@@ -764,6 +788,7 @@ fn interpreter_run(sources: &[SourceFile]) -> Outcome {
             stdout,
             exits: Some(run.outermost_exits),
             collections: Some(run.automatic_collections),
+            sweeps: None,
         },
         Err(error) => {
             let stdout = error.output().to_vec();
@@ -1084,8 +1109,10 @@ fn collection_stress_sweep() {
     let mut per_tier_collections = [0u64; 3];
     let mut ship_without_count = Vec::new();
     // Per budget of [`STEP_BUDGETS`]: runs, equal runs, cycles that ended,
-    // runs that ended no cycle, and runs that gave no count.
-    let mut step_counts = [(0usize, 0usize, 0u64, 0usize, 0usize); STEP_BUDGETS.len()];
+    // runs that ended no cycle, runs that gave no count, sweep steps, and
+    // runs with no sweep step.
+    let mut step_counts =
+        [(0usize, 0usize, 0u64, 0usize, 0usize, 0u64, 0usize); STEP_BUDGETS.len()];
     for ((index, tier), (outcome, step, elapsed)) in runs.iter().zip(&outcomes) {
         let entry = &entries[*index];
         let column = TIERS.iter().position(|t| t == tier).expect("a tier");
@@ -1120,11 +1147,17 @@ fn collection_stress_sweep() {
             match step {
                 Outcome::Complete {
                     collections: Some(cycles),
+                    sweeps,
                     ..
                 } => {
                     counts.2 += cycles;
                     if *cycles == 0 {
                         counts.3 += 1;
+                    }
+                    let sweeps = sweeps.unwrap_or(0);
+                    counts.5 += sweeps;
+                    if sweeps == 0 {
+                        counts.6 += 1;
                     }
                 }
                 _ => counts.4 += 1,
@@ -1219,9 +1252,11 @@ fn collection_stress_sweep() {
             per_tier_collections[column]
         );
     }
-    for (budget, (run, equal, cycles, none, without)) in STEP_BUDGETS.iter().zip(step_counts) {
+    for (budget, (run, equal, cycles, none, without, sweeps, no_sweep)) in
+        STEP_BUDGETS.iter().zip(step_counts)
+    {
         eprintln!(
-            "collection stress ship-C-AOT mode 3, budget {budget} words: {run} run, {equal} equal, {cycles} cycles ended, {none} runs ended no cycle, {without} runs gave no count"
+            "collection stress ship-C-AOT mode 3, budget {budget} words: {run} run, {equal} equal, {cycles} cycles ended, {none} runs ended no cycle, {without} runs gave no count, {sweeps} sweep steps, {no_sweep} runs ran no sweep step"
         );
     }
     eprintln!(
@@ -1240,7 +1275,12 @@ fn collection_stress_sweep() {
             failures.push(format!("{}: no automatic collection ran", tier.name()));
         }
     }
-    for (budget, (_, _, cycles, _, _)) in STEP_BUDGETS.iter().zip(step_counts) {
+    for (budget, (_, _, cycles, _, _, sweeps, _)) in STEP_BUDGETS.iter().zip(step_counts) {
+        if sweeps == 0 {
+            failures.push(format!(
+                "ship-C-AOT mode 3, budget {budget}: no sweep step ran"
+            ));
+        }
         if cycles == 0 {
             failures.push(format!(
                 "ship-C-AOT mode 3, budget {budget}: no cycle ended"

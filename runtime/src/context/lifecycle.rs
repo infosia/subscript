@@ -1406,15 +1406,14 @@ impl Context {
             };
             // SAFETY: `block` heads a block inside an owned chunk; both
             // header reads stay inside it.
-            let class_id = unsafe {
-                if !matches!(
-                    (block as *const u64).read(),
-                    LIVE_STATE | MARK_STATE | GREY_STATE
-                ) {
-                    return;
-                }
-                header_class_id(block)
-            };
+            let (state, class_id) =
+                unsafe { ((block as *const u64).read(), header_class_id(block)) };
+            if !self.header_is_live(state) {
+                return;
+            }
+            // compiler.md §357 rule 8: a block to release that the program
+            // releases during a sweep.
+            let to_release = self.header_to_release(state);
             self.release_class_state(class_id, payload);
             // SAFETY: the live-grid check above proves `block` is still
             // owned. Container clearing only retires its separate child
@@ -1428,13 +1427,16 @@ impl Context {
                 (payload as *mut usize).add(1).write(ci);
                 self.free_heads[class] = payload;
             }
-            self.live_bytes_counter = self
-                .live_bytes_counter
-                .saturating_sub((SMALLEST_BLOCK << class) - HEADER_SIZE);
+            let payload_bytes = (SMALLEST_BLOCK << class) - HEADER_SIZE;
+            self.live_bytes_counter = self.live_bytes_counter.saturating_sub(payload_bytes);
+            self.note_sweep_release(payload, payload_bytes, to_release);
             // compiler.md §346 rule 1: the release subtracts the request
-            // that the allocation of the block added.
-            let request = self.chunks[ci].requests[bi];
-            self.note_release(usize::from(request));
+            // that the allocation of the block added. A block to release
+            // was allocated before the collection that reset the count.
+            if !to_release {
+                let request = self.chunks[ci].requests[bi];
+                self.note_release(usize::from(request));
+            }
             return;
         }
         if let Some(a) = self.large.remove(&payload) {
@@ -1623,10 +1625,7 @@ impl Context {
         if self.uses_ship_arena() {
             if let Some((block, _)) = self.arena_lookup_block(payload) {
                 // SAFETY: `block` heads a block inside an owned chunk.
-                return matches!(
-                    unsafe { (block as *const u64).read() },
-                    LIVE_STATE | MARK_STATE | GREY_STATE
-                );
+                return self.header_is_live(unsafe { (block as *const u64).read() });
             }
             return self.large.contains_key(&payload);
         }

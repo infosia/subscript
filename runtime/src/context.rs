@@ -7,10 +7,14 @@
 //!
 //! Every allocation is `HEADER_SIZE` bytes of header followed by the
 //! payload; handles held by script code are payload pointers. The
-//! header holds a state word (`LIVE_STATE` / `DEAD_STATE`), the class
-//! id, and the allocating source-position id; generated code reads the
-//! first two directly (use-after-delete checks, checked `as` narrowing),
-//! so their offsets are part of the runtime's ABI contract.
+//! header holds a state word, the class id, and the allocating
+//! source-position id. A live block of the dev tier holds `LIVE_STATE`; a
+//! live block of the ship arena holds the live word of its Context, which
+//! the end of each collection exchanges with the marked word (`compiler.md`
+//! §357 rule 1). A released block holds `DEAD_STATE`. Generated code of the
+//! dev tier reads the first two words directly (use-after-delete checks,
+//! checked `as` narrowing), so their offsets are part of the runtime's ABI
+//! contract.
 //!
 //! Freed-handle diagnostics (§8.1a-3) are disabled by default. When a host
 //! enables them before the first allocation, `Context.free` and
@@ -178,8 +182,10 @@ pub const CLASS_ID_OFFSET: i32 = -8;
 pub const POS_ID_OFFSET: i32 = -4;
 
 /// Writes the state, class, and position words of an allocation header.
-/// `state` is [`LIVE_STATE`], or the mark state for a block that the ship
-/// arena allocates during a mark (`compiler.md` §356 rule 4).
+/// `state` is the `alloc_state` of the Context: [`LIVE_STATE`] in the dev
+/// tier; in the ship arena, the live word of the Context, or its marked
+/// word for a block allocated during a mark (`compiler.md` §356 rule 4 and
+/// §357 rule 1).
 ///
 /// # Safety
 ///
@@ -428,11 +434,12 @@ fn class_written_in_full(class_id: u32) -> bool {
 
 // ----- ship-tier arena (§8.1b) -----
 
-// Header state word for a block that the mark of the current collection
-// reached (ship tier only). It lives from the mark to the sweep. A mark in
-// steps (`compiler.md` §356) keeps it across script code between its
-// pauses, so each test of a live block accepts it. Generated code does not
-// read the state word.
+// The second header state word of the ship arena (`compiler.md` §357 rule
+// 1). A Context starts with `LIVE_STATE` as its live word and this word as
+// its marked word, and the end of each collection exchanges the two. Each
+// test of a header state in the ship arena reads the words of the Context,
+// not these constants. Generated code of the ship tier does not read the
+// state word.
 const MARK_STATE: u64 = 0x5355_4253_4D41_524B; // "SUBSMARK"
 
 // Header state word for a live block that has no mark and is in the work
@@ -1025,6 +1032,13 @@ mod collection_stats;
 
 #[path = "context/mark_cycle.rs"]
 mod mark_cycle;
+
+#[path = "context/sweep_steps.rs"]
+mod sweep_steps;
+
+#[cfg(test)]
+#[path = "context/sweep_steps_tests.rs"]
+mod sweep_steps_tests;
 
 #[cfg(test)]
 #[path = "context/mark_cycle_tests.rs"]

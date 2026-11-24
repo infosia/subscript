@@ -194,8 +194,9 @@ The host selects one of three levels:
 `Context.free` and `Context.collect()` are valid at each level.
 
 In the ship tier, the mark of an automatic collection runs in steps of
-a budget of words, 50,000 by default, so a large live set does not make
-one long pause. The host sets the budget with
+a budget of words, 50,000 by default, and the sweep runs in steps after
+the mark, so a large live set or a large heap does not make one long
+pause. The host sets the budget with
 `subscript_rt_ctx_set_collection_step`. At the host-timed level,
 `subscript_rt_ctx_collect_step` runs one pause at a point that the host
 selects.

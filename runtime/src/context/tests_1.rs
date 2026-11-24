@@ -716,7 +716,7 @@ fn ship_context_drop_frees_all_chunks_and_large_records() {
 
 // Arena edition of the collect tests: unreachable classed blocks are
 // released (live_count drops, storage is reusable), rooted ones
-// survive with their header restored to LIVE_STATE.
+// survive with the live word of the Context (compiler.md §357 rule 1).
 #[test]
 fn ship_collect_releases_unreachable_and_keeps_rooted() {
     let mut ctx = Context::new_releasing();
@@ -741,12 +741,14 @@ fn ship_collect_releases_unreachable_and_keeps_rooted() {
     assert!(!ctx.is_live(dropped as usize));
     assert!(!ctx.is_live(dropped2 as usize));
     assert_eq!(ctx.live_count(), 2);
-    // Survivor headers are LIVE again (mark state fully restored).
+    // Survivor headers hold the live word of the Context: the mark that
+    // the exchange made live (compiler.md §357 rule 1).
+    assert_eq!(ctx.marked_word(), LIVE_STATE, "the collection exchanged");
     // SAFETY: kept is a live payload with a 16-byte header.
     unsafe {
         assert_eq!(
             (kept.offset(STATE_OFFSET as isize) as *const u64).read(),
-            LIVE_STATE
+            ctx.live_word()
         );
     }
     // Swept blocks are on the free list: the next same-class alloc

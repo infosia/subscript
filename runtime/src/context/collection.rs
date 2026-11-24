@@ -313,17 +313,19 @@ impl Context {
     ///
     /// `compiler.md` §356 rules 6 and 16: during a cycle in mode 1 the flag
     /// is set, so that the next poll serves the cycle with the new values.
+    /// §357 rule 10: the same holds during a sweep.
     pub(crate) fn apply_collection_settings(&mut self, settings: CollectionSettings) {
         self.collection.settings = settings;
         self.collection.limit = limit_for(self.collection.base, settings.min_headroom);
-        if !self.mark_cycle_active() {
+        let in_progress = self.mark_cycle_active() || self.sweep_in_progress();
+        if !in_progress {
             self.collection.pending_at = self.cycle_start_threshold();
         }
         self.collection_pending = match settings.mode {
             CollectionMode::Off => 0,
-            CollectionMode::Automatic => u8::from(
-                self.mark_cycle_active() || self.collection.requested > self.collection.pending_at,
-            ),
+            CollectionMode::Automatic => {
+                u8::from(in_progress || self.collection.requested > self.collection.pending_at)
+            }
             CollectionMode::EachPoll | CollectionMode::StepStress => 1,
         };
     }
@@ -349,6 +351,38 @@ impl Context {
     #[inline]
     pub(super) fn note_release(&mut self, request: usize) {
         self.collection.requested = self.collection.requested.saturating_sub(request);
+    }
+
+    /// The base and the limit of `compiler.md` §346 rule 2.
+    pub(super) fn collection_base_and_limit(&self) -> (usize, usize) {
+        (self.collection.base, self.collection.limit)
+    }
+
+    /// `compiler.md` §357 rule 11: during a sweep in steps the base and the
+    /// limit stay those of the last sweep that ended. The live bytes at the
+    /// end of a cycle include the blocks to release, so a limit from them
+    /// grows with the garbage of each cycle.
+    pub(super) fn keep_base_and_limit(&mut self, (base, limit): (usize, usize)) {
+        self.collection.base = base;
+        self.collection.limit = limit;
+    }
+
+    /// `compiler.md` §357 rule 11: when a sweep in steps ends, the base is
+    /// the live bytes that a sweep of one pause gives, `base`, and the limit
+    /// follows it. The requested bytes since the end of the cycle stay. The
+    /// flag is set if they exceed the start of the next cycle (rule 9).
+    pub(super) fn after_sweep_in_steps(&mut self, base: usize) {
+        self.collection.base = base;
+        self.collection.limit = limit_for(base, self.collection.settings.min_headroom);
+        self.collection.pending_at = self.cycle_start_threshold();
+        self.collection_pending = match self.collection.settings.mode {
+            CollectionMode::Off => 0,
+            CollectionMode::Automatic => {
+                u8::from(self.collection.requested > self.collection.pending_at)
+            }
+            CollectionMode::EachPoll | CollectionMode::StepStress => 1,
+        };
+        self.collection.stats.set_last_live_bytes_after(base as u64);
     }
 
     /// `compiler.md` §346 rules 1 and 2, and §342 rule 7: after each
@@ -462,7 +496,8 @@ impl Context {
     /// `compiler.md` §356: an automatic collection of the step form runs one
     /// pause of a cycle (rule 6). Another collection ends a cycle in
     /// progress first (rule 8), and then runs one collection with no step.
-    /// A poll with a budget of 0 only ends the cycle (rule 16).
+    /// A poll with a budget of 0 only ends the cycle (rule 16). §357 rule
+    /// 10: the same holds for a sweep in progress.
     pub(super) fn run_own_collection(&mut self, kind: CollectionKind) -> bool {
         if self.collection.recording {
             return self.run_whole_collection(kind);
@@ -481,6 +516,16 @@ impl Context {
             if kind == CollectionKind::Automatic && mode != CollectionMode::EachPoll {
                 return false;
             }
+        }
+        // compiler.md §357 rule 10: a poll after a budget of 0 completes the
+        // sweep with a sweep step of no budget. Any other collection
+        // completes it in its own pause (`prepare_collection`).
+        if self.sweep_in_progress()
+            && kind == CollectionKind::Automatic
+            && mode != CollectionMode::EachPoll
+        {
+            self.sweep_pause(0);
+            return false;
         }
         self.run_whole_collection(kind)
     }

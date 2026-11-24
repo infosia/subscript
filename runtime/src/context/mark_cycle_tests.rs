@@ -281,7 +281,10 @@ fn an_allocation_during_a_mark_stays_live() {
     store(a, 1, d);
     finish_cycle(&mut ctx, 1);
     assert!(ctx.is_live(d));
-    assert!(!ctx.collection_marked(d), "the sweep clears the mark");
+    assert!(
+        !ctx.collection_marked(d),
+        "the exchange makes the mark the live word"
+    );
     assert_checks_pass(&ctx, 1);
 }
 
@@ -414,7 +417,9 @@ fn a_step_that_empties_the_work_list_makes_the_end_next() {
     }
     let stats = ctx.collection_stats();
     assert_eq!(stats.automatic_collections, 1);
-    assert_eq!(stats.mark_steps as usize, pauses - 2);
+    // compiler.md §357 rule 12: the pauses after the end are sweep steps.
+    assert!(stats.sweep_steps > 0);
+    assert_eq!((stats.mark_steps + stats.sweep_steps) as usize, pauses - 2);
     assert!(ctx.is_live(load(head, 1)));
     assert_checks_pass(&ctx, 1);
 }
@@ -590,7 +595,10 @@ fn collect_step_starts_steps_and_ends_a_cycle() {
     assert!(steps > 5);
     let stats = ctx.collection_stats();
     assert_eq!(stats.automatic_collections, 1);
-    assert_eq!(stats.mark_steps as usize, steps);
+    // compiler.md §357 rule 12: the end returns 1, and each call after it
+    // is a sweep step until the call that completes the sweep.
+    assert!(stats.sweep_steps > 1, "{stats:?}");
+    assert_eq!((stats.mark_steps + stats.sweep_steps) as usize, steps);
     assert!(ctx.is_live(head));
     assert_checks_pass(&ctx, 1);
     for mode in [CollectionMode::EachPoll, CollectionMode::StepStress] {

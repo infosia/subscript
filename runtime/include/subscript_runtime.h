@@ -259,6 +259,12 @@ typedef struct subscript_rt_async_step_report {
  * `last_words_read` and `max_words_read` are of one whole cycle. The dev
  * tier and the interpreter run each collection in one pause, so there
  * `mark_steps` and `forced_ends` stay zero.
+ *
+ * In the ship tier the sweep of a cycle in steps runs in sweep steps after
+ * the end (`compiler.md` §357 rule 13). A sweep step is a pause in
+ * `last_ns`, `max_ns`, and `total_ns`. `last_live_bytes_after` is of the
+ * last sweep that ended. The dev tier and the interpreter have no sweep
+ * steps, so there `sweep_steps` and `late_sweeps` stay zero.
  */
 typedef struct subscript_rt_collection_stats {
     /**
@@ -317,6 +323,24 @@ typedef struct subscript_rt_collection_stats {
      * steps is one pause.
      */
     uint64_t max_pause_words_read;
+    /**
+     * The sweep steps: each pause after the end of a cycle that releases
+     * the blocks to release in a part of the arena (`compiler.md` §357
+     * rule 5).
+     */
+    uint64_t sweep_steps;
+    /**
+     * The largest count of slots that one pause swept. A collection that
+     * sweeps in its own pause counts each slot of the arena in that pause.
+     */
+    uint64_t max_pause_slots_swept;
+    /**
+     * The sweeps that became late: the requested bytes reached the start
+     * of the next cycle before the sweep ended, and from there each poll
+     * and each outermost exit ran one sweep step (`compiler.md` §357 rule
+     * 9).
+     */
+    uint64_t late_sweeps;
 } subscript_rt_collection_stats;
 
 /* Registered task record (compiler.md §169). */
@@ -493,7 +517,9 @@ int32_t subscript_rt_ctx_clear_trap(subscript_rt_context* ctx);
  * This is the same collector that `subscript_rt_context.collect()` reaches from
  * script and that an automatic collection runs, so the callers share one
  * mark-sweep. If it releases the last holder of a failed task that nobody
- * awaits, it traps (rule 13). The script
+ * awaits, it traps (rule 13). If a sweep in steps is in progress, the
+ * call completes it in the same pause first (compiler.md §357 rule 10).
+ * The script
  * intrinsic keeps its own symbol, `subscript_rt_collect`, which the
  * generated host header does not declare.
  *
@@ -516,8 +542,11 @@ void subscript_rt_ctx_collect(subscript_rt_context* ctx);
  * rule 5): if mark work is left after the budget, the call is a step and
  * returns 1, and the next call tries the end again. So the end can take
  * more than one call. Each call after the start that returns 1 marks
- * blocks that had no mark, so a loop of calls ends. Returns 1 if a collection in steps is in progress
- * after the call, and 0 if the call ended it. The call is valid in mode 0
+ * blocks that had no mark, so a loop of calls ends. The end starts a
+ * sweep, and each call after it runs one sweep step of at most 5 slots for
+ * each word of `budget_words` (compiler.md §357 rules 5 and 12). Returns 1
+ * if a collection in steps or its sweep is in progress after the call, and
+ * 0 if the call completed the sweep. The call is valid in mode 0
  * and in mode 1. A host of the host-timed level calls it at each frame
  * until it returns 0. The host must end each collection that it starts:
  * until the end, the memory that the program drops stays, and the work
@@ -550,8 +579,12 @@ int32_t subscript_rt_ctx_collect_step(subscript_rt_context* ctx, uint64_t budget
  * words that the mark read, and the live bytes after the last collection.
  * Three fields are of the collections whose mark runs in steps
  * (compiler.md §356 rule 17): `mark_steps`, `forced_ends`, and
- * `max_pause_words_read`. For such a collection, `last_ns` and `max_ns`
- * are of one pause, and `total_ns` is the sum of the pauses.
+ * `max_pause_words_read`. Three fields are of the sweep in steps after
+ * the end of such a collection (compiler.md §357 rule 13): `sweep_steps`,
+ * `max_pause_slots_swept`, and `late_sweeps`. For such a collection,
+ * `last_ns` and `max_ns` are of one pause, and `total_ns` is the sum of
+ * the pauses. A sweep step is a pause. `last_live_bytes_after` is of the
+ * last sweep that ended.
  * Each field is for the span from the start of `ctx` or from the last
  * `subscript_rt_ctx_reset_collection_stats`. `max_ns` and `max_words_read`
  * are each the largest of one collection in that span, and they can come
@@ -601,7 +634,9 @@ void subscript_rt_ctx_fail_alloc_after(subscript_rt_context* ctx, uint64_t n);
  *
  * The count is equal in the tiers only directly after an explicit
  * collection. Between explicit collections it depends on where automatic
- * collections ran (compiler.md §342 rule 20).
+ * collections ran (compiler.md §342 rule 20). In the ship tier, while a
+ * sweep in steps is in progress, the count includes the objects that the
+ * sweep did not reach yet (compiler.md §357 rule 3).
  *
  * # Safety
  *
@@ -614,7 +649,10 @@ uint64_t subscript_rt_ctx_live_allocations(const subscript_rt_context* ctx);
  * Development reports exact requested sizes; ship reports size-class
  * capacity for arena blocks and exact sizes for large allocations. Between
  * explicit collections the figure also depends on where automatic
- * collections ran (compiler.md §342 rule 20).
+ * collections ran (compiler.md §342 rule 20). In the ship tier, while a
+ * sweep in steps is in progress, the figure includes the objects that the
+ * sweep did not reach yet (compiler.md §357 rule 11). The program cannot
+ * reach them.
  *
  * # Safety
  *
@@ -714,12 +752,21 @@ int32_t subscript_rt_ctx_set_collection(subscript_rt_context* ctx, int32_t mode,
  * The end of a collection in steps reads the roots again and marks with
  * the budget. If mark work is left after the budget, the pause is a step,
  * and the next pause tries the end again. If no mark work is left, the
- * releases and the sweep follow in the same pause.
+ * releases and the release of the large objects with no mark follow in
+ * the same pause. Then the sweep runs in sweep steps after the end
+ * (compiler.md §357). A sweep step reads at most 5 block slots for each
+ * word of the budget. In mode 3 a sweep has at most 8 sweep steps, so a
+ * step of a large heap can read more slots (compiler.md §357 rule 15). In
+ * mode 1 the sweep steps follow the allocation, so
+ * that the sweep ends before the next collection starts. No collection
+ * starts while a sweep is in progress.
  *
  * An explicit collection, the failed-task check of the outermost exit
  * (compiler.md §342 rule 14), and each collection of mode 2 are one pause
  * at each budget. If a collection in steps is in progress, each of them
- * ends it first, with no budget, and then runs one whole collection. The
+ * ends it first, with no budget, and then runs one whole collection. If a
+ * sweep is in progress, each of them completes it in its pause first, and
+ * a budget of 0 completes it at the next poll. The
  * dev tier and the interpreter run each collection in one pause, and the
  * budget has no effect there. A ship subscript_rt_context that is created while
  * `SUBSCRIPT_MARK_TRACE` is set also runs each collection in one pause,

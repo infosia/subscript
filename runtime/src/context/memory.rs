@@ -3,18 +3,16 @@ use super::*;
 impl Context {
     /// Iterates live classed arena blocks as `(header, block_size)`.
     pub(super) fn live_blocks(&self) -> impl Iterator<Item = (*mut u8, usize)> + '_ {
-        self.chunks.iter().flat_map(|chunk| {
+        self.chunks.iter().flat_map(move |chunk| {
             (0..chunk.bump).filter_map(move |bi| {
                 // SAFETY: `bi < bump`, so the header lies in the owned chunk.
                 let base = unsafe { chunk.base.add(bi * chunk.block_size) };
                 // SAFETY: `base` points to a complete initialized header.
                 // compiler.md §356: a block that a mark in progress reached,
-                // or that is in its work list, is live.
-                matches!(
-                    unsafe { base.cast::<u64>().read() },
-                    LIVE_STATE | MARK_STATE | GREY_STATE
-                )
-                .then_some((base, chunk.block_size))
+                // or that is in its work list, is live. §357 rule 3: a
+                // block to release is live until the sweep releases it.
+                self.header_is_live(unsafe { base.cast::<u64>().read() })
+                    .then_some((base, chunk.block_size))
             })
         })
     }
@@ -239,7 +237,11 @@ impl Context {
                         block.add(HEADER_SIZE) as usize,
                     )
                 };
-                if matches!(state, LIVE_STATE | MARK_STATE | GREY_STATE) && is_array_class(class_id)
+                // compiler.md §357 rule 3: the program does not read a block
+                // to release, and its storage can be a released block.
+                if self.header_is_live(state)
+                    && !self.header_to_release(state)
+                    && is_array_class(class_id)
                 {
                     // SAFETY: the live grid state and class id prove that
                     // `handle` is a live array header.
@@ -355,10 +357,7 @@ impl Context {
         if let Some((block, class)) = self.arena_lookup_block(payload) {
             // SAFETY: arena membership proves that the state word is inside
             // an owned block.
-            let live = matches!(
-                unsafe { block.cast::<u64>().read() },
-                LIVE_STATE | MARK_STATE | GREY_STATE
-            );
+            let live = self.header_is_live(unsafe { block.cast::<u64>().read() });
             return live.then_some((SMALLEST_BLOCK << class) - HEADER_SIZE);
         }
         self.large
@@ -452,6 +451,9 @@ impl Context {
         trace_target: Option<MarkTraceTarget>,
         late: &[usize],
     ) -> CollectionReleases {
+        // compiler.md §357 rules 9 and 10: a collection completes a sweep in
+        // progress before its mark, in the same pause and with no budget.
+        self.complete_sweep_now();
         let mut work: Vec<usize> = Vec::new();
         let mut tracer = trace_target.map(MarkTracer::new);
         let tasks = self.completed_tasks();
@@ -807,7 +809,8 @@ impl Context {
     /// A word is treated as a managed payload only under the exact
     /// membership test ([`Context::arena_lookup_block`] plus a live
     /// header, or an exact large-record match); a reached block's header
-    /// is stamped `MARK_STATE`. The marker pushes payload words only when
+    /// gets the marked word of the Context (`compiler.md` §357 rule 1). The
+    /// marker pushes payload words only when
     /// the block's class can hold a handle. Returns the words that the
     /// marked blocks pushed (`compiler.md` §353 rule 5).
     pub(super) fn arena_mark(
@@ -825,7 +828,7 @@ impl Context {
                 let state = unsafe { (block as *const u64).read() };
                 // compiler.md §356 rule 10: a block in the work list of the
                 // steps has no mark yet.
-                if !matches!(state, LIVE_STATE | GREY_STATE) {
+                if state != self.mark_cycle.live_word && state != GREY_STATE {
                     // Dead, free-listed, or already marked.
                     continue;
                 }
@@ -836,7 +839,7 @@ impl Context {
             } else if let Some(a) = self.large.get(&addr) {
                 // SAFETY: `base` heads an owned large allocation.
                 let state = unsafe { (a.base as *const u64).read() };
-                if !matches!(state, LIVE_STATE | GREY_STATE) {
+                if state != self.mark_cycle.live_word && state != GREY_STATE {
                     // Already marked.
                     continue;
                 }
@@ -849,7 +852,7 @@ impl Context {
             let (payload, class_id) = unsafe {
                 let payload = block.add(HEADER_SIZE);
                 let class_id = header_class_id(block);
-                block.cast::<u64>().write(MARK_STATE);
+                block.cast::<u64>().write(self.mark_cycle.marked_word);
                 (payload, class_id)
             };
             if class_id == CLASS_GENERATOR {
@@ -858,78 +861,6 @@ impl Context {
             pushed += self.scan_payload(payload, payload_size, class_id, work, tracer);
         }
         pushed
-    }
-
-    /// Ship-tier sweep (§8.1b): walk every chunk's grid up to its bump
-    /// watermark — unreached live blocks join their class free list,
-    /// marked survivors are restored to `LIVE_STATE` — then free every
-    /// unreached large record and restore the marked ones.
-    pub(super) fn arena_sweep(&mut self) {
-        for ci in 0..self.chunks.len() {
-            let (cbase, block_size, class, bump) = {
-                let c = &self.chunks[ci];
-                (c.base, c.block_size, c.class, c.bump)
-            };
-            let mut free_head = self.free_heads[class];
-            let mut retired_bytes = 0usize;
-            for bi in 0..bump {
-                // SAFETY: `bi < bump`, so the block is inside the owned
-                // chunk; the state word and the payload's first two words
-                // (the free-list link and the chunk index) stay inside it.
-                unsafe {
-                    let block = cbase.add(bi * block_size);
-                    let state = (block as *const u64).read();
-                    // compiler.md §356 rule 10: the end emptied the work
-                    // list, so no block is in it.
-                    debug_assert_ne!(state, GREY_STATE, "a block in the work list at the sweep");
-                    match state {
-                        // A release build keeps a block in the work list.
-                        MARK_STATE | GREY_STATE => (block as *mut u64).write(LIVE_STATE),
-                        LIVE_STATE => {
-                            (block as *mut u64).write(DEAD_STATE);
-                            let payload = block.add(HEADER_SIZE);
-                            (payload as *mut usize).write(free_head);
-                            // compiler.md §346 rule 1a: the chunk index for
-                            // the free-list pop.
-                            (payload as *mut usize).add(1).write(ci);
-                            free_head = payload as usize;
-                            retired_bytes += block_size - HEADER_SIZE;
-                        }
-                        // DEAD_STATE: already on the free list.
-                        _ => {}
-                    }
-                }
-            }
-            self.free_heads[class] = free_head;
-            self.live_bytes_counter = self.live_bytes_counter.saturating_sub(retired_bytes);
-        }
-        // Cannot `remove`+`dealloc` while iterating, so collect the
-        // unreached payload addresses first.
-        let mut freed: Vec<usize> = Vec::new();
-        for (&addr, a) in &self.large {
-            // SAFETY: `base` heads an owned large allocation.
-            unsafe {
-                let state = (a.base as *const u64).read();
-                debug_assert_ne!(state, GREY_STATE, "a block in the work list at the sweep");
-                match state {
-                    MARK_STATE | GREY_STATE => (a.base as *mut u64).write(LIVE_STATE),
-                    _ => freed.push(addr),
-                }
-            }
-        }
-        for addr in freed {
-            if let Some(a) = self.large.remove(&addr) {
-                self.live_bytes_counter = self.live_bytes_counter.saturating_sub(a.payload_size);
-                // SAFETY: `base`/`layout` came from `alloc_zeroed` in
-                // `arena_alloc_large`; the record was just removed so
-                // this frees it exactly once.
-                unsafe { dealloc(a.base, a.layout) };
-                #[cfg(test)]
-                self.stats
-                    .large
-                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-            }
-        }
     }
 
     // ----- strings (Q5) -----
@@ -1748,6 +1679,8 @@ impl Context {
     }
 
     /// Frees the release plan's array storage and sweeps the marked heap.
+    /// The end of a cycle in steps of the ship arena leaves the small blocks
+    /// to the sweep steps (`compiler.md` §357 rule 4).
     /// The caller must release every handle from the plan before this call.
     fn finish_collection(&mut self, plan: CollectionReleases) {
         self.keep_unended_tasks(&plan.ending_tasks);
@@ -1757,22 +1690,30 @@ impl Context {
             }
         }
         if self.uses_ship_arena() {
-            self.arena_sweep();
-            // compiler.md §356 rule 5: the sweep ends the cycle.
+            // compiler.md §357 rules 1, 4, and 10: the regex values and the
+            // large blocks, then the exchange of the two words. The end of a
+            // cycle in steps leaves the small blocks to the sweep steps; any
+            // other collection sweeps them in this pause.
+            let in_steps = self.take_sweep_in_steps();
+            self.begin_sweep();
+            // compiler.md §356 rule 5: the end of the mark ends the cycle.
             self.clear_mark_cycle();
-        } else {
-            let retiring = if self.freed_handle_diagnostics
-                && self.freed_handle_diagnostics_max_retained_bytes == usize::MAX
-            {
-                self.allocations
-                    .values()
-                    .filter(|allocation| !allocation.marked)
-                    .count()
-            } else {
-                0
-            };
-            self.sweep_dev_allocations(retiring);
+            if !in_steps || self.sweep_slots_left() == 0 {
+                self.sweep_slots(usize::MAX);
+            }
+            return;
         }
+        let retiring = if self.freed_handle_diagnostics
+            && self.freed_handle_diagnostics_max_retained_bytes == usize::MAX
+        {
+            self.allocations
+                .values()
+                .filter(|allocation| !allocation.marked)
+                .count()
+        } else {
+            0
+        };
+        self.sweep_dev_allocations(retiring);
         self.sweep_regex_values();
     }
 

@@ -15,7 +15,7 @@ const COLLECTION_STATS_SOURCE: &str = include_str!("context/collection_stats.rs"
 
 /// The fields of `subscript_rt_collection_stats`, in the sequence of
 /// `compiler.md` §353 rule 2. Each field is `uint64_t`.
-const COLLECTION_STATS_FIELDS: [&str; 11] = [
+const COLLECTION_STATS_FIELDS: [&str; 14] = [
     "automatic_collections",
     "explicit_collections",
     "total_ns",
@@ -27,6 +27,9 @@ const COLLECTION_STATS_FIELDS: [&str; 11] = [
     "mark_steps",
     "forced_ends",
     "max_pause_words_read",
+    "sweep_steps",
+    "max_pause_slots_swept",
+    "late_sweeps",
 ];
 
 /// Context functions whose `ffi.rs` documentation the header carries: the
@@ -927,6 +930,9 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
             core::mem::offset_of!(CollectionStats, mark_steps),
             core::mem::offset_of!(CollectionStats, forced_ends),
             core::mem::offset_of!(CollectionStats, max_pause_words_read),
+            core::mem::offset_of!(CollectionStats, sweep_steps),
+            core::mem::offset_of!(CollectionStats, max_pause_slots_swept),
+            core::mem::offset_of!(CollectionStats, late_sweeps),
         ];
         // The C offset of field `index` of a struct of `uint64_t` fields
         // with no padding is `8 * index`.
@@ -940,9 +946,10 @@ typedef void (*subscript_main_entry)(subscript_rt_context* ctx);
         ));
         assert!(header
             .contains("void subscript_rt_ctx_reset_collection_stats(subscript_rt_context* ctx);"));
-        // compiler.md §356 acceptance 6: the record has 11 fields, and the
-        // header declares the two functions of the mark in steps.
-        assert_eq!(core::mem::size_of::<CollectionStats>(), 88);
+        // compiler.md §356 acceptance 6 and §357 acceptance 7: the record
+        // has 14 fields, and the header declares the two functions of the
+        // mark in steps.
+        assert_eq!(core::mem::size_of::<CollectionStats>(), 112);
         assert!(header.contains(
             "int32_t subscript_rt_ctx_set_collection_step(subscript_rt_context* ctx, \
              uint64_t budget_words);"

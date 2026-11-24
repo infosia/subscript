@@ -487,11 +487,25 @@ and an end. Script code runs between two pauses. The start takes the
 roots. A step marks blocks until it has read its budget of words. The
 end reads the roots again and marks with the budget. If mark work is
 left after the budget, the pause is a step, and the next pause tries the
-end again. If no mark work is left, the end sweeps in the same pause.
+end again. If no mark work is left, the end releases the large objects
+that have no mark. Then the sweep runs in sweep steps after the end
+(§357). A sweep step reads at most 5 block slots for each word of the
+budget: 250,000 slots with the default budget. In mode 3 a sweep has at
+most 8 sweep steps, so a step of a large heap can read more slots. No
+cycle starts while a sweep is in progress.
 The time of a step follows the budget, not the size of the live data. In mode 1 the
 steps follow the allocation and the stores of references (§356 rules 6
 and 6b): a program that changes references and does not allocate also
-ends its cycle.
+ends its cycle. The sweep steps also follow the allocation, so that the
+sweep ends before the next cycle starts. If the program allocates faster,
+each poll and each outermost exit runs one sweep step until the sweep
+ends (§357 rule 9).
+
+While a sweep is in progress, `subscript_rt_ctx_live_bytes` and
+`subscript_rt_ctx_live_allocations` include the objects that the sweep
+did not reach yet. The program cannot reach these objects. The limit of
+the next collection is set when the sweep ends, to the value that a
+sweep in one pause gives.
 
 `subscript_rt_ctx_set_collection_step(ctx, budget_words)` sets the
 budget. The unit is the word of 8 bytes that the mark tests (§353 rule
@@ -516,17 +530,21 @@ These collections are one pause at each budget:
 
 If a cycle is in progress, an explicit collection, the failed-task
 check, and a collection of mode 2 end that cycle first, with no budget.
-Then each of them runs one whole collection.
+Then each of them runs one whole collection. If a sweep is in progress,
+each of them completes the sweep in its pause first. A budget of 0 that
+the host sets during a sweep completes the sweep at the next poll.
 
 `subscript_rt_ctx_collect_step(ctx, budget_words)` runs one pause of a
 cycle at a point that the host selects. If no cycle is in progress, it
 starts one. If mark work is left, it runs one step. If no work is
 left, or the last step left none, it runs the end. The mark of the end
 has the budget, so the end can take more than one call: if mark work is
-left after the budget, the call is a step. It returns 1 if a cycle is in
-progress after the call, and 0 if the call ended the cycle. Each call
-after the start that returns 1 marks objects that had no mark, so a loop
-that calls it until it returns 0 ends. It returns -1 for a budget of 0,
+left after the budget, the call is a step. After the end, each call runs
+one sweep step of at most 5 slots for each word of `budget_words`. It
+returns 1 if a cycle or its sweep is in progress after the call, and 0
+if the call completed the sweep. Each call after the start that returns
+1 marks objects that had no mark or sweeps a part of the arena, so a
+loop that calls it until it returns 0 ends. It returns -1 for a budget of 0,
 while a script call is on the stack, and in mode 2 and mode 3. In the dev tier, and in
 a Context with no step form, it runs one whole collection and returns 0.
 This host of the host-timed level starts a cycle each 60 frames and runs
@@ -548,10 +566,10 @@ for (uint64_t frame = 0; running; frame += 1) {
 End each cycle that you start. While a cycle is in progress, a store of
 a reference to an object that has no mark puts that object in the work
 of the mark, one time for each object (§356 rule 10). Until the end,
-objects that the program drops stay, because the sweep is at the end. A
-change to mode 0 keeps a cycle that is in progress, and no poll serves
-it. `subscript_rt_ctx_collect_step` or `subscript_rt_ctx_collect` ends
-it.
+objects that the program drops stay, because the sweep is after the end. A
+change to mode 0 keeps a cycle or a sweep that is in progress, and no
+poll serves it. `subscript_rt_ctx_collect_step` or
+`subscript_rt_ctx_collect` ends it.
 
 ### The time of a collection
 
@@ -565,20 +583,26 @@ field to zero. Call both between script calls. `max_ns` is the longest
 single collection since the last reset. `max_ns` and `max_words_read` can
 come from different collections.
 
-Three fields at the end of the record are of the
-[collections in steps](#a-collection-in-steps) (§356 rule 17):
+Six fields at the end of the record are of the
+[collections in steps](#a-collection-in-steps) (§356 rule 17 and §357
+rule 13):
 
 | Field | Meaning |
 |---|---|
 | `mark_steps` | The mark steps: each pause that is not the start or the end of a cycle. |
 | `forced_ends` | The cycles that became late. The program allocated more than one limit since the start of the cycle, so from there each poll and each outermost exit ran one step, with the budget, until the end. |
 | `max_pause_words_read` | The largest count of words that one pause read. |
+| `sweep_steps` | The sweep steps: each pause after the end of a cycle that releases the objects in a part of the arena. |
+| `max_pause_slots_swept` | The largest count of block slots that one pause swept. A collection that sweeps in its own pause counts each slot in that pause. |
+| `late_sweeps` | The sweeps that became late. The program allocated up to the start of the next cycle before the sweep ended, so from there each poll and each outermost exit ran one sweep step, with the budget, until the sweep ended. |
 
 For a cycle in steps, `last_ns` and `max_ns` are the time of one pause:
-the start, one step, or the end. `total_ns` is the sum of the pauses.
-`automatic_collections` counts the cycles that ended. `last_words_read`
-and `max_words_read` are of one whole cycle. A collection with no steps
-is one pause. In the dev tier, `mark_steps` and `forced_ends` stay zero.
+the start, one step, the end, or one sweep step. `total_ns` is the sum
+of the pauses. `automatic_collections` counts the cycles that ended.
+`last_words_read` and `max_words_read` are of one whole cycle.
+`last_live_bytes_after` is of the last sweep that ended. A collection
+with no steps is one pause. In the dev tier, `mark_steps`, `forced_ends`,
+`sweep_steps`, and `late_sweeps` stay zero.
 
 The record is for one Context: the
 collections of a Worker are not in it. An automatic collection inside an

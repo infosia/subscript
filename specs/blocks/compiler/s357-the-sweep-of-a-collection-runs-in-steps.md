@@ -174,7 +174,73 @@ Problem, measured at `6c889b41` in the ship tier (G16, G17):
 | 1 | Runtime: rules 1 to 13, the readers of rule 2, the record, the header; acceptance 1 to 5 and 7. |
 | 2 | Rule 15 in mode 3 and the stress sweep; the documents; acceptance 6 and 8 to 12. |
 
+### 357.4a Phase Review
+
+Form.
+
+- `runtime/src/context/sweep_steps.rs` holds the exchange, the
+  position and the limits of a sweep, the sweep step, the parts of
+  rule 6, the late sweep, the completion, and the check of rule 15.
+  The two words are fields of the cycle state of §356. The grey
+  state and the dead state keep constant words.
+- The end releases the large blocks and the regex values with no
+  mark, then it exchanges. The limits are the bump mark of each
+  chunk at the exchange: a count of words in the order of the
+  chunks.
+- The allocation path does not change: it writes the word that
+  §356 rule 4 gave it, and it tests the value of §346.
+- A test reads each source file of the runtime and finds a constant
+  state word only at the definitions and at the first value of the
+  two words.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| Acceptance 1 | budget 50,000: 4 sweep steps, at most 250,000 slots plus one chunk in a pause; budget 0: one pause of 1,000,000 slots |
+| Step sweep, mode 3, 610 ship entries | each equal at budgets 64, 16, and 4; 7,993, 6,093, and 3,456 cycles ended; 7,763, 6,009, and 4,733 sweep steps; no message |
+| Mode 2 sweep | dev JIT 612 of 612, ship 610 of 610, interpreter 500 of 500 |
+| Cost of the sweep test | 46.5 to 48.9 s in a release build |
+| Control: a block that is allocated during a sweep gets the word of a block to release | rule 15 stops 263, 253, and 191 runs: 280 entries |
+| Control of §356 with this section: no barrier | rule 20a of §356 stops 19, 24, and 25 entries, 39 together (22, 25, 23, and 40 before) |
+| Largest pause, default budget | 0.75 to 0.83 ms at 16 MiB, 1.19 to 1.44 ms at 64 MiB, 0.82 to 1.11 ms in the game form, 0.40 to 1.08 ms in the island form |
+| Reserved memory at the end against §356 | +2.8 %, +2.3 %, +0.8 %, +5.7 % |
+| Run time against §356 | 0.94 to 0.97 s against 0.95 to 0.98 s; 5.40 to 5.48 s against 5.42 to 5.45 s; 3.13 to 3.24 s against 3.14 to 3.36 s; 0.48 to 0.52 s against 0.47 s |
+| `perf-gate --gate`, two runs | each criterion met; `a22` ship 1.32x and 1.33x, `collect` ship 0.97x and 0.98x |
+| Goldens | none moved |
+
+The figures of the workloads are in
+`specs/tracking/automatic-collection.md`, G18.
+
+Defects that the rounds found and closed.
+
+| Defect | Close |
+|---|---|
+| A limit from the live bytes at the end of the cycle grew in each cycle (388 MiB reserved for 16 MiB live) | rule 11: the limit of the last sweep that ended applies until the sweep ends |
+| A sweep that ends at 1/2 of the bytes before the next cycle gave 4 to 15 % more reserved memory | rule 6: 1/8 |
+
+Phase Review (a subagent with no context, on the staged diff): no
+CRITICAL, no MAJOR, 3 MINOR.
+
+| Finding | Close |
+|---|---|
+| MINOR, realistic: an exact collection during a sweep recorded the completion of the sweep as a pause of its own | the sweep completes inside the pause of the collection; the test reads `sweep_steps`, `explicit_collections`, and `max_pause_slots_swept` |
+| MINOR, realistic: comments stated that the sweep follows the end in the same pause, and a constant live word | corrected |
+| MINOR, contrived: the text for a host gave the size of a sweep step with no word on mode 3 | the header and the C tutorial |
+
+`tools/hygiene.sh`: exit 0.
+
+`tools/gate.sh full` on the tree before this record: exit 0, debug
+4238 passed, release 4219 passed, 0 failed, 10 ignored in each. No
+golden moved.
+
 ### 357.5 Open
 
 1. The dev tier and the interpreter have no sweep in steps (rule 14).
 2. The large blocks are released at the end, in one pause.
+3. The count and the time of the pauses inside one frame of a host
+   are not measured: the workloads run each frame inside one call.
+4. A program with 1.5 MiB live and 16 MiB of headroom runs 2 to 10 %
+   longer than with a budget of 0: the cycle in steps starts at 7/8
+   of the limit (§356 rule 7), so the count of the cycles is 88
+   against 77.

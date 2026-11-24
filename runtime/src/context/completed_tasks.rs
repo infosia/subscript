@@ -497,9 +497,11 @@ impl Context {
         if let Some(block) = block {
             // SAFETY: an exact allocation lookup proves that the header is
             // readable and writable.
+            // compiler.md §357 rule 2: the words of the Context.
             unsafe {
-                if matches!(block.cast::<u64>().read(), LIVE_STATE | GREY_STATE) {
-                    block.cast::<u64>().write(MARK_STATE);
+                let state = block.cast::<u64>().read();
+                if state == self.mark_cycle.live_word || state == GREY_STATE {
+                    block.cast::<u64>().write(self.mark_cycle.marked_word);
                 }
             }
         }

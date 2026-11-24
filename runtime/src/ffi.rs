@@ -968,7 +968,9 @@ pub unsafe extern "C" fn subscript_rt_host_entry_reentry(
 ///
 /// The count is equal in the tiers only directly after an explicit
 /// collection. Between explicit collections it depends on where automatic
-/// collections ran (compiler.md §342 rule 20).
+/// collections ran (compiler.md §342 rule 20). In the ship tier, while a
+/// sweep in steps is in progress, the count includes the objects that the
+/// sweep did not reach yet (compiler.md §357 rule 3).
 ///
 /// # Safety
 ///
@@ -984,7 +986,10 @@ pub unsafe extern "C" fn subscript_rt_ctx_live_allocations(ctx: *const Context) 
 /// Development reports exact requested sizes; ship reports size-class
 /// capacity for arena blocks and exact sizes for large allocations. Between
 /// explicit collections the figure also depends on where automatic
-/// collections ran (compiler.md §342 rule 20).
+/// collections ran (compiler.md §342 rule 20). In the ship tier, while a
+/// sweep in steps is in progress, the figure includes the objects that the
+/// sweep did not reach yet (compiler.md §357 rule 11). The program cannot
+/// reach them.
 ///
 /// # Safety
 ///
@@ -1016,7 +1021,9 @@ pub unsafe extern "C" fn subscript_rt_ctx_reserved_bytes(ctx: *const Context) ->
 /// This is the same collector that `Context.collect()` reaches from
 /// script and that an automatic collection runs, so the callers share one
 /// mark-sweep. If it releases the last holder of a failed task that nobody
-/// awaits, it traps (rule 13). The script
+/// awaits, it traps (rule 13). If a sweep in steps is in progress, the
+/// call completes it in the same pause first (compiler.md §357 rule 10).
+/// The script
 /// intrinsic keeps its own symbol, `subscript_rt_collect`, which the
 /// generated host header does not declare.
 ///
@@ -1041,8 +1048,12 @@ pub unsafe extern "C" fn subscript_rt_ctx_collect(ctx: *mut Context) {
 /// words that the mark read, and the live bytes after the last collection.
 /// Three fields are of the collections whose mark runs in steps
 /// (compiler.md §356 rule 17): `mark_steps`, `forced_ends`, and
-/// `max_pause_words_read`. For such a collection, `last_ns` and `max_ns`
-/// are of one pause, and `total_ns` is the sum of the pauses.
+/// `max_pause_words_read`. Three fields are of the sweep in steps after
+/// the end of such a collection (compiler.md §357 rule 13): `sweep_steps`,
+/// `max_pause_slots_swept`, and `late_sweeps`. For such a collection,
+/// `last_ns` and `max_ns` are of one pause, and `total_ns` is the sum of
+/// the pauses. A sweep step is a pause. `last_live_bytes_after` is of the
+/// last sweep that ended.
 /// Each field is for the span from the start of `ctx` or from the last
 /// `subscript_rt_ctx_reset_collection_stats`. `max_ns` and `max_words_read`
 /// are each the largest of one collection in that span, and they can come
@@ -1102,12 +1113,21 @@ pub unsafe extern "C" fn subscript_rt_ctx_reset_collection_stats(ctx: *mut Conte
 /// The end of a collection in steps reads the roots again and marks with
 /// the budget. If mark work is left after the budget, the pause is a step,
 /// and the next pause tries the end again. If no mark work is left, the
-/// releases and the sweep follow in the same pause.
+/// releases and the release of the large objects with no mark follow in
+/// the same pause. Then the sweep runs in sweep steps after the end
+/// (compiler.md §357). A sweep step reads at most 5 block slots for each
+/// word of the budget. In mode 3 a sweep has at most 8 sweep steps, so a
+/// step of a large heap can read more slots (compiler.md §357 rule 15). In
+/// mode 1 the sweep steps follow the allocation, so
+/// that the sweep ends before the next collection starts. No collection
+/// starts while a sweep is in progress.
 ///
 /// An explicit collection, the failed-task check of the outermost exit
 /// (compiler.md §342 rule 14), and each collection of mode 2 are one pause
 /// at each budget. If a collection in steps is in progress, each of them
-/// ends it first, with no budget, and then runs one whole collection. The
+/// ends it first, with no budget, and then runs one whole collection. If a
+/// sweep is in progress, each of them completes it in its pause first, and
+/// a budget of 0 completes it at the next poll. The
 /// dev tier and the interpreter run each collection in one pause, and the
 /// budget has no effect there. A ship Context that is created while
 /// `SUBSCRIPT_MARK_TRACE` is set also runs each collection in one pause,
@@ -1143,8 +1163,11 @@ pub unsafe extern "C" fn subscript_rt_ctx_set_collection_step(
 /// rule 5): if mark work is left after the budget, the call is a step and
 /// returns 1, and the next call tries the end again. So the end can take
 /// more than one call. Each call after the start that returns 1 marks
-/// blocks that had no mark, so a loop of calls ends. Returns 1 if a collection in steps is in progress
-/// after the call, and 0 if the call ended it. The call is valid in mode 0
+/// blocks that had no mark, so a loop of calls ends. The end starts a
+/// sweep, and each call after it runs one sweep step of at most 5 slots for
+/// each word of `budget_words` (compiler.md §357 rules 5 and 12). Returns 1
+/// if a collection in steps or its sweep is in progress after the call, and
+/// 0 if the call completed the sweep. The call is valid in mode 0
 /// and in mode 1. A host of the host-timed level calls it at each frame
 /// until it returns 0. The host must end each collection that it starts:
 /// until the end, the memory that the program drops stays, and the work

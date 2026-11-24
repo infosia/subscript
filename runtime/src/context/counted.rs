@@ -357,7 +357,10 @@ impl Context {
             .map(|(block, _)| block)
             .or_else(|| self.large.get(&address).map(|allocation| allocation.base));
         // SAFETY: an exact allocation lookup proves that the header is readable.
-        block.is_some_and(|block| unsafe { block.cast::<u64>().read() == MARK_STATE })
+        // compiler.md §357 rule 2: the marked word of the Context.
+        block.is_some_and(|block| unsafe {
+            block.cast::<u64>().read() == self.mark_cycle.marked_word
+        })
     }
 
     pub(super) fn unreachable_releases(&mut self) -> (Vec<usize>, Vec<usize>) {

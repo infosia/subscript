@@ -5,9 +5,9 @@
 //! The start takes the roots into a work list. A step marks the blocks that
 //! the words of the work list name, within a budget of words. The end is
 //! one pause: it reads the roots again and marks with the budget. If the
-//! work list is empty after the budget, the releases and the sweep follow
-//! in the same pause. Else the pause is a step, and the next pause tries
-//! the end again.
+//! work list is empty after the budget, the releases follow in the same
+//! pause, and a sweep in steps starts (`compiler.md` §357). Else the pause
+//! is a step, and the next pause tries the end again.
 
 use super::collection::CollectionKind;
 use super::*;
@@ -41,8 +41,16 @@ struct DividedScan {
 #[derive(Debug)]
 pub(super) struct MarkCycle {
     // The state word that an allocation writes in the header of a new
-    // block: the mark state during a cycle (rule 4), else the live state.
+    // block: the marked word during a cycle (rule 4), else the live word.
+    // compiler.md §357 rule 1: the live word of the exchange.
     pub(super) alloc_state: u64,
+    // compiler.md §357 rule 1: the header state word of a live block and
+    // the word that a mark writes. The end of a cycle and of a collection
+    // of one pause exchanges them.
+    pub(super) live_word: u64,
+    pub(super) marked_word: u64,
+    // compiler.md §357: the sweep in steps.
+    pub(super) sweep: super::sweep_steps::SweepState,
     active: bool,
     work: Vec<usize>,
     divided: Option<DividedScan>,
@@ -74,7 +82,7 @@ pub(super) struct MarkCycle {
     pause_checks: Vec<MarkCheck>,
     // compiler.md §356 rule 5: true from the end of a mark that read the
     // roots and emptied the work list within the budget, until the
-    // releases and the sweep of the same pause start.
+    // releases of the same pause start.
     end_marked: bool,
     // compiler.md §356 rule 20b: true for a Context that has a mark trace
     // target, which has no step form.
@@ -85,6 +93,9 @@ impl Default for MarkCycle {
     fn default() -> Self {
         Self {
             alloc_state: LIVE_STATE,
+            live_word: LIVE_STATE,
+            marked_word: MARK_STATE,
+            sweep: super::sweep_steps::SweepState::default(),
             active: false,
             work: Vec::new(),
             divided: None,
@@ -220,10 +231,12 @@ impl Context {
     /// it runs one step of `budget_words`. If the work list is empty, or
     /// the last step left it empty, it runs the end, whose mark has the
     /// budget (rule 5): if the mark does not complete within the budget,
-    /// the call is a step and returns 1. Returns 1 if a cycle is in
-    /// progress after the call, 0 if the call ended the cycle, and -1 with
-    /// no work for a script depth that is not zero, a budget of 0, or a
-    /// mode other than 0 and 1.
+    /// the call is a step and returns 1. After the end, each call runs one
+    /// sweep step of at most 5 slots for each word of `budget_words`
+    /// (`compiler.md` §357 rules 5 and 12). Returns 1 if a cycle or a sweep
+    /// is in progress after the call, 0 if the call completed the sweep,
+    /// and -1 with no work for a script depth that is not zero, a budget of
+    /// 0, or a mode other than 0 and 1.
     ///
     /// A Context with no step form runs one whole collection and returns 0
     /// (rules 20b and 21).
@@ -279,7 +292,7 @@ impl Context {
         // SAFETY: an exact allocation lookup proves that the header is
         // readable and writable.
         unsafe {
-            if block.cast::<u64>().read() != LIVE_STATE {
+            if block.cast::<u64>().read() != self.mark_cycle.live_word {
                 // Dead, free-listed, marked, or in the list.
                 return;
             }
@@ -327,11 +340,12 @@ impl Context {
         // SAFETY: an exact allocation lookup proves that the header is
         // readable and writable.
         unsafe {
-            match block.cast::<u64>().read() {
-                LIVE_STATE | MARK_STATE => block.cast::<u64>().write(GREY_STATE),
+            let state = block.cast::<u64>().read();
+            if state != self.mark_cycle.live_word && state != self.mark_cycle.marked_word {
                 // In the list already, or not live.
-                _ => return,
+                return;
             }
+            block.cast::<u64>().write(GREY_STATE);
         }
         self.mark_cycle.work.push(payload);
         self.collection.stats.carry_words(1);
@@ -602,8 +616,16 @@ impl Context {
     }
 
     /// Runs one pause of a cycle: the start, a step of `budget` words, or
-    /// the end. Returns true if a cycle is in progress after the pause.
+    /// the end. Returns true if a cycle or a sweep is in progress after the
+    /// pause.
+    ///
+    /// `compiler.md` §357 rules 4, 9, and 12: while a sweep is in progress,
+    /// the pause is a sweep step, and no cycle starts. The end of a cycle
+    /// starts a sweep in steps.
     pub(super) fn run_cycle_pause(&mut self, budget: usize) -> bool {
+        if self.sweep_in_progress() {
+            return self.sweep_pause(budget);
+        }
         if !self.mark_cycle.active {
             self.start_cycle(budget);
             return true;
@@ -616,8 +638,8 @@ impl Context {
             && self.mark_cycle.steps >= STRESS_STEP_LIMIT;
         if stress_limit {
             self.check_at_pause();
-            self.run_whole_collection(CollectionKind::Automatic);
-            return false;
+            self.end_cycle_with_sweep_in_steps(budget);
+            return self.sweep_in_progress();
         }
         if self.mark_cycle.step_is_next() {
             self.note_late_cycle();
@@ -643,13 +665,14 @@ impl Context {
             self.place_next_pause();
             return true;
         }
-        // The releases and the sweep follow in the same pause, which keeps
-        // the time and the words of the mark.
+        // The releases, the large blocks, and the exchange follow in the
+        // same pause, which keeps the time and the words of the mark. The
+        // small blocks follow in sweep steps (compiler.md §357 rule 4).
         self.mark_cycle.end_marked = true;
         self.collection.stats.continue_pause(started, words);
-        self.run_whole_collection(CollectionKind::Automatic);
+        self.end_cycle_with_sweep_in_steps(budget);
         self.mark_cycle.end_marked = false;
-        false
+        self.sweep_in_progress()
     }
 
     /// The mark of an end (`compiler.md` §356 rule 5): the roots go to the
@@ -667,7 +690,7 @@ impl Context {
             // SAFETY: an exact allocation lookup proves that the header is
             // readable and writable.
             unsafe {
-                if block.cast::<u64>().read() != LIVE_STATE {
+                if block.cast::<u64>().read() != self.mark_cycle.live_word {
                     // Dead, free-listed, marked, or in the list.
                     continue;
                 }
@@ -679,8 +702,8 @@ impl Context {
     }
 
     /// `compiler.md` §356 rule 5: true once, after an end whose mark
-    /// emptied the work list within the budget. The releases and the sweep
-    /// of that end then do not read the roots again.
+    /// emptied the work list within the budget. The releases of that end
+    /// then do not read the roots again.
     pub(super) fn take_end_marked(&mut self) -> bool {
         std::mem::take(&mut self.mark_cycle.end_marked)
     }
@@ -710,7 +733,7 @@ impl Context {
         self.mark_cycle.late = false;
         self.mark_cycle.given = 0;
         self.mark_cycle.active = true;
-        self.mark_cycle.alloc_state = MARK_STATE;
+        self.mark_cycle.alloc_state = self.mark_cycle.marked_word;
         self.mark_in_progress = 1;
         self.mark_cycle.start_requested = self.collection.requested;
         // compiler.md §356 rule 6: the steps share the headroom that is left
@@ -824,11 +847,12 @@ impl Context {
         let class_id = unsafe {
             // compiler.md §356 rule 10: a block in the work list has no
             // mark yet.
-            if !matches!(block.cast::<u64>().read(), LIVE_STATE | GREY_STATE) {
+            let state = block.cast::<u64>().read();
+            if state != self.mark_cycle.live_word && state != GREY_STATE {
                 // Dead, free-listed, or marked.
                 return 0;
             }
-            block.cast::<u64>().write(MARK_STATE);
+            block.cast::<u64>().write(self.mark_cycle.marked_word);
             header_class_id(block)
         };
         let mut pushed = 0;
@@ -860,7 +884,7 @@ impl Context {
     /// task, and its completion goes to the work list. A frame that is not
     /// a completed task gives its completion as a root at the end, so a
     /// step gives the completion of each reached frame.
-    fn push_frame_completion(&self, frame: usize, work: &mut Vec<usize>) -> usize {
+    pub(super) fn push_frame_completion(&self, frame: usize, work: &mut Vec<usize>) -> usize {
         let Some(completion) = self
             .async_frames
             .get(&frame)
@@ -911,14 +935,15 @@ impl Context {
         carried
     }
 
-    /// `compiler.md` §356 rule 5: after the sweep no block has a mark, and
-    /// the cycle ends.
+    /// `compiler.md` §356 rule 5 and §357 rule 1: after the exchange of the
+    /// two words a block that the mark reached holds the live word, and the
+    /// cycle ends. A new block gets the live word.
     pub(super) fn clear_mark_cycle(&mut self) {
         if !self.mark_cycle.active {
             return;
         }
         self.mark_cycle.active = false;
-        self.mark_cycle.alloc_state = LIVE_STATE;
+        self.mark_cycle.alloc_state = self.mark_cycle.live_word;
         self.mark_in_progress = 0;
         self.mark_cycle.work = Vec::new();
         self.mark_cycle.divided = None;
@@ -974,11 +999,11 @@ impl Context {
             // SAFETY: an exact allocation lookup proves that the header is
             // readable.
             let (state, class_id) = unsafe { (block.cast::<u64>().read(), header_class_id(block)) };
-            if !matches!(state, LIVE_STATE | MARK_STATE | GREY_STATE) || !seen.insert(address) {
+            if !self.header_is_live(state) || !seen.insert(address) {
                 continue;
             }
             // A block in the work list at the end has no mark.
-            if state != MARK_STATE {
+            if state != self.mark_cycle.marked_word {
                 check.count += 1;
                 if check.findings.len() < CHECK_FINDINGS {
                     check.findings.push(MarkFinding {
@@ -1059,7 +1084,10 @@ impl Context {
             };
             // SAFETY: an exact allocation lookup proves that the header is
             // readable.
-            unsafe { (block.cast::<u64>().read() == LIVE_STATE).then(|| header_class_id(block)) }
+            unsafe {
+                (block.cast::<u64>().read() == self.mark_cycle.live_word)
+                    .then(|| header_class_id(block))
+            }
         };
         let test = |word: usize, holder: u32, offset: usize, check: &mut MarkCheck| {
             if word == 0 || listed.contains(&word) {
@@ -1091,7 +1119,7 @@ impl Context {
         for (block, payload, payload_size) in arena.chain(large) {
             // SAFETY: each block of the walk has a complete header.
             let (state, class_id) = unsafe { (block.cast::<u64>().read(), header_class_id(block)) };
-            if state != MARK_STATE || divided == Some(payload) {
+            if state != self.mark_cycle.marked_word || divided == Some(payload) {
                 continue;
             }
             if class_id == CLASS_GENERATOR {

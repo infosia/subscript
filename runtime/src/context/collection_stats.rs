@@ -19,6 +19,12 @@ use super::*;
 /// `last_words_read` and `max_words_read` are of one whole cycle. The dev
 /// tier and the interpreter run each collection in one pause, so there
 /// `mark_steps` and `forced_ends` stay zero.
+///
+/// In the ship tier the sweep of a cycle in steps runs in sweep steps after
+/// the end (`compiler.md` §357 rule 13). A sweep step is a pause in
+/// `last_ns`, `max_ns`, and `total_ns`. `last_live_bytes_after` is of the
+/// last sweep that ended. The dev tier and the interpreter have no sweep
+/// steps, so there `sweep_steps` and `late_sweeps` stay zero.
 #[repr(C)]
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -57,6 +63,18 @@ pub struct CollectionStats {
     /// The largest count of words that one pause read. A collection with no
     /// steps is one pause.
     pub max_pause_words_read: u64,
+    /// The sweep steps: each pause after the end of a cycle that releases
+    /// the blocks to release in a part of the arena (`compiler.md` §357
+    /// rule 5).
+    pub sweep_steps: u64,
+    /// The largest count of slots that one pause swept. A collection that
+    /// sweeps in its own pause counts each slot of the arena in that pause.
+    pub max_pause_slots_swept: u64,
+    /// The sweeps that became late: the requested bytes reached the start
+    /// of the next cycle before the sweep ended, and from there each poll
+    /// and each outermost exit ran one sweep step (`compiler.md` §357 rule
+    /// 9).
+    pub late_sweeps: u64,
 }
 
 /// The state of the statistics in the collection state of a Context.
@@ -71,9 +89,13 @@ pub(super) struct StatsState {
     // to its own words for the words of the whole cycle.
     carried_words: u64,
     // compiler.md §356 rule 5: the time and the words of the mark of an
-    // end whose releases and sweep follow in the same pause. The next start
-    // continues them.
+    // end whose releases follow in the same pause. The next start continues
+    // them. The sweep of the small blocks follows in sweep steps (§357 rule
+    // 4).
     continued: Option<(std::time::Instant, u64)>,
+    // compiler.md §357 rule 13: the slots that the sweep read in the pause
+    // that is timed.
+    pause_slots: u64,
 }
 
 /// A timed collection that started (`compiler.md` §353 rule 4).
@@ -87,6 +109,7 @@ impl StatsState {
             return StatsStart(started);
         }
         self.mark_words = 0;
+        self.pause_slots = 0;
         StatsStart(std::time::Instant::now())
     }
 
@@ -129,6 +152,7 @@ impl StatsState {
             record.explicit_collections = record.explicit_collections.saturating_add(1);
         }
         Self::add_pause(record, ns, words);
+        record.max_pause_slots_swept = record.max_pause_slots_swept.max(self.pause_slots);
         record.last_words_read = cycle_words;
         record.max_words_read = record.max_words_read.max(cycle_words);
         record.last_live_bytes_after = live_bytes as u64;
@@ -145,6 +169,38 @@ impl StatsState {
             record.mark_steps = record.mark_steps.saturating_add(1);
         }
         self.carried_words = self.carried_words.saturating_add(words);
+    }
+
+    /// `compiler.md` §357 rule 13: adds the slots that the sweep read in the
+    /// pause that is timed.
+    pub(super) fn add_pause_slots(&mut self, slots: usize) {
+        self.pause_slots = self.pause_slots.saturating_add(slots as u64);
+    }
+
+    /// Records one sweep step (`compiler.md` §357 rule 13).
+    pub(super) fn finish_sweep_step(&mut self, start: StatsStart) {
+        let ns = Self::pause_ns(&start);
+        let record = &mut self.record;
+        record.sweep_steps = record.sweep_steps.saturating_add(1);
+        Self::add_pause(record, ns, 0);
+        record.max_pause_slots_swept = record.max_pause_slots_swept.max(self.pause_slots);
+    }
+
+    /// Counts one sweep that became late (`compiler.md` §357 rule 9).
+    pub(super) fn count_late_sweep(&mut self) {
+        self.record.late_sweeps = self.record.late_sweeps.saturating_add(1);
+    }
+
+    /// The live bytes after the last sweep that ended (`compiler.md` §357
+    /// rule 13).
+    pub(super) fn last_live_bytes_after(&self) -> u64 {
+        self.record.last_live_bytes_after
+    }
+
+    /// Sets the live bytes after the last sweep that ended (`compiler.md`
+    /// §357 rule 13).
+    pub(super) fn set_last_live_bytes_after(&mut self, live_bytes: u64) {
+        self.record.last_live_bytes_after = live_bytes;
     }
 
     /// Counts one cycle that became late (`compiler.md` §356 rule 7).
