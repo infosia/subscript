@@ -1591,3 +1591,16 @@ messages, host operations); an index for the owner of an address in
 a large block; the record taken in steps at the start of a minor
 cycle; a host function for the mode and the factor; the record
 fields of the two kinds of cycle.
+
+Owner decision, 2026-11-24: the minor collection does not land now.
+The largest pause is about 1 ms with §356 and §357, and the mode does
+not change it. The measured effect is throughput: shorter with a
+large live graph, longer in the island form. The mode-off form has a
+measured cost, so the prototype is not an optional mode yet.
+
+A later decision needs one of these two:
+
+1. A `CollectionStats` record of a host program with a large live
+   graph, where `total_ns` is a large part of the run time.
+2. A measurement of a form with no mode-off cost, and the cause of
+   the longer run time of the island form.
