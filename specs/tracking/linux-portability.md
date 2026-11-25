@@ -1378,3 +1378,30 @@ The unix-only CPU test of §349 acceptance 1,
 `cpu::a_receive_that_waits_uses_no_cpu`
 (`codegen/tests/worker_receive.rs`), passes in the debug and the
 release step.
+
+## Gate state at `ae3160c0`, 2026-11-25
+
+Host and tools as at `573104df`. The tree holds §351 to §357.
+
+```text
+gate full ae3160c0121aa72d5140007b6f94c97afd3b0842 clean debug 4242/0/10 release 4223/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 3, build 169, debug 385, release 203, clippy
+18, tsc 1, hygiene 0.
+
+The two debug skips are the `perf_gate` line and the
+`collection_stress_sweep` line. In the release step the sweep's test
+binary passed its three tests in 21.43 s.
+
+The ignored count goes from 5 to 10. Four new tests are the hand-run
+measurements of `runtime/tests/mark_lookup_cost.rs` (§355 acceptance 6
+and rule 5). The fifth is
+`context::collection_stats_tests::the_collection_time_curve_of_the_ship_arena`
+(§353 acceptance 8).
+
+The tests of §355 to §357 pass on this host in each profile:
+`context::chunk_pages`, `context::mark_cycle`,
+`context::mark_writer_tests`, `context::sweep_steps`,
+`context::collection_stats`, `worker::collection_tests`,
+`lir::block_store`, and `codegen/tests/mark_barrier_points.rs`.
