@@ -169,3 +169,19 @@ conservative form or a name list for each:
   measured gain of 31 % there.
 - A release at a last use is a gain for a large buffer in memory, not
   in time, and a loss for a small object beside a small live graph.
+
+## N3 — the two sections that landed
+
+- §358: `Context.free` releases a dynamic array of an uncounted
+  type, its header and its buffer. `tree` in the ship tier is 93.0 ms
+  against 95.1 ms before the section (a median of 10 for each).
+- §359: a static `filter` of a new array with one reader writes into
+  the buffer of its receiver. `callbacks` in the ship tier goes from
+  36.47 to 25.24 ms with the collection on and from 36.91 to
+  25.70 ms with it off; the development tier goes from 255.57 to
+  251.16 ms.
+
+Not landed, with the reason in the reading above: a class instance
+with no heap allocation, a release at a last use, `Context.move`,
+and `Move<T>`. A later decision on the first needs the count of the
+proved class sites of a host program.
