@@ -870,3 +870,49 @@ export async function main(): Promise<void> {
     let (tasks, waiters) = counts(all, 1000);
     assert_eq!(counts(all, 1400), (tasks + 400, waiters + 400));
 }
+
+/// `compiler.md` §358 rule 7 and §8.1a: with freed-handle diagnostics the
+/// Context retains the freed array, so the blocks that the program allocates
+/// next cannot take its address, and the second free traps at 9:3. Control:
+/// the same run without the option is not asserted, because its result
+/// depends on whether the system allocator reuses the address. On macOS
+/// arm64 the outer array took the address in each run, so the second free
+/// released it and the run trapped use-after-delete at 10:18.
+#[test]
+fn freed_handle_diagnostics_make_the_second_free_trap_after_reuse_pressure() {
+    let source = r#"
+export function main(): void {
+  const values: i32[] = [1, 2, 3];
+  Context.free(values);
+  const keep: i32[][] = [];
+  for (let i: i32 = 0; i < 16; i += 1) {
+    keep.push([i, i, i]);
+  }
+  Context.free(values);
+  print(`after ${keep.length}`);
+}
+"#;
+    let files = [SourceFile::new("reuse.ts", source)];
+    let module =
+        crate::lir::lower_module(&check_program(&files).expect("checked source")).expect("LIR");
+    let mut config = InterpretConfig {
+        freed_handle_diagnostics: true,
+        ..InterpretConfig::default()
+    };
+    for collection in [
+        None,
+        Some((subscript_runtime::context::CollectionMode::EachPoll, 0)),
+    ] {
+        config.collection = collection;
+        let error = interpret_configured(&module, config).expect_err("the second free traps");
+        let InterpretError::Execution { source, output } = error else {
+            panic!("{collection:?}: no execution output: {error}");
+        };
+        assert!(output.is_empty(), "{collection:?}: {output:?}");
+        let InterpretError::Trap { kind, pos, .. } = *source else {
+            panic!("{collection:?}: not a trap: {source}");
+        };
+        assert_eq!(kind, "double-delete", "{collection:?}");
+        assert_eq!((pos.line, pos.col), (9, 3), "{collection:?}");
+    }
+}

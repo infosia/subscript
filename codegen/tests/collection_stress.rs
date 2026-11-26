@@ -62,7 +62,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use subscript_codegen::interpreter::{interpret_with_collection, InterpretError};
+use subscript_codegen::interpreter::{interpret_configured, InterpretConfig, InterpretError};
 use subscript_codegen::lir::lower_module;
 use subscript_codegen::{
     run_c_aot_configured, run_c_aot_configured_runs, run_jit_configured, NativeLibrary, RunConfig,
@@ -774,8 +774,11 @@ fn step_count(cycles: &str, budget: &str, index: usize) -> Option<u64> {
 }
 
 /// The interpreter run of one entry with mode 2. An `Internal` trap is the
-/// failure of the allocation-fact check (`compiler.md` §342 rule 10a).
-fn interpreter_run(sources: &[SourceFile]) -> Outcome {
+/// failure of the allocation-fact check (`compiler.md` §342 rule 10a). A
+/// freed-handle entry runs with the diagnostics of its dev JIT run, so its
+/// trap does not depend on the reuse of a freed address (`compiler.md`
+/// §8.1a, §358 rule 7).
+fn interpreter_run(entry: &Entry, sources: &[SourceFile]) -> Outcome {
     let hir = match corpus::check_program(sources) {
         Ok(hir) => hir,
         Err(diagnostics) => return Outcome::Failed(format!("checker rejected: {diagnostics:?}")),
@@ -784,7 +787,11 @@ fn interpreter_run(sources: &[SourceFile]) -> Outcome {
         Ok(module) => module,
         Err(error) => return Outcome::Failed(format!("lower failed: {error}")),
     };
-    match interpret_with_collection(&module, CollectionMode::EachPoll, 0) {
+    let mut config = InterpretConfig::default();
+    config.collection = Some((CollectionMode::EachPoll, 0));
+    config.freed_handle_diagnostics =
+        entry.category == Category::Trap && trap_corpus::freed_handle_diagnostic(&entry.id);
+    match interpret_configured(&module, config) {
         Ok((stdout, run)) => Outcome::Complete {
             stdout,
             exits: Some(run.outermost_exits),
@@ -851,7 +858,7 @@ fn child_main(spec: &str) {
             }
             outcome
         }
-        Tier::Interpreter => interpreter_run(&sources),
+        Tier::Interpreter => interpreter_run(&entry, &sources),
     };
     std::fs::write(&result, outcome.encode()).expect("write the outcome");
 }

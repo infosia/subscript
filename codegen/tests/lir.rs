@@ -1120,7 +1120,10 @@ fn lir_interpreter_debug_subset_traps_at_declared_sites() {
             .unwrap_or_else(|diagnostics| panic!("{id}: checker rejected: {diagnostics:?}"));
         let module =
             lower_module(&hir).unwrap_or_else(|error| panic!("{id}: lower failed: {error}"));
-        let error = interpret(&module).expect_err("debug trap entry must trap");
+        let mut config = subscript_codegen::interpreter::InterpretConfig::default();
+        config.freed_handle_diagnostics = trap_corpus::freed_handle_diagnostic(id);
+        let error = subscript_codegen::interpreter::interpret_configured(&module, config)
+            .expect_err("debug trap entry must trap");
         assert_eq!(
             error.output(),
             trap_corpus::trap_expected(&trap, id),

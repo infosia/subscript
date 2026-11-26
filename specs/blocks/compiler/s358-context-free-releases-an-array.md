@@ -193,6 +193,19 @@ gate full 9dfa247c977a711a00c33a1b296226a0399260ff dirty:43 debug 4247/0/10 rele
 
 `tools/hygiene.sh`: exit 0.
 
+After the landing, one release run of the stress sweep gave no trap
+for `t121` in the interpreter: the run printed the line after the
+second free. Three runs before it gave the trap. The interpreter had
+no freed-handle diagnostics, so a freed block went back to the
+allocator, and an allocation at the same address made the handle
+live again. A program that frees an array, makes 16 arrays of the
+same size, and frees the first array again gave the trap of the
+second free in 0 of 20 runs with no diagnostics, and in 20 of 20
+runs with them. The interpreter takes the diagnostics as an option
+(`InterpretConfig`), and each interpreter run of `t22`, `t23`,
+`t121`, and `t122` sets it. The run of `t121` that failed did not
+occur again in 300 runs.
+
 ### 358.6 Open
 
 1. A free of an array inside its own `for…of`, and a free while a

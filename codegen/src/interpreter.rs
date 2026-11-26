@@ -1868,7 +1868,9 @@ mod roots;
 mod allocation_check;
 mod automatic_collection;
 mod script_entry_check;
-pub use automatic_collection::{interpret_with_collection, CollectionRun};
+pub use automatic_collection::{
+    interpret_configured, interpret_with_collection, CollectionRun, InterpretConfig,
+};
 mod dispatch;
 
 #[cfg(test)]
