@@ -16,6 +16,7 @@ fn add_read(
 pub(super) fn expression(
     expr: &hir::Expr,
     hir: &hir::Module,
+    in_place: &std::collections::BTreeSet<super::in_place::FilterSite>,
     expected: &mut BTreeMap<TrapKey, usize>,
 ) {
     use hir::{Callee, ExprKind as K};
@@ -81,7 +82,14 @@ pub(super) fn expression(
                         operand: hir::LifetimeOperand::Receiver,
                         pos: expr.pos.clone(),
                     };
-                    *expected.entry(hir_trap_key(&site)).or_default() += 1;
+                    // compiler.md §359 rule 12: an in-place `filter` reads
+                    // the array at the kept store and at the end step.
+                    let reads = if super::in_place::is_in_place(in_place, expr) {
+                        2
+                    } else {
+                        1
+                    };
+                    *expected.entry(hir_trap_key(&site)).or_default() += reads;
                 }
                 if *operation == hir::ArrFn::ReduceRight
                     && matches!(&callback.ty, Type::Func(signature) if operation.callback_index_arity() == Some(signature.params.len()))

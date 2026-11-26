@@ -160,3 +160,82 @@ Problem, measured at `a3ead965` in the ship tier:
 - A general proof that an allocation does not escape, a class
   instance with no heap allocation, and a release at a last use.
 - `Context.move` and `Move<T>`.
+
+### 359.5 Phase Review
+
+Form.
+
+- The decision is one walk of HIR for each body, before the
+  lowering (`codegen/src/lir/in_place_filter.rs`). A call has a key
+  of two positions: the call and its callback. A key with two
+  different decisions is not in the form.
+- Rule 2b reads the function: the name has one declaration and one
+  read, and a capture is a read. Rule 3 compares the loops around
+  the declaration with the loops around the call. Each loop
+  statement and each lambda body is a loop.
+- LIR has two built-in methods with no result:
+  `ArrayStoreKept(array, count, value)` and
+  `ArrayTruncateKept(array, count)`. The count is loop state. The
+  result of the call is the value of the receiver.
+- The ship tier emits the store inline with the barrier of §356,
+  and the end step as a length store after a `memset` that runs
+  only if the loop removed an element. An array with no buffer has
+  a length of zero, so no null pointer reaches the `memset`. The
+  development tier and the interpreter call
+  `subscript_rt_array_truncate` for the end step.
+- A test-only mode of the lowering (`InPlaceMode`: normal, off,
+  rule 3 ignored) serves rule 14 and the control of rule 3. The CLI
+  and each host path pass the normal mode.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| The check of rule 13 at the pin | 36 findings: 34 in `a512`, 2 in `a430` |
+| `callbacks`, ship tier, collection on, median of 10 | 36.47 ms to 25.24 ms; 4 to 3 automatic collections; live bytes after the call 28,194,688 to 24,194,640 |
+| `callbacks`, ship tier, collection off | 36.91 ms to 25.70 ms; live bytes after the call 164,196,320 to 84,195,360 |
+| `callbacks`, development tier, median of 22 | 255.57 ms to 251.16 ms |
+| Poll sites of `callbacks` | 2 |
+| The loop case of `a512` with rule 3 and with rule 3 ignored | `4,4,4` and `4,2,1` |
+| The test of rule 10 with no barrier on the store | "§356 rule 20: 3 reachable blocks have no mark" |
+| A ship run with the `memset` of the end step removed | A trap of the array tails at the collection |
+| A callback that traps in the middle | The output, the rule, and the position of a `filter` that allocates, in the three tiers |
+| The test of rule 14 | 2 entries (`a430`, `a512`), 1.23 s in a debug build; the control reports `a512` |
+| Stress sweep, mode 2 and mode 3 at each budget | Equal in each tier, no stop of a check |
+| LIR text golden | No function moved |
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 4
+MINOR. The review tried ten classes of programs against rule 5 (a
+read that the count does not see, a second declaration of the name,
+each loop form, an array literal in shared storage, each element
+type, each exit of the loop, the collector, the lifetime sites, a
+reload, two calls with one key) and found no wrong output.
+
+| Finding | Close |
+|---|---|
+| The second derivation of rule 13 has the walk and the loop model of the decision | Rule 14 and its test; the module of the second derivation states what it shares |
+| The test support walked the module for each call | It computes the set one time for each module |
+| Two assertions of the emitted C test held for a `filter` that allocates | Removed; the test has a new name |
+| An `expect` in the lowering | An error return |
+
+One full gate of this section failed in the release stress sweep
+with the trap entry `t121` of §358. The cause and the correction are
+in §358.5.
+
+`tools/gate.sh full` on the tree before this record:
+
+```text
+gate full 6b4889234bf723636e23760d804dfa5a914a3da0 dirty:36 debug 4259/0/10 release 4240/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
+### 359.6 Open
+
+1. The test of rule 14 runs the two corpus entries that have the
+   form. A wrong decision for a program that the corpus does not
+   have is found only by the check of rule 13, which has the model
+   of the decision.
+2. The development tier does not inline the callback call, and its
+   gain is 1.7 %.
+3. The items of §359.4.

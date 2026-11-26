@@ -132,6 +132,7 @@ pub(crate) fn register_runtime(builder: &mut JITBuilder) {
         subscript_rt_array_push,
         subscript_rt_array_pop,
         subscript_rt_array_pop_or_absent,
+        subscript_rt_array_truncate,
         subscript_rt_array_ptr,
         subscript_rt_assoc_iter_begin,
         subscript_rt_assoc_iter_bound,

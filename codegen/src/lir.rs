@@ -28,6 +28,8 @@ mod exception;
 mod expr;
 mod fixed_traversal;
 mod generator_close;
+mod in_place_filter;
+pub use in_place_filter::{lower_module_with_in_place_mode, InPlaceMode};
 mod invalidation;
 mod lambda;
 mod lambda_group;
@@ -113,7 +115,15 @@ pub fn lower_module_for_reload(
     module: &hir::Module,
     reload: bool,
 ) -> Result<l::Module, LowerError> {
-    let mut lowered = Lowering::new(module, reload)?.run()?;
+    lower_module_in_mode(module, reload, InPlaceMode::Normal)
+}
+
+fn lower_module_in_mode(
+    module: &hir::Module,
+    reload: bool,
+    in_place: InPlaceMode,
+) -> Result<l::Module, LowerError> {
+    let mut lowered = Lowering::new(module, reload, in_place)?.run()?;
     let layouts = crate::layout::Layouts::build_lir(&lowered).map_err(|message| LowerError {
         pos: Pos::new("<module>", 1, 1),
         message,
@@ -416,6 +426,7 @@ struct Lowering<'a> {
     default_functions: HashMap<(defaults::DefaultOwner, usize, bool), l::FunctionId>,
     classes: Vec<l::Class>,
     foreign: Vec<l::ForeignFunction>,
+    in_place_filters: HashSet<in_place_filter::FilterKey>,
 }
 
 mod operation_table;

@@ -60,9 +60,12 @@ pub(super) fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut V
             *expected.entry(trap_key(&pos, kind.into())).or_default() += count;
         }
     }
-    let mut seen_defaults = std::collections::BTreeSet::new();
+    let mut walk = TrapWalk {
+        seen_defaults: std::collections::BTreeSet::new(),
+        in_place: super::in_place::in_place_sites(hir),
+    };
     walk_execution_root_expressions(hir, &mut |expr| {
-        collect_trap_expression(expr, hir, &mut expected, findings, &mut seen_defaults);
+        collect_trap_expression(expr, hir, &mut expected, findings, &mut walk);
     });
     lifetime::statements(&hir.top_level, hir, &mut expected);
     for function in all_declared_functions(hir) {
@@ -71,7 +74,7 @@ pub(super) fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut V
     let cleanup = using::hook_facts(hir);
     for body in &cleanup.finalizers {
         walk_placed_statement_expression_roots(hir, body, &mut |expr| {
-            collect_trap_expression(expr, hir, &mut expected, findings, &mut seen_defaults)
+            collect_trap_expression(expr, hir, &mut expected, findings, &mut walk)
         });
         lifetime::statements(body, hir, &mut expected);
     }
@@ -133,12 +136,20 @@ pub(super) fn compare_traps(hir: &hir::Module, lir: &l::Module, findings: &mut V
     }
 }
 
+/// The state of one trap walk over a module.
+pub(super) struct TrapWalk {
+    /// The default expressions that the walk visited.
+    pub(super) seen_defaults: std::collections::BTreeSet<(Option<hir::LambdaId>, usize)>,
+    /// The in-place `filter` calls of the module (§359 rule 13), derived once.
+    pub(super) in_place: std::collections::BTreeSet<super::in_place::FilterSite>,
+}
+
 pub(super) fn collect_trap_expression(
     expression: &hir::Expr,
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
     findings: &mut Vec<String>,
-    seen_defaults: &mut std::collections::BTreeSet<(Option<hir::LambdaId>, usize)>,
+    walk: &mut TrapWalk,
 ) {
     let mut nodes = Vec::new();
     walk_expr(hir, expression, &mut |node| nodes.push(node));
@@ -179,7 +190,7 @@ pub(super) fn collect_trap_expression(
                     .or_default() += allocations;
             }
         }
-        lifetime::expression(node, hir, expected);
+        lifetime::expression(node, hir, &walk.in_place, expected);
         if !matches!(&node.kind, hir::ExprKind::Template(parts) if parts.is_empty()) {
             for site in node.trap_sites(hir) {
                 *expected.entry(hir_trap_key(&site)).or_default() += 1;
@@ -189,7 +200,11 @@ pub(super) fn collect_trap_expression(
                 args,
             } = &node.kind
             {
-                if static_array_callback(*operation, args).is_some() {
+                // compiler.md §359 rule 12: an in-place `filter` has no
+                // capacity allocation.
+                if static_array_callback(*operation, args).is_some()
+                    && !super::in_place::is_in_place(&walk.in_place, node)
+                {
                     if let Some(site) = node
                         .trap_sites(hir)
                         .into_iter()
@@ -206,13 +221,7 @@ pub(super) fn collect_trap_expression(
                     for (slot, field) in fields.iter().zip(&definition.fields) {
                         if slot.is_none() && !field.is_absence_capable {
                             if let Some(default) = &field.init {
-                                collect_trap_expression(
-                                    default,
-                                    hir,
-                                    expected,
-                                    findings,
-                                    seen_defaults,
-                                );
+                                collect_trap_expression(default, hir, expected, findings, walk);
                             }
                         }
                     }
@@ -222,13 +231,7 @@ pub(super) fn collect_trap_expression(
                 if let Some(definition) = hir.classes.get(class.0) {
                     for field in &definition.fields {
                         if let Some(initializer) = &field.init {
-                            collect_trap_expression(
-                                initializer,
-                                hir,
-                                expected,
-                                findings,
-                                seen_defaults,
-                            );
+                            collect_trap_expression(initializer, hir, expected, findings, walk);
                         }
                     }
                     if let Some(constructor) = &definition.ctor {
@@ -238,7 +241,7 @@ pub(super) fn collect_trap_expression(
                             hir,
                             expected,
                             findings,
-                            seen_defaults,
+                            walk,
                         );
                     }
                 }
@@ -258,7 +261,7 @@ pub(super) fn collect_trap_expression(
                         hir,
                         expected,
                         findings,
-                        seen_defaults,
+                        walk,
                     ),
                     Ok(None) => {}
                     Err(finding) => findings.push(finding),
@@ -280,7 +283,7 @@ pub(super) fn collect_trap_expression(
                         hir,
                         expected,
                         findings,
-                        seen_defaults,
+                        walk,
                     ),
                     Err(finding) => findings.push(finding),
                 }

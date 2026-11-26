@@ -3,6 +3,38 @@
 use super::*;
 
 impl Interpreter<'_> {
+    /// Stores a kept element of an in-place `filter` at the count
+    /// (`compiler.md` §359 rule 7). The count is below the length, and the
+    /// length does not change.
+    pub(super) fn store_kept(
+        &mut self,
+        operands: &[Value],
+        parameter_types: &[l::ValueType],
+    ) -> Result<Value, InterpretError> {
+        let [array, count, value] = operands else {
+            return Err(self.invalid(None, "kept store takes three operands"));
+        };
+        let array = array.as_handle()?;
+        let count = count.as_i64()?;
+        let Some(l::ValueType::Data(element)) = parameter_types.get(2) else {
+            return Err(self.invalid(None, "kept store has no element type"));
+        };
+        let bytes = self.pack(element, value)?;
+        let size = self.type_layout(element)?.size;
+        // SAFETY: live array.
+        let length = unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) };
+        if count < 0 || count >= i64::from(length) || bytes.len() < size {
+            return Err(self.invalid(None, "kept store is outside the array length"));
+        }
+        // SAFETY: the element lies inside the live array storage, below its
+        // length.
+        unsafe {
+            let data = ffi::subscript_rt_array_data(&*self.context, array).cast_mut();
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), data.add(count as usize * size), size);
+        }
+        Ok(Value::Void)
+    }
+
     pub(super) fn clear_array(
         &mut self,
         operands: &[Value],

@@ -173,6 +173,48 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 let result = self.builder.ins().ireduce(types::I32, result);
                 Ok(RV::Scalar(result))
             }
+            l::BuiltinMethod::ArrayStoreKept => {
+                // compiler.md §359 rule 7: the store goes to the count of
+                // the loop. The length and the capacity do not change.
+                let l::ValueType::Data(Type::Array(element)) = parameter_types
+                    .first()
+                    .ok_or_else(|| internal("kept store has no receiver type"))?
+                else {
+                    return Err(internal("kept store receiver is not an array"));
+                };
+                let [handle, count, value] = operands else {
+                    return Err(internal("kept store takes three operands"));
+                };
+                let handle = self.expect_scalar(*handle)?;
+                let count = self.expect_scalar(*count)?;
+                let count = self.builder.ins().uextend(types::I64, count);
+                let data = self
+                    .builder
+                    .ins()
+                    .load(types::I64, flags(), handle, ARRAY_DATA_OFFSET);
+                let stride = self.ml.layouts.stride(element)?;
+                let offset = self.builder.ins().imul_imm(count, i64::from(stride));
+                let destination = self.builder.ins().iadd(data, offset);
+                self.store_data(element, destination, 0, *value)?;
+                Ok(RV::None)
+            }
+            l::BuiltinMethod::ArrayTruncateKept => {
+                // compiler.md §359 rule 8: the runtime sets the length and
+                // zeroes the bytes past it.
+                let [handle, count] = operands else {
+                    return Err(internal("kept truncation takes two operands"));
+                };
+                let handle = self.expect_scalar(*handle)?;
+                let count = self.expect_scalar(*count)?;
+                let position = self.position_id(pos);
+                let position = self.iconst(types::I32, position);
+                self.call_runtime(
+                    self.ml.rt.array_truncate,
+                    &[self.ctx, handle, count, position],
+                    false,
+                )?;
+                Ok(RV::None)
+            }
             l::BuiltinMethod::ArrayClear => {
                 let array = self.expect_scalar(
                     *operands

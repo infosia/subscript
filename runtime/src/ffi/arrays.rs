@@ -540,3 +540,66 @@ pub unsafe extern "C" fn subscript_rt_array_ptr(
     // SAFETY: shared contract.
     unsafe { (*ctx).array_elem_ptr(a, idx, pos_id) }
 }
+
+/// Ends an in-place `filter` (`compiler.md` §359 rule 8): the array takes
+/// `new_len` as its length, and each byte from the new length to the former
+/// length is zero. A length that is negative or above the former length
+/// leaves the array unchanged.
+///
+/// # Safety
+///
+/// Shared contract; `a` is a live array handle.
+#[no_mangle]
+pub unsafe extern "C" fn subscript_rt_array_truncate(
+    ctx: *mut Context,
+    a: *mut u8,
+    new_len: i32,
+    pos_id: u32,
+) {
+    // SAFETY: shared contract.
+    let ctx = unsafe { &mut *ctx };
+    let Ok(new_len) = usize::try_from(new_len) else {
+        return;
+    };
+    // SAFETY: shared contract.
+    if a.is_null() || new_len > unsafe { ctx.array_len(a) }.max(0) as usize {
+        return;
+    }
+    // SAFETY: the array is live and the length is not above its length.
+    unsafe { ctx.array_truncate(a, new_len, pos_id) };
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    use super::*;
+
+    // compiler.md §359 rule 8: the bytes past the new length are zero, and
+    // the bytes before it keep their values.
+    #[test]
+    fn truncate_zeroes_the_bytes_from_the_new_length_to_the_former_length() {
+        let mut ctx = Context::new();
+        let p: *mut Context = &mut *ctx;
+        let array = ctx.array_new(4, 1);
+        for value in [7i32, 8, 9, 10] {
+            // SAFETY: the array is live and the source has one i32.
+            unsafe { subscript_rt_array_push(p, array, (&raw const value).cast(), 1) };
+        }
+        // SAFETY: the array is live.
+        unsafe { subscript_rt_array_truncate(p, array, 1, 2) };
+        // SAFETY: the array is live.
+        assert_eq!(unsafe { ctx.array_len(array) }, 1);
+        // SAFETY: the storage holds the four former elements.
+        let data = unsafe { std::slice::from_raw_parts(ctx.array_data(array), 16) };
+        assert_eq!(&data[..4], &7i32.to_ne_bytes());
+        assert!(data[4..].iter().all(|byte| *byte == 0), "{data:?}");
+        // The debug check of the collection reads the same bytes; its firing
+        // control is `array_tail_violations_reports_a_stale_word`.
+        assert!(ctx.array_tail_violations().is_empty());
+        // A length above the current length is not a truncation.
+        // SAFETY: the array is live.
+        unsafe { subscript_rt_array_truncate(p, array, 3, 3) };
+        // SAFETY: the array is live.
+        assert_eq!(unsafe { ctx.array_len(array) }, 1);
+        assert!(ctx.trap_record().is_none());
+    }
+}

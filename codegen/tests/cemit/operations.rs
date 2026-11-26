@@ -566,6 +566,73 @@ pub(super) fn static_array_callback_iterator_uses_inline_header_fields() {
     );
 }
 
+/// compiler.md §359 acceptance 7: the `filter` of `evens` writes into the
+/// buffer of the `map` result, so it creates no array. The `filter` of
+/// `copied` reads a parameter, so it allocates; it is the control of the
+/// creation count and of the zero step.
+pub(super) fn in_place_filter_creates_no_array_and_zeroes_the_tail_after_a_removal() {
+    use subscript_codegen::emit_c;
+    use subscript_codegen::lir::lower_module;
+    use subscript_compiler::check_program;
+
+    const SOURCE: &str = "function twice(value: i32): i32 { return value * 2; }
+        function keep(value: i32): boolean { return value > 2; }
+        function evens(values: i32[]): i32[] { return values.map(twice).filter(keep); }
+        function copied(values: i32[]): i32[] { return values.filter(keep); }
+        export function main(): void { print(`${evens([1, 2, 3]).join(\",\")} ${copied([1, 2, 3]).join(\",\")}`); }
+";
+    let files = [SourceFile::new("in-place-filter.ts", SOURCE)];
+    let hir = check_program(&files).expect("the in-place probe checks");
+    let lir = lower_module(&hir).expect("the in-place probe lowers");
+    let id = |name: &str| {
+        lir.functions
+            .iter()
+            .find(|function| function.source_name == name)
+            .unwrap_or_else(|| panic!("program has {name}"))
+            .id
+    };
+    let c = emit_c(&hir).expect("the in-place probe emits C").source;
+    let creations = |body: &str| {
+        body.matches("subscript_rt_array_with_capacity").count()
+            + body.matches("subscript_rt_array_new").count()
+    };
+    let in_place = emitted_function_body(&c, id("evens"));
+    let control = emitted_function_body(&c, id("copied"));
+    // The one creation of `evens` is the output of its `map`.
+    assert_eq!(creations(in_place), 1, "{in_place}");
+    assert_eq!(creations(control), 1, "{control}");
+    assert!(in_place.contains("->elem_size, 0, (size_t)"), "{in_place}");
+    assert!(!control.contains("->elem_size, 0, (size_t)"), "{control}");
+    assert_eq!(
+        in_place.matches("memset(").count(),
+        1,
+        "one end step:\n{in_place}"
+    );
+    // compiler.md §359 rule 8: the zero step runs only if the filter removed
+    // an element. An empty array has no buffer, and `memset` of a null
+    // pointer is undefined in C also for a size of zero.
+    let end_step = in_place
+        .lines()
+        .find(|line| line.contains("memset("))
+        .expect("the in-place filter has an end step")
+        .trim();
+    let (guard, call) = end_step
+        .split_once(" memset(")
+        .unwrap_or_else(|| panic!("the end step has no guard: {end_step}"));
+    let (header, rest) = call
+        .split_once("->data + ")
+        .unwrap_or_else(|| panic!("the end step writes no buffer: {end_step}"));
+    let length = rest
+        .split_once(" * ")
+        .map(|(length, _)| length)
+        .unwrap_or_else(|| panic!("the end step has no offset: {end_step}"));
+    assert_eq!(
+        guard,
+        format!("if ({length} != {header}->len)"),
+        "the end step zeroes the tail only if the filter removed an element:\n{in_place}"
+    );
+}
+
 pub(super) fn generator_creation_call_keeps_its_implicit_allocation_check() {
     use subscript_codegen::emit_c;
     use subscript_codegen::lir::lower_module;

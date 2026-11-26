@@ -3,7 +3,11 @@
 use super::*;
 
 impl<'a> Lowering<'a> {
-    pub(super) fn new(module: &'a hir::Module, reload: bool) -> Result<Self, LowerError> {
+    pub(super) fn new(
+        module: &'a hir::Module,
+        reload: bool,
+        in_place: in_place_filter::InPlaceMode,
+    ) -> Result<Self, LowerError> {
         let fallback = || Pos::new("<module>", 1, 1);
         if !module.poisoned_imports.is_empty() {
             return Err(LowerError {
@@ -188,6 +192,7 @@ impl<'a> Lowering<'a> {
             failed_default_functions: HashMap::new(),
             lambda_environments: HashMap::new(),
             group_members: lambda_group::members(module),
+            in_place_filters: in_place_filter::in_place_filters(module, in_place),
             group_functions: HashMap::new(),
             classes: Vec::new(),
             foreign: Vec::new(),
@@ -431,8 +436,38 @@ impl<'a> Lowering<'a> {
                     ],
                     return_type: Some(l::ValueType::Data(Type::I32)),
                 };
-                if !signatures.contains(&signature) {
-                    signatures.push(signature);
+                let mut added = vec![signature];
+                // compiler.md §359 rule 12: the two instructions of an
+                // in-place `filter`.
+                if matches!(
+                    operation.target,
+                    hir::OperationSignatureTarget::Arr(hir::ArrFn::Filter)
+                ) {
+                    let array = l::ValueType::Data(Type::Array(element.clone()));
+                    let count = l::ValueType::Data(Type::I32);
+                    added.push(l::CallSignature {
+                        target: l::CallSignatureTarget::BuiltinMethod(
+                            l::BuiltinMethod::ArrayStoreKept,
+                        ),
+                        parameter_types: vec![
+                            array.clone(),
+                            count.clone(),
+                            l::ValueType::Data((**element).clone()),
+                        ],
+                        return_type: None,
+                    });
+                    added.push(l::CallSignature {
+                        target: l::CallSignatureTarget::BuiltinMethod(
+                            l::BuiltinMethod::ArrayTruncateKept,
+                        ),
+                        parameter_types: vec![array, count],
+                        return_type: None,
+                    });
+                }
+                for signature in added {
+                    if !signatures.contains(&signature) {
+                        signatures.push(signature);
+                    }
                 }
             }
             row.signatures.extend(signatures);

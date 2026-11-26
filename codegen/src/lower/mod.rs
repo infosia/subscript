@@ -184,6 +184,8 @@ pub(crate) struct RtFns {
     pub array_pop: FuncId,
     /// `subscript_rt_array_pop_or_absent` (compiler.md §196.1).
     pub array_pop_or_absent: FuncId,
+    /// `subscript_rt_array_truncate` (compiler.md §359 rule 8).
+    pub array_truncate: FuncId,
     /// `subscript_rt_arr_shift_or_absent` (compiler.md §196.1).
     pub arr_shift_or_absent: FuncId,
     pub str_data: FuncId,
@@ -1119,6 +1121,7 @@ fn declare_rt<M: Module>(module: &mut M, call_conv: CallConv) -> Result<RtFns, S
             &[I64, I64, I64, I32],
             None,
         )?,
+        array_truncate: mk("subscript_rt_array_truncate", &[I64, I64, I32, I32], None)?,
         arr_shift_or_absent: mk(
             "subscript_rt_arr_shift_or_absent",
             &[I64, I64, I64, I32],

@@ -274,8 +274,12 @@ type PositionKey = (String, u32, u32);
 /// position can hold more than one call.
 #[derive(Default)]
 struct CallbackSites {
-    /// Static `map` and `filter` calls: each one has an output array.
+    /// Static `map` and `filter` calls that are not in place: each one has
+    /// an output array.
     outputs: BTreeMap<PositionKey, usize>,
+    /// Static `filter` calls in place (`compiler.md` §359 rule 13): each
+    /// one has one kept store and one end step, and no output array.
+    in_place: BTreeMap<PositionKey, usize>,
     /// Function value calls of one operation: each one is a runtime intrinsic.
     intrinsics: BTreeMap<(PositionKey, &'static str), usize>,
     /// Static calls of one callback: each one is a direct call target.
@@ -309,6 +313,7 @@ fn callback_identity(callback: &hir::Expr) -> String {
 
 fn callback_sites_by_position(hir: &hir::Module) -> CallbackSites {
     let mut sites = CallbackSites::default();
+    let in_place = super::in_place::in_place_sites(hir);
     walk_module_expressions(hir, &mut |expr| {
         let hir::ExprKind::Call {
             callee: hir::Callee::Arr(operation),
@@ -329,7 +334,12 @@ fn callback_sites_by_position(hir: &hir::Module) -> CallbackSites {
             .direct
             .entry((key.clone(), callback_identity(callback)))
             .or_default() += 1;
-        if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
+        let placed = *operation == hir::ArrFn::Filter
+            && super::in_place::filter_site(expr, args)
+                .is_some_and(|site| in_place.contains(&site));
+        if placed {
+            *sites.in_place.entry(key).or_default() += 1;
+        } else if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
             *sites.outputs.entry(key).or_default() += 1;
         }
     });
@@ -459,7 +469,25 @@ pub(super) fn compare_static_array_callbacks(
         let required = sites.outputs.get(&key).copied().unwrap_or(0);
         if output_count != required || push_count != required {
             findings.push(format!(
-                "{}: static {operation:?} carries {output_count} capacity allocation(s) and {push_count} push site(s); HIR requires {required} each, one for each static `map` or `filter` call at this position",
+                "{}: static {operation:?} carries {output_count} capacity allocation(s) and {push_count} push site(s); HIR requires {required} each, one for each static `map` or `filter` call at this position that is not in place",
+                expr.pos
+            ));
+        }
+        let kept = |method: l::BuiltinMethod| {
+            instructions
+                .iter()
+                .filter(|(_, instruction)| {
+                    matches!(&instruction.kind, l::InstructionKind::Call(target)
+                        if target.kind == l::CallTargetKind::BuiltinMethod(method))
+                })
+                .count()
+        };
+        let store_count = kept(l::BuiltinMethod::ArrayStoreKept);
+        let end_count = kept(l::BuiltinMethod::ArrayTruncateKept);
+        let required = sites.in_place.get(&key).copied().unwrap_or(0);
+        if store_count != required || end_count != required {
+            findings.push(format!(
+                "{}: static {operation:?} carries {store_count} kept store(s) and {end_count} end step(s); HIR requires {required} each, one for each in-place `filter` call at this position (compiler.md §359 rule 13)",
                 expr.pos
             ));
         }
@@ -471,10 +499,16 @@ mod static_output_tests {
     use super::*;
     use subscript_compiler::{check_program, SourceFile};
 
-    const CHAIN: &str = "export function main(): void {\n\
-        const ns: i32[] = [1, 2, 3];\n\
-        print(ns.filter((x: i32): boolean => x > 1).map((x: i32): string => `${x}`).join(\",\"));\n\
-        }\n";
+    // The receiver is a parameter, so no call of the chain is in place.
+    const CHAIN: &str = "function chain(ns: i32[]): string {\n\
+        return ns.filter((x: i32): boolean => x > 1).map((x: i32): string => `${x}`).join(\",\");\n\
+        }\n\
+        export function main(): void { print(chain([1, 2, 3])); }\n";
+    // compiler.md §359 rule 2a: the second `filter` reads a new array.
+    const IN_PLACE_CHAIN: &str = "function chain(ns: i32[]): string {\n\
+        return ns.filter((x: i32): boolean => x > 1).filter((x: i32): boolean => x < 3).join(\",\");\n\
+        }\n\
+        export function main(): void { print(chain([1, 2, 3])); }\n";
     const FUNCTION_CHAIN: &str = "function f(x: i32): i32 { return x + 1; }\n\
         export function main(): void {\n\
         const ns: i32[] = [1, 2, 3];\n\
@@ -565,6 +599,58 @@ mod static_output_tests {
         assert!(
             findings.iter().any(|finding| finding.contains(
                 "carries 1 capacity allocation(s) and 2 push site(s); HIR requires 2 each"
+            )),
+            "{findings:?}"
+        );
+    }
+
+    #[test]
+    fn an_in_place_chain_requires_one_kept_store_and_one_end_step() {
+        let (hir, lir) = checked_source(IN_PLACE_CHAIN);
+        assert_eq!(findings(&hir, &lir), Vec::<String>::new());
+        for method in [
+            l::BuiltinMethod::ArrayStoreKept,
+            l::BuiltinMethod::ArrayTruncateKept,
+        ] {
+            let mut lir = lir.clone();
+            remove_first(&mut lir, |kind| {
+                matches!(kind, l::InstructionKind::Call(target)
+                    if target.kind == l::CallTargetKind::BuiltinMethod(method))
+            });
+            let findings = findings(&hir, &lir);
+            assert!(
+                findings
+                    .iter()
+                    .any(|finding| finding.contains("HIR requires 1 each, one for each in-place")),
+                "{method:?}: {findings:?}"
+            );
+        }
+        // An in-place `filter` that allocates its output gives a finding.
+        let mut lir = lir;
+        let push = lir
+            .functions
+            .iter()
+            .flat_map(|function| &function.blocks)
+            .flat_map(|block| &block.instructions)
+            .find(|instruction| instruction.kind == l::InstructionKind::ArrayWithCapacity)
+            .cloned()
+            .expect("the first filter allocates");
+        lir.functions
+            .iter_mut()
+            .flat_map(|function| &mut function.blocks)
+            .find(|block| {
+                block.instructions.iter().any(|instruction| {
+                    matches!(&instruction.kind, l::InstructionKind::Call(target)
+                        if target.kind == l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayTruncateKept))
+                })
+            })
+            .expect("the second filter ends in place")
+            .instructions
+            .push(push);
+        let findings = findings(&hir, &lir);
+        assert!(
+            findings.iter().any(|finding| finding.contains(
+                "carries 2 capacity allocation(s) and 1 push site(s); HIR requires 1 each"
             )),
             "{findings:?}"
         );

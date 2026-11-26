@@ -1103,6 +1103,16 @@ pub enum BuiltinMethod {
     /// Dynamic-array `push` into capacity that the lowering reserved before
     /// a loop whose trip count cannot exceed it (`compiler.md` §342 rule 10b).
     ArrayPushReserved,
+    /// Stores a kept element of an in-place `filter` at the loop's own
+    /// count, into the buffer of the receiver, with no growth and no write
+    /// of the length (`compiler.md` §359 rule 7). The operands are the
+    /// array, the count, and the element.
+    ArrayStoreKept,
+    /// Ends an in-place `filter`: the array takes the count as its length,
+    /// and each byte from the new length to the former length is zero
+    /// (`compiler.md` §359 rule 8). The operands are the array and the
+    /// count.
+    ArrayTruncateKept,
     /// Dynamic-array `pop`.
     ArrayPop,
     /// Clears a dynamic array for a zero length store.

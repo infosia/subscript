@@ -12,6 +12,8 @@ pub(crate) mod async_environments;
 mod boundary;
 #[path = "lir_facts/defaults.rs"]
 mod defaults;
+#[path = "lir_facts/in_place.rs"]
+mod in_place;
 #[path = "lir_facts/iteration.rs"]
 mod iteration;
 #[path = "lir_facts/traps.rs"]
@@ -555,7 +557,7 @@ fn collect_missing_parameter_defaults(
     hir: &hir::Module,
     expected: &mut BTreeMap<TrapKey, usize>,
     findings: &mut Vec<String>,
-    seen_defaults: &mut std::collections::BTreeSet<(Option<hir::LambdaId>, usize)>,
+    walk: &mut traps::TrapWalk,
 ) {
     let classes: Vec<_> = hir
         .classes
@@ -592,8 +594,8 @@ fn collect_missing_parameter_defaults(
                 .map_or((None, default as *const hir::Expr as usize), |id| {
                     (Some(id), index)
                 });
-            if seen_defaults.insert(identity) {
-                collect_trap_expression(default, hir, expected, findings, seen_defaults);
+            if walk.seen_defaults.insert(identity) {
+                collect_trap_expression(default, hir, expected, findings, walk);
             }
         }
     }

@@ -208,6 +208,15 @@ pub fn instruction_block_store(
             l::CallTargetKind::BuiltinMethod(
                 l::BuiltinMethod::ArrayPush | l::BuiltinMethod::ArrayPushReserved,
             ) => BlockStore::Operand(1),
+            // compiler.md §359 rule 10: an in-place `filter` writes its
+            // kept element (operand 2) into the buffer of the receiver.
+            // The end step only removes references.
+            l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayStoreKept) => {
+                BlockStore::Operand(2)
+            }
+            l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayTruncateKept) => {
+                BlockStore::None
+            }
             _ if call_writes_through_addresses(target) => BlockStore::ThroughAddresses,
             _ => BlockStore::None,
         },

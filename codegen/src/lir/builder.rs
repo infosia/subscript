@@ -1084,7 +1084,8 @@ mod exit_tests {
         )])
         .unwrap();
         for violate in [false, true] {
-            let mut lowering = Lowering::new(&module, false).unwrap();
+            let mut lowering =
+                Lowering::new(&module, false, in_place_filter::InPlaceMode::Normal).unwrap();
             let input = FunctionInput::from(module.functions[0].clone());
             let mut builder = FunctionBuilder::new(
                 &mut lowering,

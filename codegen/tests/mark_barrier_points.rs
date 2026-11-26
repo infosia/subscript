@@ -10,6 +10,8 @@
 //! - a field store: `a_field_store_of_an_old_object_during_a_mark`;
 //! - the inline path of a push: `an_inline_push_of_an_old_object_during_a_mark`;
 //! - a reserved push: `a_reserved_push_of_an_old_object_during_a_mark`;
+//! - the store of a kept element of an in-place `filter`:
+//!   `an_in_place_filter_of_old_objects_during_a_mark`;
 //! - a store of a frame local: `a_traversal_subject_in_a_frame_during_a_mark`;
 //! - the captures of a closure in a coroutine:
 //!   `a_capture_of_a_closure_in_a_frame_during_a_mark` and
@@ -30,7 +32,7 @@
 //! captures gave its words to the work list.
 //!
 //! Cost: one C compile and link and one run for each program; 2 s for the
-//! eleven programs in a release build.
+//! twelve programs in a release build.
 
 use std::path::{Path, PathBuf};
 
@@ -144,6 +146,38 @@ export function main(): void {{
 }}"
     );
     assert_runs("reserved", &source, "4498500\n");
+}
+
+/// `ArrayStoreKept` of an in-place `filter` (`compiler.md` §359 rule 10):
+/// a kept node moves to a lower position of the old buffer, which the
+/// divided scan can have passed, and the end step zeroes its former
+/// position. The map result holds the only reference to each node. Each
+/// round keeps the last four nodes of an array of another length, so that
+/// the end step of some round falls inside a cycle whose scan passed the
+/// low positions. With no barrier at this store, the check stops the
+/// process: 3 reachable nodes have no mark (measured).
+#[test]
+fn an_in_place_filter_of_old_objects_during_a_mark() {
+    let source = format!(
+        "{OLDS}
+function fresh(count: i32): Node[] {{
+  const nodes: Node[] = [];
+  for (let i: i32 = 0; i < count; i += 1) {{ const node: Node = new Node(); node.value = i; nodes.push(node); }}
+  return nodes;
+}}
+export function main(): void {{
+  let sum: i32 = 0;
+  for (let round: i32 = 0; round < 16; round += 1) {{
+    const count: i32 = 600 + round * 7;
+    const cut: i32 = count - 4;
+    const nodes: Node[] = fresh(count).map((node: Node): Node => node);
+    const kept: Node[] = nodes.filter((node: Node, i: i32): boolean => i >= cut);
+    sum += total(kept);
+  }}
+  print(`${{sum}}`);
+}}"
+    );
+    assert_runs("in-place", &source, "41600\n");
 }
 
 /// An async function that suspends once.

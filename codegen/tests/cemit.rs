@@ -1713,6 +1713,7 @@ fn main() -> std::process::ExitCode {
             operations::short_circuit_in_a_loop_condition_re_runs_per_iteration,
             operations::dynamic_array_length_and_index_use_inline_header_fields,
             operations::static_array_callback_iterator_uses_inline_header_fields,
+            operations::in_place_filter_creates_no_array_and_zeroes_the_tail_after_a_removal,
             operations::generator_creation_call_keeps_its_implicit_allocation_check,
             operations::local_load_store_address_chains_emit_as_member_expressions,
             operations::multiply_constant_trip_loop_emits_four_straight_iterations,

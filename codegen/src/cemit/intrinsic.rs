@@ -70,6 +70,44 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                 out.push_str("    }\n");
                 self.assign(out, result, &format!("(int32_t)({header}->len)"))
             }
+            l::BuiltinMethod::ArrayStoreKept => {
+                // compiler.md §359 rule 7: the store goes to the count of
+                // the loop, with no growth and no write of the length.
+                let l::ValueType::Data(Type::Array(element)) = &operand_types[0] else {
+                    return Err(internal("kept store receiver is not an array"));
+                };
+                let header = self.fresh();
+                let element_type = self.emitter.ctype(element)?;
+                let _ = writeln!(
+                    out,
+                    "    SsArrayHeader* {header} = (SsArrayHeader*)({});",
+                    operands[0]
+                );
+                let slot = format!("(({element_type}*){header}->data)[{}]", operands[1]);
+                let _ = writeln!(out, "    {slot} = {};", operands[2]);
+                self.emit_store_barrier(out, instruction, &slot, operand_types)
+            }
+            l::BuiltinMethod::ArrayTruncateKept => {
+                // compiler.md §359 rule 8: the count becomes the length, and
+                // the bytes from it to the former length are zero. The zero
+                // step runs only if the filter removed an element: an array
+                // with no buffer has length 0, so `memset` never reads a
+                // null `data`.
+                let header = self.fresh();
+                let length = self.fresh();
+                let _ = writeln!(
+                    out,
+                    "    SsArrayHeader* {header} = (SsArrayHeader*)({});",
+                    operands[0]
+                );
+                let _ = writeln!(out, "    uint64_t {length} = (uint64_t)({});", operands[1]);
+                let _ = writeln!(
+                    out,
+                    "    if ({length} != {header}->len) memset({header}->data + {length} * {header}->elem_size, 0, (size_t)(({header}->len - {length}) * {header}->elem_size));"
+                );
+                let _ = writeln!(out, "    {header}->len = {length};");
+                Ok(())
+            }
             l::BuiltinMethod::ArrayClear => {
                 self.emit_counted_array_operation(
                     out,

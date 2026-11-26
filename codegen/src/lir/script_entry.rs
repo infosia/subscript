@@ -128,6 +128,8 @@ fn call_target_entry(
             l::BuiltinMethod::GeneratorNext => ScriptEntry::GeneratorBody,
             l::BuiltinMethod::ArrayPush
             | l::BuiltinMethod::ArrayPushReserved
+            | l::BuiltinMethod::ArrayStoreKept
+            | l::BuiltinMethod::ArrayTruncateKept
             | l::BuiltinMethod::ArrayPop
             | l::BuiltinMethod::ArrayClear
             | l::BuiltinMethod::StringSlice => runtime_operation(function_operand),

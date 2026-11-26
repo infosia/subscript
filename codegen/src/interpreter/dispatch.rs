@@ -185,6 +185,31 @@ impl Interpreter<'_> {
                 self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
                 Ok(Value::I(length as i64))
             }
+            l::BuiltinMethod::ArrayStoreKept => self.store_kept(&operands, parameter_types),
+            l::BuiltinMethod::ArrayTruncateKept => {
+                let array = operands
+                    .first()
+                    .ok_or_else(|| self.invalid(None, "kept truncation has no receiver"))?
+                    .as_handle()?;
+                let count = operands
+                    .get(1)
+                    .ok_or_else(|| self.invalid(None, "kept truncation has no count"))?
+                    .as_i64()?;
+                // SAFETY: live array.
+                let length = unsafe { ffi::subscript_rt_array_len(&mut *self.context, array) };
+                if count < 0 || count > i64::from(length) {
+                    return Err(self.invalid(
+                        pos.cloned(),
+                        "kept truncation count is above the array length",
+                    ));
+                }
+                // SAFETY: live array; the count is not above its length.
+                unsafe {
+                    ffi::subscript_rt_array_truncate(&mut *self.context, array, count as i32, 0)
+                };
+                self.check_runtime(&Pos::new("<builtin>", 1, 1))?;
+                Ok(Value::Void)
+            }
             l::BuiltinMethod::ArrayClear => self.clear_array(&operands, pos),
             l::BuiltinMethod::ArrayPop => {
                 let array = operands

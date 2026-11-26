@@ -238,8 +238,13 @@ fn call_reads(
             | l::BuiltinMethod::StringSlice
             | l::BuiltinMethod::GeneratorNext,
         ) => vec![0],
+        // compiler.md §359 rule 12: the store of a kept element and the end
+        // step of an in-place `filter` read through the array.
         l::CallTargetKind::BuiltinMethod(
-            l::BuiltinMethod::ArrayPush | l::BuiltinMethod::ArrayPushReserved,
+            l::BuiltinMethod::ArrayPush
+            | l::BuiltinMethod::ArrayPushReserved
+            | l::BuiltinMethod::ArrayStoreKept
+            | l::BuiltinMethod::ArrayTruncateKept,
         ) => vec![0],
         l::CallTargetKind::ClosureDefault { .. } => (0..count).collect(),
         l::CallTargetKind::Foreign(id) => foreign_array_reads(module, *id)?,

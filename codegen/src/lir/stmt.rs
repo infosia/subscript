@@ -895,6 +895,71 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         Ok(())
     }
 
+    /// Stores a kept element of an in-place `filter` at the count, then
+    /// adds one to the count (`compiler.md` §359 rule 7).
+    fn emit_kept_store(
+        &mut self,
+        array: l::Operand,
+        kept_binding: BindingId,
+        value: l::Operand,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let array_type = self.operand_type(&array, pos)?;
+        let count = self.read_binding(kept_binding, pos)?;
+        // compiler.md §359 rule 12: the store carries the lifetime site of
+        // the array.
+        let traps = self.read_lifetime(&array_type, pos);
+        self.emit(
+            l::InstructionKind::Call(l::CallTarget {
+                kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayStoreKept),
+                parameter_types: Vec::new(),
+                return_type: None,
+            }),
+            vec![array, count.clone(), value],
+            None,
+            false,
+            traps,
+            pos.clone(),
+        )?;
+        let next = self
+            .emit(
+                l::InstructionKind::Binary(l::BinaryOp::Add),
+                vec![count, i32_constant(1)],
+                Some(l::ValueType::Data(Type::I32)),
+                false,
+                Vec::new(),
+                pos.clone(),
+            )?
+            .ok_or_else(|| self.error(pos, "advanced kept count produced no value"))?;
+        self.bindings[kept_binding.0].value = Some(next);
+        Ok(())
+    }
+
+    /// The end step of an in-place `filter` (`compiler.md` §359 rule 8).
+    fn emit_kept_end(
+        &mut self,
+        array: l::Operand,
+        kept_binding: BindingId,
+        pos: &Pos,
+    ) -> Result<(), LowerError> {
+        let array_type = self.operand_type(&array, pos)?;
+        let count = self.read_binding(kept_binding, pos)?;
+        let traps = self.read_lifetime(&array_type, pos);
+        self.emit(
+            l::InstructionKind::Call(l::CallTarget {
+                kind: l::CallTargetKind::BuiltinMethod(l::BuiltinMethod::ArrayTruncateKept),
+                parameter_types: Vec::new(),
+                return_type: None,
+            }),
+            vec![array, count],
+            None,
+            true,
+            traps,
+            pos.clone(),
+        )?;
+        Ok(())
+    }
+
     fn lower_reduce_seed(
         &mut self,
         operation: hir::ArrFn,
@@ -1026,7 +1091,18 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             .cloned()
             .collect::<Vec<_>>();
 
-        let output = if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
+        // compiler.md §359 rule 1: an in-place `filter` writes into the
+        // buffer of its receiver, and its result is the receiver.
+        let in_place = operation == hir::ArrFn::Filter
+            && !self.function.is_generator
+            && !self.function.is_async
+            && self
+                .lowering
+                .in_place_filters
+                .contains(&in_place_filter::filter_key(&expr.pos, &callback_expr.pos));
+        let output = if in_place {
+            subject_value.clone()
+        } else if matches!(operation, hir::ArrFn::Map | hir::ArrFn::Filter) {
             let Type::Array(output_element) = &expr.ty else {
                 return Err(self.error(&expr.pos, "Array producer result is not an array"));
             };
@@ -1085,7 +1161,16 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 value,
             )
         });
+        // compiler.md §359 rule 7: the count of the kept elements.
+        let kept_binding = in_place.then(|| {
+            self.declare_hidden_binding(
+                "<array callback kept>",
+                l::ValueType::Data(Type::I32),
+                i32_constant(0),
+            )
+        });
         let mut traversal = vec![index_binding, bound_binding];
+        traversal.extend(kept_binding);
         traversal.extend(cursor_binding);
         traversal.extend(reverse_index_binding);
         traversal.extend(callable_binding);
@@ -1103,7 +1188,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
             Some("array-callback.step".to_string()),
             &traversal,
         );
-        let exit_forced = result_binding.into_iter().collect::<Vec<_>>();
+        let exit_forced = result_binding
+            .into_iter()
+            .chain(kept_binding)
+            .collect::<Vec<_>>();
         let exit = self.new_state_block(
             Vec::new(),
             Some("array-callback.exit".to_string()),
@@ -1211,7 +1299,11 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
                 self.current = Some(push);
                 let output =
                     self.read_binding(result_binding.expect("filter result binding"), &expr.pos)?;
-                self.emit_static_array_push(output, value, &expr.pos)?;
+                if let Some(kept_binding) = kept_binding {
+                    self.emit_kept_store(output, kept_binding, value, &expr.pos)?;
+                } else {
+                    self.emit_static_array_push(output, value, &expr.pos)?;
+                }
             }
             hir::ArrFn::Reduce | hir::ArrFn::ReduceRight => {
                 self.bindings[result_binding.expect("reduce result binding").0].value =
@@ -1307,6 +1399,10 @@ impl<'a, 'm> FunctionBuilder<'a, 'm> {
         self.enter_block(exit)?;
         if let Some(fixed) = &fixed_subject {
             self.finish_fixed_subject(fixed, &expr.pos)?;
+        }
+        if let (Some(kept_binding), Some(result_binding)) = (kept_binding, result_binding) {
+            let output = self.read_binding(result_binding, &expr.pos)?;
+            self.emit_kept_end(output, kept_binding, &expr.pos)?;
         }
         let result = result_binding
             .map(|binding| self.read_binding(binding, &expr.pos))
