@@ -1913,3 +1913,22 @@ the sweep in steps pass on this host in each profile:
 `context::sweep_steps`, `worker::collection_tests`,
 `lir::block_store`, and the eleven tests of
 `codegen/tests/mark_barrier_points.rs`.
+
+## Gate state at `2a2837e1`, 2026-11-27
+
+The host and the tools are those of the `6169b0e5` record. The tree
+holds §358 and §359. The last commit changes `specs/tracking/` only.
+
+```text
+gate full 2a2837e12095c58338c407f7f58aa98332ba9af5 clean debug 4149/0/10 release 4131/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 11, build 194, debug 496, release 359, clippy
+20, tsc 1, hygiene 2.
+
+The two debug skips and the ten ignored tests are those of
+`da511ad8`. In the release step the test binary of the stress sweep
+passed its three tests in 22.42 s. The tests of
+`codegen/tests/in_place_filter.rs` (three) and
+`runtime/tests/array_free.rs` (five) pass on this host in each
+profile.
