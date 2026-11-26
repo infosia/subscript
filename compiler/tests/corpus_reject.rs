@@ -876,6 +876,8 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r514-loop-nullable-field-store.ts", RuleCode::S011, 14),
     ("r515-let-global-lambda-narrowing.ts", RuleCode::S011, 13),
     ("r563-importer-directory/sub/a.ts", RuleCode::S100, 7),
+    ("r564-free-counted-array.ts", RuleCode::S014, 11),
+    ("r565-free-string.ts", RuleCode::S100, 10),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

@@ -376,7 +376,7 @@ impl<'p> Checker<'p> {
         fx: &mut FnCtx<'p>,
         pos: Pos,
     ) -> hir::Expr {
-        let params: Vec<ParamSig> = crate::ambient::ambient_params(ambient)
+        let mut params: Vec<ParamSig> = crate::ambient::ambient_params(ambient)
             .iter()
             .map(|t| ParamSig::positional(t.clone()))
             .collect();
@@ -385,13 +385,20 @@ impl<'p> Checker<'p> {
         } else {
             ambient.name().to_string()
         };
-        let args = self.check_args(
+        let checked = if ambient == AmbientFn::UnsafeDelete {
+            self.check_free_argument(c, &mut params, fx)
+        } else {
+            None
+        };
+        let args = self.check_args_with_arguments(
             RejectionSite::AmbientFunctionArgumentCount,
             &params,
             &c.arguments,
             fx,
             &pos,
             &label,
+            checked,
+            false,
         );
         hir::Expr {
             pending_work: None,
@@ -402,6 +409,49 @@ impl<'p> Checker<'p> {
             ty: Type::Void,
             pos,
         }
+    }
+
+    /// Checks the first argument of `Context.free` (compiler.md §358 rule
+    /// 1). A dynamic array of an uncounted element type takes its own type
+    /// as the parameter; each other argument keeps the `object` parameter.
+    /// A counted element type is rejected (§358 rule 5). A type parameter
+    /// element takes the verdict of its instance (§143 rule 2a).
+    fn check_free_argument(
+        &mut self,
+        c: &ast::CallExpression,
+        params: &mut [ParamSig<'p>],
+        fx: &mut FnCtx<'p>,
+    ) -> Option<Vec<Option<hir::Expr>>> {
+        let argument = c.arguments.first()?;
+        if matches!(argument, ast::Argument::SpreadElement(_)) {
+            return None;
+        }
+        let parameter = params.first_mut()?;
+        let checked = self.check_expr(
+            crate::check::argument_expression(argument),
+            Some(&Type::Object),
+            fx,
+        );
+        if let Type::Array(element) = self.apparent_type(&checked.ty) {
+            if !self.instance_restriction(
+                crate::check::opaque::InstanceRestriction::ArrayElementKind,
+                &element,
+            ) && self.apparent_type(&element).counted_type().is_some()
+            {
+                let message = format!(
+                    "`Context.free` cannot release an array of the counted type `{}`; \
+                     the last holder of the array releases it (§171)",
+                    self.type_name(&element)
+                );
+                self.reject_subset(
+                    RejectionSite::ContextFreeCountedArray,
+                    message,
+                    checked.pos.clone(),
+                );
+            }
+            *parameter = ParamSig::positional(checked.ty.clone());
+        }
+        Some(vec![Some(checked)])
     }
 
     fn context_bytes_storage_rejection(

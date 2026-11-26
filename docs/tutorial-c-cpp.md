@@ -312,7 +312,7 @@ for each one):
 |---|---|---|---|
 | Automatic (the default) | The Context | Script code has no release code. The Context reclaims unreachable memory at polls that the compiler places, and at the outermost exit of a host call. | Most hosts |
 | Host-timed | The host | Mode 0. The host calls `subscript_rt_ctx_collect(ctx)` at a point it selects, for example between two frames. No automatic collection runs. | A frame loop with a fixed collection point |
-| Manual | The script | Mode 0, and the host does not collect. Script code releases an object at once with `Context.free(value)`. | An audio callback, a control step, or any place that allows no pause |
+| Manual | The script | Mode 0, and the host does not collect. Script code releases an object or an array at once with `Context.free(value)`. | An audio callback, a control step, or any place that allows no pause |
 
 `Context.free` and a script `Context.collect()` are valid at each level.
 
@@ -339,8 +339,14 @@ The parts of the model:
 
 - A **Context** is an owning arena your host creates and releases.
   Every `new` allocates in it.
-- `Context.free(x)` releases one allocation at once, like `free`. A
+- `Context.free(x)` releases its argument at once, like `free`. A
   collection also reclaims an allocation that nothing reaches.
+  `Context.free` accepts a reference-class instance, a `Map`, a `Set`,
+  and a dynamic array of an uncounted element type. For an array it
+  releases two allocations, the header and the buffer, and the elements
+  stay. `Context.free` does not accept a string. The last holder of a
+  dynamic array of handles or generators releases it, and
+  `Context.free` rejects it (§358).
 - An automatic collection, `subscript_rt_ctx_collect`, and a script
   `Context.collect()` run the same mark-and-sweep over what script
   references can still reach. `Context.collect()` is the explicit
@@ -425,8 +431,9 @@ headroom (§346 rules 1, 2, and 2a). The count and the minimum headroom
 are bytes that the program allocates. The ship tier can hold up to the
 size-class capacity for them: at most twice the request plus 16 bytes,
 and a header of 16 bytes for each block. `Context.free` subtracts the
-bytes that the allocation of the block requested, and each collection
-sets the count to zero. The default minimum headroom is 16 MiB. A
+request of each block that it releases. An array releases two blocks,
+the header and the buffer. Each collection sets the count to zero. The
+default minimum headroom is 16 MiB. A
 `min_headroom_bytes` of 0 keeps the default. The call runs no
 collection, so it keeps the count and the live bytes after the last
 collection. In mode 1 the call requests a collection if the count is

@@ -1523,6 +1523,11 @@ s171-counted-callback-result.ts	expr/callback_shape.rs expect_callback_shape		S0
 `map` cannot carry a counted callback result (§171)
 export function main(): void { const values: i32[] = [1]; values.map((value: i32): Promise<i32>[] => []); }
 ===
+s358-counted-array-free.ts	expr/call.rs check_free_argument		S014		§358
+`Context.free` cannot release an array of the counted type `Promise<void>`; the last holder of the array releases it (§171)
+async function job(): Promise<void> {}
+export async function main(): Promise<void> { const jobs: Promise<void>[] = [job()]; Context.free(jobs); }
+===
 s172-counted-map-callback.ts	expr/method.rs check_map_method		S014		§172
 `Map.forEach` cannot carry a counted value type (§172)
 export function main(): void {

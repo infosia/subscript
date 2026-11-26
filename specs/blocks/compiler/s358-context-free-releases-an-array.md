@@ -128,3 +128,77 @@ Problem, measured at `a3ead965`:
   object.
 - A release of the elements of an array (a deep free).
 - A string.
+
+### 358.5 Phase Review
+
+Form.
+
+- The checker gives the first argument of `Context.free` its own
+  type as the parameter if its apparent type is a dynamic array
+  (`check_free_argument`). A counted element type is the rejection
+  site `ContextFreeCountedArray` (S014). A type parameter element
+  takes the result of its instance (§143 rule 2a).
+- One runtime entry does the release: `Context::free_value`.
+  `subscript_rt_delete` calls it for the two native tiers, and the
+  interpreter calls it directly. No generated code changed.
+- The array step runs after the lookup that `delete` already does,
+  on a live array header: a native-call borrow gives the trap and
+  keeps both blocks; if no borrow exists, the buffer is released and
+  then the header. An array header is always a small block of the
+  ship arena.
+- Each `data` word of an array header comes from an allocation of
+  the Context (`array_with_capacity_of`, `array_from_bytes`, the
+  growth).
+
+Measured.
+
+| Item | Result |
+|---|---|
+| The accept entry `a511` at the pin | S100 at each of its five `Context.free` calls |
+| Live bytes and requested bytes after the free of an array of 0, 16, and 1,000,000 `i32` | Equal to the values before the array, in the dev kind and in the ship kind |
+| A loop that makes an array and frees it, headroom 64 KiB | No automatic collection; the control with no free runs collections. With a buffer of 64 KiB alone, the header passes the headroom and each of 512 iterations collects |
+| A free of the array of a foreign call in a callback | `ArrayStorageBorrowed` at the position of the free, equal in the two native tiers |
+| `r564` (a `Promise<void>[]`) | S014; `tsc` accepts it |
+| `r565` (a string) | Rejected; `tsc` gives TS2345 |
+| Stress sweep, mode 2 and mode 3 at budgets 64, 16, and 4 | 611 runs equal in each, no stop of a check |
+| `tree` in the ship tier, median of 10, a release entry that calls `delete` directly | 95.1 ms |
+| The same with a liveness lookup before `delete` (the first form of this section) | 108.1 ms |
+| The same with the landed form | 93.0 ms |
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 8
+MINOR.
+
+| Finding | Close |
+|---|---|
+| The message for an array of generators had the hint of the array methods | The message has no hint; a unit test reads it |
+| A branch of the release for a large block had no array that reaches it, and two comments did not agree with it | The branch is removed; the comments state the code |
+| The test of a free during a divided scan did not name the buffer | It reads the divided scan before and after the free |
+| The test of rule 6 stated that both blocks stay, with no check | A runtime test reads the liveness of each block, with a control |
+| The test that an element stays had no control | The control frees the element and reads it as not live |
+| A test name and three sentences of the tutorials | Corrected |
+| The Red record of §311 in `specs/tracking/divergence-alternatives.md` has no row for the new rejection site | Not a defect: the record states the tree at its own commit |
+
+The first full gate of this section failed with three tests. Two
+tests of `generic_tsc_matrix` read a phrase of Q6 that the new text
+of Q6 does not have: they read "reference-class instance". One test
+of `codegen/tests/lifetime_operands.rs` had an array as a subject
+that no program can release: the array rows are the test
+`for_of_array`, which reads the trap of a `for…of` after the free.
+
+`tools/gate.sh full` on the tree before this record:
+
+```text
+gate full 9dfa247c977a711a00c33a1b296226a0399260ff dirty:43 debug 4247/0/10 release 4228/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
+### 358.6 Open
+
+1. A free of an array inside its own `for…of`, and a free while a
+   suspended frame holds a cursor of the array, are Q6. With the
+   diagnostics off no tier reports them.
+2. The time of a free in the dev kind (the allocation map) is not
+   measured.
+3. A program cannot release a string, a closure environment, or a
+   regex value before a collection.

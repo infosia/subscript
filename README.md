@@ -189,7 +189,7 @@ The host selects one of three levels:
 |---|---|---|---|
 | Automatic (the default) | The Context | Script code has no release code. The Context reclaims unreachable memory at polls that the compiler places, and at `subscript_rt_ctx_exit_script` when a host call ends. | Most programs |
 | Host-timed | The host | The host switches automatic collection off with `subscript_rt_ctx_set_collection(ctx, 0, 0)`. It collects with `subscript_rt_ctx_collect` at a point it selects, for example between two frames. No automatic collection runs. | A frame loop with a fixed collection point |
-| Manual | The script | Script code releases an object at once with `Context.free(value)`. Automatic collection is off, and no collection runs. | An audio callback, a control step, or any place that allows no pause |
+| Manual | The script | Script code releases an object or an array at once with `Context.free(value)`. Automatic collection is off, and no collection runs. | An audio callback, a control step, or any place that allows no pause |
 
 `Context.free` and `Context.collect()` are valid at each level.
 

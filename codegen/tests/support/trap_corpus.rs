@@ -123,6 +123,9 @@ pub fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t21-narrow-class-mismatch" => (TrapKind::ClassMismatch, 27, 33),
         "t22-double-delete-q6" => (TrapKind::DoubleDelete, 19, 3),
         "t23-use-after-delete-q6" => (TrapKind::UseAfterDelete, 23, 12),
+        // compiler.md §358 rule 7: the second free, and the element read.
+        "t121-double-free-array-q6" => (TrapKind::DoubleDelete, 12, 3),
+        "t122-element-read-after-free-q6" => (TrapKind::UseAfterDelete, 12, 12),
         "t24-stale-coroutine-reload" => (TrapKind::StaleCoroutine, 19, 3),
         "t25-allocation-sites-before-second-template-fault" => (TrapKind::DivisionByZero, 21, 47),
         "t26-allocation-failure-new" => (TrapKind::AllocationFailure, 17, 20),
@@ -285,7 +288,13 @@ pub fn allocation_failure_count(id: &str) -> Option<u64> {
 /// Q6/§8.1b: the double-delete and use-after-delete entries run the dev
 /// tier with freed-handle diagnostics and post-run accounting.
 pub fn freed_handle_diagnostic(id: &str) -> bool {
-    matches!(id, "t22-double-delete-q6" | "t23-use-after-delete-q6")
+    matches!(
+        id,
+        "t22-double-delete-q6"
+            | "t23-use-after-delete-q6"
+            | "t121-double-free-array-q6"
+            | "t122-element-read-after-free-q6"
+    )
 }
 
 /// §14.4b (A) pins its trap with freed-handle diagnostics on, for the
@@ -308,8 +317,12 @@ pub fn trap_message(id: &str) -> Option<&'static str> {
         | "t73-boxed-local-narrowing-call"
         | "t74-boxed-local-narrowing-alias-store"
         | "t72-narrowing-boundary-getter" => Some("a narrowed shared location is null"),
-        "t22-double-delete-q6" => Some("Context.free of an already-deleted allocation"),
-        "t23-use-after-delete-q6" => Some("use of a deleted allocation"),
+        "t22-double-delete-q6" | "t121-double-free-array-q6" => {
+            Some("Context.free of an already-deleted allocation")
+        }
+        "t23-use-after-delete-q6" | "t122-element-read-after-free-q6" => {
+            Some("use of a deleted allocation")
+        }
         "t46-callback-userdata-freed" | "t59-registration-userdata-freed" => {
             Some("callback userdata points to a freed allocation")
         }

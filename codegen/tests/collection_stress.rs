@@ -22,7 +22,8 @@
 //! that ended no cycle, of the runs that gave no count, of the sweep steps,
 //! and of the runs that ran no sweep step. A cycle of mode 3 has at most 8
 //! steps (§356 rule 19), and a sweep of mode 3 at most 8 sweep steps (§357
-//! rule 15). Measured with 610 runs for each budget: the budgets 64, 16, and
+//! rule 15). The sweep makes 611 runs for each budget. Measured with 610
+//! runs for each budget: the budgets 64, 16, and
 //! 4 end 7,993 to 8,000, 6,093 to 6,095, and 3,455 to 3,456 cycles and run
 //! 7,763, 6,009, and 4,733 sweep steps; 5, 22, and 77 runs end no cycle;
 //! 65, 76, and 118 runs run no sweep step; 113 runs give no count. A sweep
@@ -242,7 +243,7 @@ const RECEIVE_REASON: &str = "Worker.receive";
 ///
 /// A program can hold a Worker only if one of its files names `Worker`, so
 /// the parent checks and lowers only those programs. Cost: one check and
-/// one LIR lowering for each such entry (15 of 610 entries), and no
+/// one LIR lowering for each such entry (15 of 611 entries), and no
 /// native compilation. The control test does two of them in 0.02 s
 /// (release).
 fn calls_worker_receive(sources: &[SourceFile]) -> bool {

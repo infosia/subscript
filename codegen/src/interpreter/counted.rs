@@ -483,7 +483,9 @@ impl Interpreter<'_> {
             self.context.delete(address, 0);
         }
         // Retire the object even if a leaf reports an unobserved exception.
-        self.context.delete(handle as usize, 0);
+        // An array releases its buffer with its header (compiler.md §358
+        // rule 2).
+        self.context.free_value(handle as usize, 0);
         first.map_or(Ok(()), Err)
     }
 }

@@ -322,6 +322,51 @@ fn context_free_during_a_mark_and_a_block_that_takes_the_place() {
     assert_checks_pass(&ctx, 1);
 }
 
+/// `compiler.md` §358 rule 9 and acceptance 8: the program frees an array
+/// while the mark has its large buffer as the divided scan. The free
+/// releases the header and the buffer. An element that a root holds stays
+/// live (§358 rule 3), and the checks of the end pass.
+#[test]
+fn context_free_of_an_array_during_the_divided_scan_of_its_buffer() {
+    const ELEMENTS: usize = (64 << 10) / 8;
+    let mut ctx = ship();
+    let kept = object(&mut ctx);
+    let array = ctx.array_with_capacity_of(ELEMENTS, 8, ArrayElements::CanHoldHandle, 0);
+    assert!(!array.is_null());
+    for index in 0..ELEMENTS {
+        let element = if index == 0 { kept } else { object(&mut ctx) };
+        // SAFETY: `element` has 8 readable bytes and the array has the
+        // capacity, so no push grows it.
+        unsafe { ctx.array_push(array, (&raw const element).cast(), 0) };
+    }
+    // SAFETY: `array` is a live array header.
+    let buffer = unsafe { (*array.cast::<ArrayHeader>()).data } as usize;
+    assert!(
+        ctx.large.contains_key(&buffer),
+        "the buffer is a large block"
+    );
+    let mut roots = Roots::new(&mut ctx, &[array as usize, kept]);
+    assert!(ctx.set_collection(CollectionMode::Off, 0));
+    assert_eq!(ctx.collect_step(100), 1, "the start");
+    assert_eq!(ctx.collect_step(100), 1);
+    assert_eq!(ctx.collect_step(100), 1);
+    assert!(ctx.collection_marked(buffer));
+    assert!(ctx.mark_work_words() > 1000, "the scan is divided");
+    assert_eq!(
+        ctx.mark_divided_scan().map(|(payload, _, _)| payload),
+        Some(buffer),
+        "the divided scan is the buffer"
+    );
+    ctx.free_value(array as usize, 0);
+    roots.set(0, 0);
+    assert!(!ctx.is_live(array as usize) && !ctx.is_live(buffer));
+    assert_eq!(ctx.mark_divided_scan(), None, "the free stops the scan");
+    finish_cycle(&mut ctx, 100);
+    assert!(ctx.is_live(kept));
+    assert!(!ctx.is_live(array as usize) && !ctx.is_live(buffer));
+    assert_checks_pass(&ctx, 1);
+}
+
 /// Acceptance 3 and rule 7: past one limit since the start, the cycle is
 /// late. From there each poll runs one step with the budget, until the
 /// end. The record counts the late cycle one time, and no pause of the

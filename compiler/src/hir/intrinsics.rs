@@ -94,7 +94,9 @@ impl AmbientFn {
                 "Marks a call-statement path as diverging and traps if execution reaches it."
             }
             AmbientFn::Collect => "Explicitly collects unreachable Context allocations.",
-            AmbientFn::UnsafeDelete => "Immediately releases a reference-class allocation.",
+            AmbientFn::UnsafeDelete => {
+                "Immediately releases a reference-class instance, a `Map`, a `Set`, or a dynamic array of an uncounted element type. An array releases its buffer, not its elements."
+            }
         }
     }
 }

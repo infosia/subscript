@@ -349,12 +349,14 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
                             },
                             token: "enforces length and element type",
                         })
-                    } else if api.name == "Context.free" && (role == "array" || role == "value") {
+                    } else if api.name == "Context.free" && role == "value" {
+                        // compiler.md §358 rule 1: the array role agrees
+                        // with tsc, so only the value role diverges.
                         Some(Divergence {
                             code: RuleCode::S100,
                             record: "corpus.md §5 Q6",
                             message: "type mismatch: the argument expects `object`",
-                            token: "reference-class instance immediately",
+                            token: "reference-class instance",
                         })
                     } else if role == "value"
                         && kind.name == "function-return"
@@ -479,7 +481,7 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     }
     assert_eq!(
         omissions.len(),
-        9737,
+        9705,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(

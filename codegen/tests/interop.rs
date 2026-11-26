@@ -636,6 +636,76 @@ export function main(): void {{
     }
 }
 
+// compiler.md §358 rule 6 and acceptance 5: a callback frees the array that
+// the foreign call borrows. Each native tier gives the trap of a growth
+// during a borrow at the position of the `Context.free`. The runtime test
+// `a_free_during_a_native_borrow_keeps_both_blocks` asserts that both blocks
+// stay. Control: the same free after the call returns does not trap.
+fn foreign_array_free_during_the_borrow_traps_at_the_free() {
+    for during in [true, false] {
+        let after = if during {
+            ""
+        } else {
+            "Context.free(state.values);\n  print(\"freed\");"
+        };
+        let inside = if during {
+            "Context.free(state.values);"
+        } else {
+            ""
+        };
+        let program = format!(
+            r#"
+class State {{
+  values: i32[];
+  constructor() {{ this.values = [1, 2, 3, 4]; }}
+}}
+export function main(): void {{
+  const state = new State();
+  const info = new SubCallbackInfo((message, first, second) => {{
+    if (first !== null) {{
+      const state = first as State;
+      {inside}
+    }}
+  }}, state, null);
+  subBorrowArray(state.values, info);
+  {after}
+}}
+"#
+        );
+        let sources = [
+            interop::mirror("interop.generated.d.ts", SourceFile::ambient),
+            SourceFile::new("free.ts", &program),
+        ];
+        let libraries = [native_fixture::fixture().expect("native fixture").library()];
+        let jit = run_jit_with_native_libraries(&sources, &libraries);
+        let ship = run_c_aot_with_native_libraries(&sources, &libraries);
+        if !during {
+            assert_eq!(jit.expect("dev tier"), b"freed\n");
+            assert_eq!(ship.expect("ship tier"), b"freed\n");
+            continue;
+        }
+        let (Err(RunError::Trap(jit)), Err(RunError::Trap(ship))) = (jit, ship) else {
+            panic!("a free during the borrow must trap in each tier");
+        };
+        assert_eq!(jit, ship);
+        assert_eq!(jit.rule, TrapKind::ArrayStorageBorrowed);
+        assert_eq!(
+            jit.message,
+            "the array storage is borrowed by a native call"
+        );
+        assert_eq!(jit.pos.file, "free.ts");
+        assert_eq!(
+            jit.pos.line as usize,
+            program
+                .lines()
+                .position(|line| line.contains("Context.free(state.values)"))
+                .expect("free position")
+                + 1
+        );
+        assert_eq!(jit.pos.col, 7);
+    }
+}
+
 fn foreign_member_array_growth_traps_at_the_push() {
     let program = r#"
 class State {
@@ -1239,6 +1309,7 @@ pub(super) fn main() -> std::process::ExitCode {
             foreign_call_keeps_borrowed_storage_corpus,
             foreign_array_growth_and_nested_borrows_trap_at_the_push,
             foreign_member_array_growth_traps_at_the_push,
+            foreign_array_free_during_the_borrow_traps_at_the_free,
             foreign_array_element_pointer_growth_traps_at_the_push,
             foreign_field_pointer_keeps_its_owner_across_a_later_await,
             handle_create_retain_release,

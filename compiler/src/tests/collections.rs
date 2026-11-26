@@ -990,7 +990,7 @@ fn narrowing_is_invalidated_by_reassignment() {
 }
 
 #[test]
-fn context_free_takes_reference_instances_only() {
+fn context_free_takes_a_reference_instance_and_rejects_a_value_class() {
     check_one(
         "class C { x: i32; constructor() { this.x = 1; } }\nexport function main(): void {\n  const c: C = new C();\n  Context.free(c);\n}\n",
     )
@@ -1001,6 +1001,65 @@ fn context_free_takes_reference_instances_only() {
     )
     .unwrap_err();
     assert_eq!(err[0].code, RuleCode::S100);
+}
+
+/// compiler.md §358 rules 1, 5, and 8: a dynamic array of an uncounted
+/// element type is accepted. A nullable array, a `FixedArray`, and a
+/// string stay S100. A counted element type is S014, also through the
+/// instance of a generic function (§143 rule 2a).
+#[test]
+fn context_free_takes_an_uncounted_dynamic_array() {
+    for (element, value) in [("i32", "[1, 2]"), ("string", "[\"a\"]"), ("C", "[new C()]")] {
+        check_one(&format!(
+            "class C {{ x: i32 = 1; }}\nexport function main(): void {{\n  const a: {element}[] = {value};\n  Context.free(a);\n}}\n"
+        ))
+        .unwrap_or_else(|error| panic!("{element}[]: {error:?}"));
+    }
+    check_one(
+        "function release<T>(values: T[]): void { Context.free(values); }\nexport function main(): void {\n  release<i32>([1]);\n}\n",
+    )
+    .expect("an uncounted instance of a generic array is accepted");
+    // A parameter keeps its declared type; a `const` local narrows.
+    for ty in ["i32[] | null", "FixedArray<i32, 2>", "string"] {
+        let err = check_one(&format!(
+            "function release(a: {ty}): void {{\n  Context.free(a);\n}}\nexport function main(): void {{}}\n"
+        ))
+        .unwrap_err();
+        assert_eq!(err[0].code, RuleCode::S100, "{ty}: {err:?}");
+        assert_eq!(err[0].pos.line, 2, "{ty}");
+    }
+    let err = check_one(
+        "async function job(): Promise<void> {}\nexport async function main(): Promise<void> {\n  const jobs: Promise<void>[] = [job()];\n  Context.free(jobs);\n}\n",
+    )
+    .unwrap_err();
+    assert_eq!(err[0].code, RuleCode::S014);
+    assert!(
+        err[0].message.contains("counted type `Promise<void>`")
+            && err[0].message.contains("last holder"),
+        "{}",
+        err[0].message
+    );
+    // The diagnostic of a generator array states the release rule only,
+    // with no hint of the array methods.
+    let err = check_one(
+        "function* gen(): Generator<i32> { yield 1; }\nexport function main(): void {\n  const gs: Generator<i32>[] = [gen()];\n  Context.free(gs);\n}\n",
+    )
+    .unwrap_err();
+    assert_eq!(err[0].code, RuleCode::S014, "{err:?}");
+    assert_eq!(
+        err[0].message,
+        "`Context.free` cannot release an array of the counted type `Generator<i32>`; \
+         the last holder of the array releases it (§171)"
+    );
+    let err = check_one(
+        "async function job(): Promise<void> {}\nfunction release<T>(values: T[]): void { Context.free(values); }\nexport async function main(): Promise<void> {\n  release<Promise<void>>([job()]);\n}\n",
+    )
+    .unwrap_err();
+    assert!(
+        err.iter().any(|error| error.code == RuleCode::S014
+            && error.message.contains("counted type `Promise<void>`")),
+        "{err:?}"
+    );
 }
 
 #[test]

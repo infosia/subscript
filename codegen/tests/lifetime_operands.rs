@@ -275,10 +275,24 @@ fn for_of_set_values() {
 }
 
 #[test]
+fn for_of_array() {
+    for (name, subject) in [
+        ("array", "x"),
+        ("array-keys", "x.keys()"),
+        ("array-values", "x.values()"),
+    ] {
+        probe(
+            name,
+            "const x: i32[] = [1];",
+            &format!("for (const v of {subject}) {{}}"),
+            19,
+        );
+    }
+}
+
+#[test]
 fn for_of_non_releasable_subjects() {
     for (name, setup, subject, ty) in [
-        ("array-values", "const x: i32[] = [1];", "x", "i32[]"),
-        ("array-keys", "const x: i32[] = [1];", "x.keys()", "i32[]"),
         (
             "fixed-array",
             "const x: FixedArray<i32, 2> = [1, 2];",

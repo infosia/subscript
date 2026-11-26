@@ -1004,7 +1004,10 @@ Accept: `a369`, `a370`. Reject: `r421`.
   `stdlib.md` §8 with the reason and the cost. Permitted surface: `length`, `slice`,
   `+`/template-literal concatenation, `===`/`!==` (by content).
 - **Q6 (`Context.free`)** — `Context.free(value: object): void` frees a
-  reference-class instance immediately. Double free and use-after-free are
+  reference-class instance, a `Map`, a `Set`, or a dynamic array of an
+  uncounted element type immediately. An array releases its header and
+  its buffer, and not its elements; a string and an array of a counted
+  type are rejected (`compiler.md` §358). Double free and use-after-free are
   **undefined in both tiers by default** (trusted scripts, invariant 6).
   The development tier can be made to **trap** on them by a host-set,
   per-Context setting that is off by default (`compiler.md` §8.1a-1);

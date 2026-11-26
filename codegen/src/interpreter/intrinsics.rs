@@ -23,7 +23,7 @@ impl Interpreter<'_> {
                     .first()
                     .ok_or_else(|| self.invalid(None, "Context.free has no argument"))?
                     .as_handle()?;
-                self.context.delete(handle as usize, 0);
+                self.context.free_value(handle as usize, 0);
                 Ok(Value::Void)
             }
             "Unreachable" => {

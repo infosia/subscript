@@ -1394,6 +1394,18 @@ impl Context {
     /// is undefined per Q6/§8.1b and handled as a no-op (never a trap,
     /// never relied upon).
     pub(super) fn arena_release(&mut self, payload: usize) {
+        self.arena_free(payload, None);
+    }
+
+    /// [`Context::arena_release`]. With `program_free` set to the position
+    /// of a `Context.free`, a live small block of an array class also
+    /// releases its buffer (compiler.md §358 rule 2) through
+    /// [`Context::free_array_buffer`]. An `ArrayHeader` is always a small
+    /// block, so the large-block path has no array check.
+    // Inlined so that the constant `program_free` of each caller folds
+    // away, and a release with `None` has no array check.
+    #[inline(always)]
+    fn arena_free(&mut self, payload: usize, program_free: Option<u32>) {
         if let Some((ci, bi)) = self.arena_lookup_slot(payload) {
             let (block, class) = {
                 let chunk = &self.chunks[ci];
@@ -1410,6 +1422,11 @@ impl Context {
                 unsafe { ((block as *const u64).read(), header_class_id(block)) };
             if !self.header_is_live(state) {
                 return;
+            }
+            if let Some(pos_id) = program_free {
+                if is_array_class(class_id) && !self.free_array_buffer(payload, pos_id) {
+                    return;
+                }
             }
             // compiler.md §357 rule 8: a block to release that the program
             // releases during a sweep.
@@ -1583,12 +1600,19 @@ impl Context {
     /// A double delete or unknown pointer is undefined (Q6/§8.1b) and
     /// handled as a no-op (no trap).
     pub fn delete(&mut self, payload: usize, pos_id: u32) {
+        self.release_payload(payload, pos_id, false);
+    }
+
+    /// [`Context::delete`]. With `program_free`, a live array also releases
+    /// its buffer (compiler.md §358 rule 2) after the one lookup that finds
+    /// the header.
+    fn release_payload(&mut self, payload: usize, pos_id: u32, program_free: bool) {
         self.advise_callback_userdata_free(payload, pos_id);
         if !self.object_descriptions.is_empty() || !self.counted_maps.is_empty() {
             self.release_reference_holder(payload, pos_id);
         }
         if self.uses_ship_arena() {
-            self.arena_release(payload);
+            self.arena_free(payload, program_free.then_some(pos_id));
             return;
         }
         let Some(allocation) = self.allocations.get(&payload) else {
@@ -1611,10 +1635,57 @@ impl Context {
         };
         // SAFETY: exact live-map membership proves the header is readable.
         let class_id = unsafe { header_class_id(allocation.base) };
+        if program_free && is_array_class(class_id) && !self.free_array_buffer(payload, pos_id) {
+            return;
+        }
         // End the allocation-table borrow before release work. Map and Set
         // storage retires through recursive `delete` calls.
         self.release_class_state(class_id, payload);
         let _ = self.dispose_dev_allocation(payload);
+    }
+
+    /// `Context.free(value)` of a program (compiler.md §358 rule 2).
+    ///
+    /// A live array releases its buffer and then its header. An array with
+    /// no buffer releases the header only. Each other value, and each
+    /// payload that is not live, takes the path of [`Context::delete`], so
+    /// a second free gives the traps of Q6. An array with a native-call
+    /// borrow traps with `ArrayStorageBorrowed` at `pos_id` and keeps both
+    /// blocks (§358 rule 6). The call does not release an element (§358
+    /// rule 3). The array check reads the class id of the header that the
+    /// lookup of [`Context::delete`] finds, and adds no other lookup. In
+    /// the ship arena the check is on the small-block path only, because
+    /// an `ArrayHeader` is always a small block.
+    pub fn free_value(&mut self, payload: usize, pos_id: u32) {
+        self.release_payload(payload, pos_id, true);
+    }
+
+    /// Releases the buffer of the live array at `payload`, before its
+    /// header. Returns false, with an `ArrayStorageBorrowed` trap at
+    /// `pos_id`, when a native call holds the buffer; the caller then
+    /// keeps the header (§358 rule 6).
+    fn free_array_buffer(&mut self, payload: usize, pos_id: u32) -> bool {
+        // SAFETY: the caller found `payload` live with an array header
+        // class, so the payload is an `ArrayHeader`.
+        let (data, borrowed) = unsafe {
+            let header = &*(payload as *const ArrayHeader);
+            (header.data, header.native_borrows != 0)
+        };
+        if borrowed {
+            self.trap(
+                TrapKind::ArrayStorageBorrowed,
+                TrapKind::ArrayStorageBorrowed.message(None),
+                pos_id,
+            );
+            return false;
+        }
+        // §358 rule 2: each buffer of an array is a Context block that only
+        // this header refers to. Growth released each earlier buffer, so
+        // this releases the current one once.
+        if !data.is_null() {
+            self.delete(data as usize, pos_id);
+        }
+        true
     }
 
     /// True when `payload` is a live allocation (test/inspection aid).

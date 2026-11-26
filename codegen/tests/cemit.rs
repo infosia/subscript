@@ -678,10 +678,7 @@ fn compare_trap_runs(
     // undefined in the releasing ship runtime. Execute that column
     // so its observed behavior stays visible, but contract only the
     // dev-JIT trap and golden rather than asserting tier agreement.
-    if matches!(
-        id.as_str(),
-        "t22-double-delete-q6" | "t23-use-after-delete-q6"
-    ) {
+    if trap_corpus::freed_handle_diagnostic(id) {
         return TrapCaseOutcome { line, failures };
     }
 

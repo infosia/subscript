@@ -574,12 +574,13 @@ The host selects one of three levels. From the side of the script:
 |---|---|---|---|
 | Automatic (the default) | The Context | Nothing. A collection runs at a poll that the compiler places where an allocation can repeat, and at the outermost exit of a host call. | Most scripts |
 | Host-timed | The host | Nothing. The host switches automatic collection off and collects at a point it selects, for example between two frames. | A frame loop with a fixed collection point |
-| Manual | The script | `Context.free(value)` releases an object at once. No collection runs. | An audio callback, a control step, or any place that allows no pause |
+| Manual | The script | `Context.free(value)` releases an object or an array at once. No collection runs. | An audio callback, a control step, or any place that allows no pause |
 
 The [C tutorial](tutorial-c-cpp.md#the-collection-mode) gives the host
 side of each level. Three script forms are valid at each level:
 
-- `Context.free(value)` releases one reference object at once.
+- `Context.free(value)` releases one reference object, `Map`, `Set`, or
+  dynamic array at once.
 - `Context.collect()` is the explicit collection. It runs where it is
   written, and it reports a failed task that nobody awaits at its own
   position.
@@ -621,7 +622,16 @@ Four operations release Context memory:
   point the host selects.
 - `Context.collect()` in a script runs the same collection where it is
   written.
-- `Context.free(value)` releases one reference object at once.
+- `Context.free(value)` releases one reference object, `Map`, `Set`, or
+  dynamic array at once.
+
+`Context.free` of a dynamic array accepts an uncounted element type.
+The call releases the array header and its buffer. It does not release
+an element. An object that an element refers to stays until a
+collection, or until the program frees it. `Context.free` does not
+accept a string. A dynamic array of handles or generators is counted:
+its last holder releases it, and `Context.free` rejects it (§171 rule
+4, §358).
 
 Dropping the last reference to Context memory frees nothing at that
 point: the next collection reclaims it. Dropping the last holder of a
@@ -631,7 +641,8 @@ stands for each of the three collections.
 | Value | Who allocates it | What releases it |
 |---|---|---|
 | A reference object, `Map`, or `Set` | The program, with `new` | `Context.free`, a collection, or the Context release |
-| A string or an array of uncounted values | The compiler and the runtime: an array literal, a concatenation, a template, a method result | A collection, or the Context release |
+| A dynamic array of uncounted values | The compiler and the runtime: an array literal, a spread, a method result | `Context.free` (the header and the buffer, not the elements), a collection, or the Context release |
+| A string | The compiler and the runtime: a literal, a concatenation, a template, a method result | A collection, or the Context release |
 | The capture environment of an async arrow (§181) or of a `then`/`catch`/`finally` callback (§186 rule 4) | The compiler, at each evaluation of a capturing lambda | A collection after no held value and no live frame reaches it, or the Context release |
 | The captures of another synchronous lambda | The compiler, in the frame of the defining function | The exit of that frame (§118) |
 | A handle, including the handle of `then`, `catch`, or `finally` | An async call or one of those forms | The release by its last holder; an unfinished frame is freed when it finishes (§70, §172 rule 6) |

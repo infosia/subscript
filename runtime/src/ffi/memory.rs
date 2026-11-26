@@ -240,7 +240,7 @@ pub unsafe extern "C" fn subscript_rt_boundary_scratch_release(ctx: *mut Context
 #[no_mangle]
 pub unsafe extern "C" fn subscript_rt_delete(ctx: *mut Context, payload: *mut u8, pos_id: u32) {
     // SAFETY: shared contract.
-    unsafe { &mut *ctx }.delete(payload as usize, pos_id);
+    unsafe { &mut *ctx }.free_value(payload as usize, pos_id);
 }
 
 /// Records a trap raised by an emitted check in generated code.

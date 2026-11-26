@@ -169,6 +169,15 @@ pub(super) fn example(site: RejectionSite) -> Option<&'static DivergenceEntry> {
             };
             Some(&ENTRY)
         }
+        RejectionSite::ContextFreeCountedArray => {
+            const ENTRY: DivergenceEntry = DivergenceEntry {
+                ts: "async function job(): Promise<void> {} export async function main(): Promise<void> { const jobs: Promise<void>[] = [job()]; Context.free(jobs); }",
+                subscript: "async function job(): Promise<void> {} export async function main(): Promise<void> { const jobs: Promise<void>[] = [job()]; for (const each of jobs) { await each; } }",
+                why: "An array of a counted type has a holder count; its last holder releases it at once.",
+                ..Divergence::MethodTypeDomain.entry()
+            };
+            Some(&ENTRY)
+        }
         RejectionSite::MapCallbackCountedValue => {
             const ENTRY: DivergenceEntry = DivergenceEntry {
                 ts: "new Map<i32, Promise<i32>[]>().forEach((value: Promise<i32>[], key: i32): void => {});",

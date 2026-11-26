@@ -1461,6 +1461,10 @@ pub(super) fn witness_entry(site: RejectionSite) -> WitnessEntry {
             files: &["s172-counted-map-callback.ts"],
             variant: Divergence::MethodTypeDomain,
         },
+        RejectionSite::ContextFreeCountedArray => WitnessEntry::Reachable {
+            files: &["s358-counted-array-free.ts"],
+            variant: Divergence::MethodTypeDomain,
+        },
         RejectionSite::ArrayElementDomain => WitnessEntry::Reachable {
             files: &["s171-nested-counted-element.ts"],
             variant: Divergence::MethodTypeDomain,
@@ -1747,6 +1751,7 @@ pub(super) const DIRECT_SITES: &[RejectionSite] = &[
     RejectionSite::NumberMethodArgumentCount,
     RejectionSite::ArrayElementDomain,
     RejectionSite::MapCallbackCountedValue,
+    RejectionSite::ContextFreeCountedArray,
     RejectionSite::ArrayJoinDomain,
     RejectionSite::ArrayCallbackSpread,
     RejectionSite::ArrayAccumulatorDomain,

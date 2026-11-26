@@ -1835,7 +1835,7 @@ fn restriction_records_resolve_each_supported_source() {
             "The argument `value` has type `T` (nominal equality)",
         ),
         ("corpus.md §5 Q3", "fixed-size arrays"),
-        ("corpus.md §5 Q6", "reference-class instance immediately"),
+        ("corpus.md §5 Q6", "reference-class instance"),
         ("stdlib.md §9", "two arities accepted since Q27"),
         ("stdlib.md §10.4", "as Q22 fixes callback arities"),
     ] {

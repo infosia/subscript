@@ -24,6 +24,7 @@ const EXPECTED: &[(&str, WarnCode, u32)] = &[
     ("w03-fresh-callback-userdata-loop.ts", WarnCode::W003, 19),
     ("w04-copy-parameter-write-unread.ts", WarnCode::W004, 36),
     ("w05-copy-local-write-unread.ts", WarnCode::W004, 38),
+    ("w06-array-use-after-free.ts", WarnCode::W002, 10),
 ];
 
 fn checked_warnings(files: Vec<SourceFile>, label: &str) -> Vec<Warning> {
