@@ -546,15 +546,18 @@ impl<'p> Checker<'p> {
             crate::check::opaque::InstanceRestriction::ByteAccessTarget,
             &target,
         ) {
-            let top_level_ok = match &self.apparent_type(&target) {
-                Type::FixedArray(..) => true,
-                Type::Class(id) => self.classes.get(id.0).is_some_and(|class| class.is_value),
-                _ => false,
-            };
-            if !top_level_ok {
+            // §360 rule 2: a scalar, a FixedArray, and a value class are the
+            // accepted kinds; the storage walk below decides each byte.
+            let accepted_kind = self.apparent_type(&target).is_numeric()
+                || match &self.apparent_type(&target) {
+                    Type::FixedArray(..) | Type::Bool | Type::Enum(_) => true,
+                    Type::Class(id) => self.classes.get(id.0).is_some_and(|class| class.is_value),
+                    _ => false,
+                };
+            if !accepted_kind {
                 let target_name = self.type_name(&target);
                 self.reject_subset(RejectionSite::ContextByteTargetKind, format!(
-                    "`Context.{name}<T>` cannot use `{target_name}`; it is not a @ValueType value class or FixedArray"
+                    "`Context.{name}<T>` cannot use `{target_name}`; it is not a @ValueType value class, a FixedArray, a sized numeric, a boolean, or an enum"
                 ), member_pos);
                 return self.err_expr(pos);
             }

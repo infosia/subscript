@@ -156,6 +156,7 @@ pub fn trap_expectation(id: &str) -> (TrapKind, u32, u32) {
         "t49-wire-enum-struct-unknown-member" => (TrapKind::WireEnumUnknownValue, 12, 36),
         "t50-wire-entry-unknown-value" => (TrapKind::WireEnumUnknownValue, 8, 27),
         "t51-bytes-into-range" => (TrapKind::IndexOutOfBounds, 18, 3),
+        "t123-scalar-bytes-range" => (TrapKind::IndexOutOfBounds, 10, 22),
         "t52-static-map-callback-fault" | "t53-value-map-callback-fault" => {
             (TrapKind::IndexOutOfBounds, 9, 18)
         }
@@ -340,6 +341,9 @@ pub fn trap_message(id: &str) -> Option<&'static str> {
         }
         "t51-bytes-into-range" => {
             Some("byte range at offset 5 with size 16 exceeds array length 20")
+        }
+        "t123-scalar-bytes-range" => {
+            Some("byte range at offset 6 with size 4 exceeds array length 8")
         }
         "t105-dropped-generator-break"
         | "t106-dropped-generator-local"

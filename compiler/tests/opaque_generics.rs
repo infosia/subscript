@@ -1004,14 +1004,125 @@ fn json_and_bytes_restrictions_wait_for_admitted_instances() {
         let errors = diagnostic_list(&program(declaration, ""));
         assert!(!errors.is_empty(), "{declaration}");
     }
+    for main in ["JSON.stringify(1 as f16);", "JSON.parse<f16>(\"1\");"] {
+        assert!(!diagnostic_list(&program("", main)).is_empty(), "{main}");
+    }
+    // compiler.md §360 rule 1: a scalar is a byte-conversion target.
     for main in [
-        "JSON.stringify(1 as f16);",
-        "JSON.parse<f16>(\"1\");",
         "Context.bytesOf<i32>(1);",
         "Context.fromBytes<i32>([0, 0, 0, 0], 0);",
     ] {
-        assert!(!diagnostic_list(&program("", main)).is_empty(), "{main}");
+        let source = program("", main);
+        assert!(check(&source).is_ok(), "{main}: {:?}", check(&source).err());
     }
+}
+
+/// The text of compiler.md §360 rule 10 for `name` and `target`.
+fn byte_target_kind(name: &str, target: &str) -> String {
+    format!(
+        "`Context.{name}<T>` cannot use `{target}`; it is not a @ValueType value class, \
+         a FixedArray, a sized numeric, a boolean, or an enum"
+    )
+}
+
+#[test]
+fn a_byte_conversion_accepts_each_scalar() {
+    // compiler.md §360 rule 1.
+    for (target, value) in [
+        ("i8", "1"),
+        ("u8", "1"),
+        ("i16", "1"),
+        ("u16", "1"),
+        ("i32", "1"),
+        ("u32", "1"),
+        ("i64", "1"),
+        ("u64", "1"),
+        ("f16", "1.5"),
+        ("f32", "1.5"),
+        ("f64", "1.5"),
+        ("boolean", "true"),
+        ("E", "E.B"),
+    ] {
+        let source = program(
+            "enum E { A, B }",
+            &format!(
+                "const b: u8[] = Context.bytesOf<{target}>({value}); \
+                 Context.bytesInto<{target}>({value}, b, 0); \
+                 const v: {target} = Context.fromBytes<{target}>(b, 0);"
+            ),
+        );
+        assert!(
+            check(&source).is_ok(),
+            "{target}: {:?}",
+            check(&source).err()
+        );
+    }
+}
+
+#[test]
+fn a_byte_conversion_value_has_the_scalar_type_exactly() {
+    // compiler.md §360 rule 6: an `i32` value is not a `u32` value.
+    let errors = diagnostic_list(&program("", "const a: i32 = 1; Context.bytesOf<u32>(a);"));
+    assert!(
+        errors.iter().any(|(code, ..)| *code == RuleCode::S100),
+        "{errors:?}"
+    );
+    // A positive control: the same value with its own type.
+    assert!(check(&program("", "const a: u32 = 1; Context.bytesOf<u32>(a);")).is_ok());
+}
+
+#[test]
+fn a_byte_conversion_rejects_each_other_kind_with_the_accepted_types() {
+    // compiler.md §360 rules 9 and 10.
+    for (main, name) in [
+        ("Context.bytesOf<Box | null>(null);", "Box | null"),
+        ("Context.bytesOf<Label>(\"a\");", "Label"),
+        ("Context.fromBytes<u32[]>([0], 0);", "u32[]"),
+        ("Context.bytesOf<string>(\"x\");", "string"),
+    ] {
+        let function = if main.contains("fromBytes") {
+            "fromBytes"
+        } else {
+            "bytesOf"
+        };
+        let errors = diagnostic_list(&program(
+            "type Label = \"a\" | \"b\"; class Box { x: i32 = 0; }",
+            main,
+        ));
+        assert!(
+            errors
+                .iter()
+                .any(|(code, _, _, message)| *code == RuleCode::S100
+                    && *message == byte_target_kind(function, name)),
+            "{name}: {errors:?}"
+        );
+    }
+    // A nullable scalar is no type of the language (C7), so the type itself
+    // is the S011, before the byte conversion reads it.
+    let errors = diagnostic_list(&program("", "Context.bytesOf<u32 | null>(null);"));
+    assert!(
+        errors
+            .iter()
+            .any(|(code, _, _, message)| *code == RuleCode::S011
+                && message.contains("`u32 | null` is not a reference type union")),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn a_byte_conversion_type_parameter_follows_its_scalar_instance() {
+    // compiler.md §360 rule 8 and §143 rule 2a.
+    let declaration = "function g<T>(value: T): u8[] { return Context.bytesOf<T>(value); }";
+    let accepted = program(declaration, "g<u32>(7);");
+    assert!(check(&accepted).is_ok(), "{:?}", check(&accepted).err());
+    let errors = diagnostic_list(&program(declaration, "g<string>(\"x\");"));
+    assert!(
+        errors
+            .iter()
+            .any(|(code, _, _, message)| *code == RuleCode::S100
+                && *message == byte_target_kind("bytesOf", "string")),
+        "{errors:?}"
+    );
 }
 
 #[test]

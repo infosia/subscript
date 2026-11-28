@@ -164,7 +164,7 @@ pub(super) const FIXEDARRAYSPREAD: DivergenceEntry = DivergenceEntry {
 
 pub(super) const EXPLICITINTRINSICTYPEARGUMENTS: DivergenceEntry = DivergenceEntry {
                 ts: "Context.bytesOf(1);",
-                subscript: "const bytes: u8[] = Context.bytesOf<FixedArray<i32, 1>>([1]);",
+                subscript: "const bytes: u8[] = Context.bytesOf<i32>(1);",
                 why: "The intrinsic requires one explicit type argument for its storage or element type; inferred and mapper overloads do not supply that shape.",
                 collision: "stdlib.md §18.1",
             };

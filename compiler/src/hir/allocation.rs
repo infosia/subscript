@@ -29,7 +29,8 @@ impl ContextBytesFn {
     pub fn can_allocate(self) -> bool {
         match self {
             Self::BytesOf => true,
-            // The result of `fromBytes` is a value class or a fixed array.
+            // The result of `fromBytes` is a value class, a fixed array, or a
+            // scalar (compiler.md §360).
             Self::BytesInto | Self::FromBytes => false,
         }
     }

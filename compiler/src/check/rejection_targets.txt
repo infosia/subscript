@@ -458,7 +458,7 @@ UnreachableExpressionValue	a-s040	S100	`unreachable()` is only legal as a call s
 UnknownFunctionName	a-s041	S016	unknown function `missing`
 UnknownFunctionName	b-probe-conversions	S016	unknown function `String`
 GeneratorYieldTypeNotKnown	a-s042	S100	generator `gen` is called before its yield type is known; declare it earlier in the program
-ContextByteTargetKind	a-s043	S100	`Context.bytesOf<T>` cannot use `string`; it is not a @ValueType value class or FixedArray
+ContextByteTargetKind	a-s043	S100	`Context.bytesOf<T>` cannot use `string`; it is not a @ValueType value class, a FixedArray, a sized numeric, a boolean, or an enum
 ContextByteTargetLayout	a-s044	S100	`Context.bytesOf<T>` cannot use `FixedArray<string, 1>`; its storage type is not eligible; unsupported storage type is `string`
 ByteArgumentIdentity	a-s045	S100	type mismatch: `Context.bytesOf` expects exactly `FixedArray<i64, 1>`, got `FixedArray<i32, 1>`
 NonGenericStaticMethodTypeArguments	a-s046	S100	static method `C.f` is not generic

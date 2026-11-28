@@ -832,6 +832,7 @@ const DEBUG_INTERPRETER_TRAPS: &[(&str, &str, &str, u32, u32)] = &[
     ("t110-pad-start-cut-inside-sequence", "compiler.md §191 padStart cut inside a sequence", "string-slice", 13, 23),
     ("t121-double-free-array-q6", "compiler.md §358 rule 7 a second free of an array", "double-delete", 12, 3),
     ("t122-element-read-after-free-q6", "compiler.md §358 rule 7 an element read after the free", "use-after-delete", 12, 12),
+    ("t123-scalar-bytes-range", "compiler.md §360 rule 7 a scalar byte read past the array", "index-out-of-bounds", 10, 22),
     ("t111-pad-end-cut-inside-sequence", "compiler.md §191 padEnd cut inside a sequence", "string-slice", 13, 23),
     ("t112-enum-switch-non-member-value", "compiler.md §200.1 rule 2 a non-member value reaches the switch trap", "unreachable-reached", 20, 3),
     ("t105-dropped-generator-break", "break releases the failed task through its generator", "uncaught-exception", 12, 39),

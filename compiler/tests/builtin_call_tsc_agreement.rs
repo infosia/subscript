@@ -131,6 +131,10 @@ fn a_built_in_that_reads_a_type_argument_accepts_only_its_count() {
         "const r: u8[] = Context.bytesOf<V>(v);",
         "const r: V = Context.fromBytes<V>(Context.bytesOf<V>(v), 0);",
         "const t: u8[] = Context.bytesOf<V>(v); Context.bytesInto<V>(v, t, 0);",
+        // compiler.md §360 rule 1: `tsc` and the checker accept a scalar `T`.
+        "const r: u8[] = Context.bytesOf<u32>(25);",
+        "const r: f32 = Context.fromBytes<f32>(Context.bytesOf<f32>(1.5), 0);",
+        "const t: u8[] = Context.bytesOf<boolean>(true); Context.bytesInto<boolean>(false, t, 0);",
         "const w: Worker<M, M> = Worker.spawn<M, M>(echo);",
         "const g: Map<i32, i32[]> = Map.groupBy<i32, i32>(xs, (x: i32) => x % 2);",
     ] {
@@ -174,6 +178,11 @@ fn a_built_in_that_reads_a_type_argument_accepts_only_its_count() {
         ),
         (
             "const r: u8[] = Context.bytesOf<V, V>(v);",
+            RuleCode::S014,
+            "`Context.bytesOf<T>` takes exactly one type argument",
+        ),
+        (
+            "const r: u8[] = Context.bytesOf<u32, u32>(25);",
             RuleCode::S014,
             "`Context.bytesOf<T>` takes exactly one type argument",
         ),

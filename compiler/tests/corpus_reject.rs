@@ -878,6 +878,7 @@ const EXPECTED: &[(&str, RuleCode, u32)] = &[
     ("r563-importer-directory/sub/a.ts", RuleCode::S100, 7),
     ("r564-free-counted-array.ts", RuleCode::S014, 11),
     ("r565-free-string.ts", RuleCode::S100, 10),
+    ("r566-bytes-of-string.ts", RuleCode::S100, 8),
 ];
 
 const REGEX_EXPECTED: &[(&str, RuleCode, u32)] = &[

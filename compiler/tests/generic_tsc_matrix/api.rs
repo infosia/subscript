@@ -479,9 +479,11 @@ pub(super) fn cells(controls: &mut Controls, collect: bool) -> Vec<Cell> {
     if let Some(path) = std::env::var_os("SUBSCRIPT_API_OMISSIONS") {
         fs::write(path, omissions.join("\n")).unwrap();
     }
+    // compiler.md §360 admits the scalar instance of each byte-conversion
+    // type parameter: 13 scalar kinds by 3 members.
     assert_eq!(
         omissions.len(),
-        9705,
+        9666,
         "ambient instance admission changed; inspect SUBSCRIPT_API_OMISSIONS"
     );
     eprintln!(

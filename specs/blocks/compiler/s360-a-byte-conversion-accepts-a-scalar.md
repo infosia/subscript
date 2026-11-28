@@ -134,3 +134,68 @@ Problem, measured at `135974d5`:
 - A dynamic array as `T` (`u32[]`). Its storage is a handle.
 - A view of a `u8[]` as an array of a different element type with no
   copy.
+
+### 360.5 Phase Review
+
+Form.
+
+- The checker accepts a sized numeric, a `boolean`, and an enum at
+  the top level of `T` (`check_context_bytes_call`). The storage walk
+  decides each byte, as before. A type parameter takes the result of
+  its instance (§143 rule 2a).
+- The development tier stores a scalar to a stack slot with the size
+  and the alignment of its layout, and copies from the slot
+  (`context_bytes_source`). `fromBytes` copies into a slot, and a
+  scalar loads its representation from it.
+- The ship tier gives a scalar operand storage with a compound
+  literal of the scalar type, `&(ctype){value}`. An aggregate operand
+  stays `&value`.
+- The interpreter makes each `boolean` byte 0 or 1 in `fromBytes`,
+  from the boolean offsets of the layout.
+
+Measured.
+
+| Item | Result |
+|---|---|
+| The accept entry at the contract pin | 54 diagnostics, each the S100 of problem 1 |
+| The ship tier before the compound literal | The C compiler rejects `&-2`, `&300`, and `&25u`: no address of an rvalue |
+| `fromBytes<FixedArray<boolean, 1>>` of the byte 2, then `bytesOf`, at the pin | Byte 1 in the development tier and the ship tier; byte 2 in the interpreter |
+| The same form after this section | Byte 1 in the three tiers |
+| `a513` in the three tiers | Equal output; each line of bytes is equal to the `FixedArray<S, 1>` form |
+| The bytes of `a513`, by hand | Each row is the two's-complement or the IEEE 754 encoding of its value |
+| `r566` under `tsc` 5.9.2 | Accepted |
+| Omitted instances of the `tsc` matrix | 9,705 to 9,666: 39 cells of the three members are now compared, and each agrees |
+| A scalar live across a `yield`, and across `Context.suspend` | Correct output in the development tier |
+| The emitted C under clang with `-std=c11 -pedantic` | Accepted |
+| The new compiler tests | 0.09 s and 0.08 s for the two test files |
+
+The implementation round found two errors of the first contract
+text. A nullable scalar is not a type, so it gives S011 and not S100
+(rule 12). The first text had a rule for a sandbox profile, which
+§113 removed.
+
+Phase Review (a subagent with no context): no CRITICAL, no MAJOR, 4
+MINOR. Each MINOR is in §360.6.
+
+`tools/gate.sh full` on the tree before this record:
+
+```text
+gate full c66379dae93ada024d24586194882ddf0b0846ad dirty:22 debug 4263/0/10 release 4244/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+`tools/hygiene.sh`: exit 0.
+
+### 360.6 Open
+
+1. The ship tier writes the result of `fromBytes<boolean>` with a
+   copy of one byte into an `int32_t` local. The result is correct
+   on a little-endian target, because the local starts at zero.
+2. The corpus list of the memory model in the language reference
+   does not cite `a513`, `t123`, and `r566`.
+3. A comment in `compiler/tests/generic_tsc_matrix/api.rs` states
+   "13 scalar kinds". The 13 kinds of the matrix are the ten sized
+   numerics other than `i32`, `numeric`, `boolean`, and an enum.
+4. No run under MSVC has the compound literal of the ship tier. MSVC
+   accepts a compound literal in C *(docs)*. The Windows full gate is
+   the measurement.
+5. The items of §360.4.

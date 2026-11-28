@@ -2,6 +2,19 @@
 
 use super::*;
 
+/// Gives the address of the storage of a byte-conversion value.
+///
+/// An aggregate operand is an lvalue. A scalar operand can be a literal or an
+/// expression, so a compound literal of the scalar type gives it storage
+/// (compiler.md §360, `stdlib.md` §18.1 rule 7).
+fn storage_address(ty: &Type, ctype: &str, source: &str) -> String {
+    if matches!(ty, Type::FixedArray(..) | Type::Class(_)) {
+        format!("&{source}")
+    } else {
+        format!("&({ctype}){{{source}}}")
+    }
+}
+
 impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn emit_context_bytes(
@@ -37,7 +50,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                     ],
                     &[
                         "ctx".into(),
-                        format!("&{source}"),
+                        storage_address(ty, &ctype, source),
                         format!("(uint32_t)sizeof({ctype})"),
                         format!("{pos}u"),
                     ],
@@ -83,7 +96,7 @@ impl<'e, 'm, 'f> Body<'e, 'm, 'f> {
                         format!("{pos}u"),
                     ],
                 );
-                let _ = writeln!(out, "    void* {range} = {call};\n    if (*(const uint32_t*)ctx != 0u) goto unwind;\n    memcpy({range}, &{source}, sizeof({ctype}));");
+                let _ = writeln!(out, "    void* {range} = {call};\n    if (*(const uint32_t*)ctx != 0u) goto unwind;\n    memcpy({range}, {}, sizeof({ctype}));", storage_address(ty, &ctype, source));
                 emit_padding_zero(self.emitter, out, &range, ty)?;
             }
             "FromBytes" => {

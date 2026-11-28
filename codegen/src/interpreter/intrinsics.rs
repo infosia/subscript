@@ -137,8 +137,20 @@ impl Interpreter<'_> {
                 if layout.size == 0 {
                     return self.unpack(ty, &[]);
                 }
-                let bytes = unsafe { std::slice::from_raw_parts(range, layout.size) };
-                self.unpack(ty, bytes)
+                let mut bytes = unsafe { std::slice::from_raw_parts(range, layout.size) }.to_vec();
+                // compiler.md §360 rule 5: a `boolean` byte reads as 0 or 1 at
+                // each boolean offset, as the development and ship tiers store it.
+                let offsets = self
+                    .layouts
+                    .bool_offsets(ty)
+                    .map_err(|message| self.invalid(pos.cloned(), message))?;
+                for offset in offsets {
+                    let byte = bytes.get_mut(offset as usize).ok_or_else(|| {
+                        self.invalid(pos.cloned(), "boolean offset exceeds the storage")
+                    })?;
+                    *byte = u8::from(*byte != 0);
+                }
+                self.unpack(ty, &bytes)
             }
             _ => Err(self.invalid(
                 pos.cloned(),

@@ -978,10 +978,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
         let position = self.iconst(types::I32, position);
         match name {
             "BytesOf" => {
-                let source = self.expect_aggregate(
+                let source = self.context_bytes_source(
+                    ty,
                     *operands
                         .first()
                         .ok_or_else(|| internal("Context.BytesOf value is missing"))?,
+                    size,
+                    align,
                 )?;
                 let handle = self
                     .call_runtime(
@@ -1000,10 +1003,13 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                 Ok(RV::Scalar(handle))
             }
             "BytesInto" => {
-                let source = self.expect_aggregate(
+                let source = self.context_bytes_source(
+                    ty,
                     *operands
                         .first()
                         .ok_or_else(|| internal("Context.BytesInto value is missing"))?,
+                    size,
+                    align,
                 )?;
                 let target = self.expect_scalar(
                     *operands
@@ -1059,10 +1065,30 @@ impl<'f, 'm, 'a, 'l, M: Module> Body<'f, 'm, 'a, 'l, M> {
                         .ins()
                         .store(MemFlags::new(), canonical, output, offset as i32);
                 }
-                Ok(RV::Aggregate(output))
+                // compiler.md §360 rule 4: a scalar loads its representation
+                // from the copied storage; an aggregate is the storage.
+                self.load_data(ty, output, 0)
             }
             other => Err(internal(format!("unknown Context byte intrinsic {other}"))),
         }
+    }
+
+    /// Gives the address of the storage bytes of a byte-conversion value.
+    /// An aggregate is its own storage; a scalar is stored to a stack slot
+    /// through its representation (compiler.md §360, `stdlib.md` §18.1 rule 7).
+    fn context_bytes_source(
+        &mut self,
+        ty: &Type,
+        value: RV,
+        size: u32,
+        align: u32,
+    ) -> Result<Value, String> {
+        if let RV::Aggregate(source) = value {
+            return Ok(source);
+        }
+        let slot = self.stack_slot(size, align);
+        self.store_data(ty, slot, 0, value)?;
+        Ok(slot)
     }
 
     fn worker_intrinsic(
