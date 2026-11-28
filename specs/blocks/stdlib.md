@@ -2442,10 +2442,11 @@ Three new `Context` members:
 
 1. `T` is explicit, as every generic in subscript. A missing or
    extra type argument is S014.
-2. `T` is a `@ValueType` value class or a `FixedArray<E, N>`. Every
+2. `T` is a `@ValueType` value class, a `FixedArray<E, N>`, a sized
+   numeric, a `boolean`, or an enum (compiler.md §360). Every
    byte of `T`'s storage, transitively through value-class fields
    and `FixedArray` elements, is a sized numeric, a `boolean`, an
-   enum, or padding. Any other `T` — a scalar alone, a reference
+   enum, or padding. Any other `T` — a reference
    class, a `string`, a handle, a nullable, a function, a
    string-literal alias, a boundary struct or a `FixedArray` with
    any of those in its storage — is an S100 that names `T` and, for
@@ -2465,7 +2466,8 @@ Three new `Context` members:
    names the offset, `sizeof(T)`, and the length. The comparison
    is exact; it does not overflow.
 7. Both tiers produce the same bytes. The dev tier copies from the
-   aggregate storage (`Repr::Agg { size }`); the ship tier copies
+   aggregate storage (`Repr::Agg { size }`), or stores and loads a
+   scalar through its representation; the ship tier copies
    with `memcpy` and `sizeof`. Both then zero the padding ranges
    that the compiler computes from the layout, so the output does
    not depend on what a C copy did with padding.
