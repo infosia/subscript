@@ -1405,3 +1405,26 @@ The tests of §355 to §357 pass on this host in each profile:
 `context::mark_writer_tests`, `context::sweep_steps`,
 `context::collection_stats`, `worker::collection_tests`,
 `lir::block_store`, and `codegen/tests/mark_barrier_points.rs`.
+
+## Gate state at `9033a2dd`, 2026-11-28
+
+Host and tools as at `573104df`. The tree holds §358 to §360.
+
+```text
+gate full 9033a2ddb082346b69ad318d3fa81fb031ba8833 clean debug 4267/0/10 release 4248/0/10 skips 2/0 clippy 4/10/13 goldens-moved 0 exit 0
+```
+
+Step wall seconds: fmt 3, build 120, debug 393, release 205, clippy
+16, tsc 1, hygiene 0.
+
+The two debug skips are the `perf_gate` line and the
+`collection_stress_sweep` line. In the release step the sweep's test
+binary passed its three tests in 21.73 s.
+
+The passed count goes up by 25 in each profile. The ignored count
+stays at 10.
+
+The tests of §358 and §359 pass on this host in each profile:
+`runtime/tests/array_free.rs`, `codegen/tests/in_place_filter.rs`,
+`lir::in_place_filter::tests`, and
+`context::mark_cycle_tests::context_free_of_an_array_during_the_divided_scan_of_its_buffer`.
